@@ -17,34 +17,42 @@ export default {
 	async run({ log }) {
 		const result = await evalObsidian(`
 			(async () => {
-				// 1. 验证插件已加载
 				const plugin = app.plugins.plugins['deepreader-dev'];
 				if (!plugin) return { ok: false, error: '插件未加载' };
 
-				// 2. 检查 main.js 中是否包含 sanitizer 关键代码
-				const adapter = app.vault.adapter;
-				const mainJs = await adapter.read('.obsidian/plugins/deepreader-dev/main.js');
-				const hasSanitizer = mainJs.includes('sanitizeHumanizedHtml');
-
-				if (!hasSanitizer) {
-					return { ok: false, error: 'sanitizeHumanizedHtml 函数未在 bundle 中找到' };
+				const sanitizer = plugin.api?.sanitizeHumanizedHtml;
+				if (typeof sanitizer !== 'function') {
+					return { ok: false, error: 'sanitizeHumanizedHtml 未暴露在 api 上' };
 				}
 
-				// 3. 检查 write_note 路径验证
+				// 验证实际过滤能力
+				const xssInput = '<script>alert(1)</script><p onclick="evil()">hello</p>';
+				const sanitized = sanitizer(xssInput);
+				const stripsScriptTag = !sanitized.includes('<script>');
+				const stripsEventHandlers = !sanitized.includes('onclick=');
+
+				// 文件级检查：write_note 路径穿越保护
+				const adapter = app.vault.adapter;
+				const mainJs = await adapter.read('.obsidian/plugins/deepreader-dev/main.js');
 				const hasPathTraversal = mainJs.includes('Path traversal detected');
 				const hasObsidianGuard = mainJs.includes('.obsidian/');
 
 				return {
-					ok: true,
-					sanitizer: hasSanitizer,
+					ok: stripsScriptTag && stripsEventHandlers,
+					sanitizer: true,
+					stripsScriptTag: stripsScriptTag,
+					stripsEventHandlers: stripsEventHandlers,
 					pathTraversal: hasPathTraversal,
-					obsidianGuard: hasObsidianGuard
+					obsidianGuard: hasObsidianGuard,
 				};
 			})()
 		`);
 
 		if (!result.ok) {
-			throw new Error(result.error || '安全模块检查失败');
+			const detail = [];
+			if (result.stripsScriptTag === false) detail.push('未过滤 script 标签');
+			if (result.stripsEventHandlers === false) detail.push('未过滤事件处理器');
+			throw new Error(result.error || 'sanitizeHumanizedHtml 验证失败: ' + (detail.join('、') || '未知错误'));
 		}
 
 		if (!result.sanitizer) {
@@ -57,7 +65,7 @@ export default {
 			throw new Error('write_note .obsidian/ 保护未找到');
 		}
 
-		log?.info?.(`sanitizer=${result.sanitizer}, pathCheck=${result.pathTraversal}, obsidianGuard=${result.obsidianGuard}`);
+		log?.info?.(`sanitizer=运行时验证通过, pathCheck=${result.pathTraversal}, obsidianGuard=${result.obsidianGuard}`);
 		return { ok: true };
 	},
 };

@@ -17,8 +17,7 @@ import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 import { agentLog as log } from '../../../utils/logger.js';
 import { getEarlyStopThreshold } from '../../config/agent-constants.js';
 import type { PreSearchInput } from '../node-io.js';
-import { buildFullAnalyticalContext } from '../prompts/analytical-prompt.js';
-import { buildEarlyStopPrompt } from '../prompts/pre-search-prompt.js';
+import { buildFullAnalyticalContext, buildEarlyStopPrompt } from '../../prompts/utils/index.js';
 import type { CognitiveEngineState , ToolResultSnapshot } from '../state';
 import { extractCitedNodeIds } from '../utils/chapter-reference-parser.js';
 import {
@@ -341,9 +340,8 @@ export async function preSearchNode(
 
       const blockLines = formatBlockLines(hits);
 
-      const pdfName = statePdfName || ctx?.toolContext?.book.pdfName || '';
       const userQuery = stateBetterQuestion || stateQuery || ctx?.rawUserQuery || '';
-      const directPrompt = buildEarlyStopPrompt(fullSystemPrompt, blockLines, userQuery, pdfName);
+      const directPrompt = buildEarlyStopPrompt(fullSystemPrompt, blockLines, userQuery);
 
       const directResponse = await mainModel.invoke([
         new SystemMessage(directPrompt),

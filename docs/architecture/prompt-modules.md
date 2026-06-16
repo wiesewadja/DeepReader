@@ -302,6 +302,8 @@ B. 存在性验证 — "书中有没有提到X" → depth=0
 
 ## Files
 
+### 运行时文件（当前 graph nodes 使用）
+
 | 文件 | 职责 |
 |---|---|
 | `src/agent/graph/prompts/router-prompt.ts` | S0 Router prompt（108 行） |
@@ -314,6 +316,26 @@ B. 存在性验证 — "书中有没有提到X" → depth=0
 | `src/agent/graph/prompts/proactive-formatter-prompt.ts` | Proactive 引导 prompt（110 行） |
 | `src/agent/graph/utils/history-summarizer.ts` | 历史摘要 + 格式化（103 行） |
 | `tests/unit/agent/graph/prompts/*.test.ts` | 8 个 prompt 构造单测 |
+
+### 模块化注册表（新架构，Phase 1）
+
+| 文件 | 职责 |
+|---|---|
+| `src/agent/prompts/types.ts` | 类型定义（PromptModule, RouterBuildContext 等） |
+| `src/agent/prompts/registry.ts` | 注册表实现 + i18n locale 管理 |
+| `src/agent/prompts/version.ts` | 版本管理器（changelog 追踪） |
+| `src/agent/prompts/index.ts` | 统一导出 + `registerAllPrompts()` 批量注册 |
+| `src/agent/prompts/i18n.ts` | 向后兼容 shim（委托给 registry） |
+| `src/agent/prompts/core/router.ts` | S0 Router 模块化定义 |
+| `src/agent/prompts/core/inspectional.ts` | S1 Inspectional 模块化定义 |
+| `src/agent/prompts/core/pre-search.ts` | S2-Pre 早停模块化定义 |
+| `src/agent/prompts/core/analytical.ts` | S2 Analytical 模块化定义 |
+| `src/agent/prompts/core/syntopical.ts` | S3 Syntopical 模块化定义 |
+| `src/agent/prompts/core/socratic.ts` | Socratic 模块化定义 |
+| `src/agent/prompts/core/formatter.ts` | S4 Formatter 模块化定义 |
+| `src/agent/prompts/core/proactive.ts` | Proactive 模块化定义 |
+| `src/agent/prompts/auxiliary/advisor.ts` | 阅读顾问模块化定义 |
+| `tests/unit/agent/prompts/*.test.ts` | 13 个测试文件，63 个用例 |
 
 ---
 
@@ -374,6 +396,180 @@ B. 存在性验证 — "书中有没有提到X" → depth=0
 
 ---
 
+## 统一提示词管理系统
+
+> 2026-06-16 / 2026-06-17：基于模块化注册表的提示词管理系统，消除 side-effect 注册，统一 Excalidraw prompt。
+
+### 设计目标
+
+| 目标 | 实现 |
+|------|------|
+| 消除 side-effect 注册 | 所有 prompt 文件末尾的 `import ...` 自注册 → 统一走 `registerAllPrompts()` |
+| 单注册入口 | `main.ts:onload()` 调用一次 `registerAllPrompts()` 完成全部初始化 |
+| 版本控制 | 每个模块语义化版本号 + `PromptVersionManager` + changelog |
+| i18n | PromptModule 内嵌 `locales.zh` / `locales.en`，`PromptRegistry` 统一管理 locale |
+| 可测试性 | 每个模块独立单元测试，测试无需加载插件 |
+
+### 架构概览
+
+```
+src/agent/prompts/
+├── types.ts                    # PromptModule / PromptLocale / PromptRegistry 类型
+├── registry.ts                 # PromptRegistryImpl：注册、查询、locale、filter
+├── version.ts                  # PromptVersionManager：版本追踪 + changelog
+├── index.ts                    # 统一导出 + registerAllPrompts() 批量注册
+├── i18n.ts                     # (deprecated) 向后兼容 shim，委托给 registry
+├── core/                       # 核心 8 个 Agent 提示词
+│   ├── router.ts               # S0 Router（id: router.s0）
+│   ├── inspectional.ts         # S1 Inspectional（id: inspectional.s1）
+│   ├── pre-search.ts           # S2-Pre（id: pre-search.s2-pre）
+│   ├── analytical.ts           # S2 Analytical（id: analytical.s2）
+│   ├── syntopical.ts           # S3 Syntopical（id: syntopical.s3）
+│   ├── socratic.ts             # Socratic（id: socratic）
+│   ├── formatter.ts            # S4 Formatter（id: formatter.s4）
+│   └── proactive.ts            # Proactive（id: proactive）
+├── auxiliary/                  # 辅助提示词
+│   ├── advisor.ts              # 阅读顾问（id: advisor）
+│   ├── diagram.ts              # Excalidraw 图形生成（id: diagram.excalidraw）
+│   ├── memory.ts               # 对话整合 + 记忆压缩（id: memory.*）
+│   ├── profile-builder.ts      # 用户画像提取 + 综合（id: profile.*）
+│   └── tts.ts                  # TTS 口语化/语音/播报（id: tts.*）
+└── utils/                      # prompt 构造工具函数
+    ├── index.ts                # barrel export
+    ├── early-stop.ts           # buildEarlyStopPrompt()
+    ├── tree-formatter.ts       # formatTreeStructure()
+    ├── scoped-chapters.ts      # buildScopedChaptersBlock()
+    ├── analytical-helpers.ts   # buildFullAnalyticalContext()
+    ├── inspectional-helpers.ts # buildInspectionalSystemPrompt/UserMessage()
+    ├── formatter-helpers.ts    # buildFormatterSystemPrompt/UserMessage()
+    ├── proactive-helpers.ts    # buildProactiveSystemPrompt/UserMessage()
+    ├── socratic-helpers.ts     # buildSocraticDialoguePrompt/UserMessage()
+    └── syntopical-helpers.ts   # buildSyntopicalUserMessage()
+```
+
+### PromptModule 定义
+
+```typescript
+interface PromptModule {
+  id: string;                    // 唯一标识，如 'router.s0'
+  version: string;               // 语义化版本，如 '1.0.0'
+  name: string;                  // 显示名称
+  description?: string;          // 简短描述
+  metadata: {                    // 元数据
+    node?: string;               // 对应 LangGraph 节点名
+    category: 'core' | 'auxiliary' | 'evaluation';
+    tokenEstimate?: number;      // 估算 token 数
+    tags?: string[];             // 搜索/分类用
+  };
+  locales: {                     // 多语言
+    zh: PromptLocale;
+    en?: PromptLocale;
+  };
+  // 可选动态构建函数
+  buildSystemPrompt?: (ctx: Record<string, unknown>) => string;
+  buildUserMessage?: (ctx: Record<string, unknown>) => string;
+}
+```
+
+### 注册流程
+
+```
+main.ts:onload()
+  └→ registerAllPrompts()         (index.ts)
+       ├→ promptRegistry.register(mod)   — 注册到注册表
+       └→ promptVersionManager.register(mod) — 记录版本 + changelog
+```
+
+关键变化：
+- **以前**：每个 prompt 文件末尾有 `import { promptRegistry } from './registry.js'; promptRegistry.register(...)` 自注册
+- **现在**：`index.ts` 导入所有模块 → `registerAllPrompts()` 统一注册 → `main.ts` 调用一次
+
+### 使用方式
+
+```typescript
+import { registerAllPrompts, promptRegistry } from './prompts/index.js';
+
+// 批量注册
+registerAllPrompts();
+
+// 获取提示词
+const routerPrompt = promptRegistry.get('router.s0');
+routerPrompt.systemPrompt  // 当前 locale 的 systemPrompt
+
+// i18n
+promptRegistry.setLocale('en');
+const englishPrompt = promptRegistry.get('router.s0');
+const zhPrompt = promptRegistry.get('router.s0', 'zh'); // 强制中文
+
+// 查询
+const coreModules = promptRegistry.list({ category: 'core' });
+const diagramRelated = promptRegistry.list({ tags: ['diagram'] });
+```
+
+### i18n 管理
+
+locale 状态由 `PromptRegistryImpl` 统一管理（单一状态源），而非分散在各文件中：
+
+```typescript
+promptRegistry.setLocale('en');
+promptRegistry.getLocale();  // → 'en'
+```
+
+> ⚠️ `promptI18n` (`i18n.ts`) 已废弃，新代码直接使用 `promptRegistry.setLocale()`。
+
+### Excalidraw Prompt 统一
+
+main 分支独立创建了 `excalidraw-prompts.ts`（105 行裸字符串），与 prompt-management 的 `auxiliary/diagram.ts`（`PromptModule`）重复并分化。已通过以下方式统一：
+
+1. **`diagram.ts`**: version 1.0.0→1.1.0，zh `systemPrompt` 升级为 `SHARED_DIAGRAM_PROMPT` 的进化版（设计哲学、节点规模层级、semanticColor 色板、形状语义映射、连接规则）
+2. **`excalidraw-prompts.ts`**: 从裸字符串改为 3 行 shim，re-export `diagramPrompt.locales.zh.systemPrompt`
+3. **消费者**: `diagram-helper.ts` 和 `excalidraw.ts` 导入路径不变
+
+数据流：
+```
+auxiliary/diagram.ts (PromptModule, 已注册, 唯一源)
+       │ re-export .locales.zh.systemPrompt
+       ▼
+excalidraw-prompts.ts (shim)
+       │
+       ├──→ diagram-helper.ts          (generateDiagram / progressive)
+       └──→ tools/definitions/excalidraw.ts  (LangChain tool description)
+```
+
+### 版本控制
+
+每个模块有语义化版本号。变更通过 `PromptVersionManager` 追踪：
+
+```typescript
+promptVersionManager.getVersion('router.s0');    // → '1.0.0'
+promptVersionManager.getChangelog('router.s0');
+// → [{ version: '1.0.0', date: '2026-06-16', changes: ['初始版本'] }]
+```
+
+### 测试覆盖
+
+| 层级 | 范围 | 数量 |
+|------|------|------|
+| 注册表 | registry CRUD + filter + locale + 覆盖警告 | 13 用例 (registry.test.ts) |
+| 类型 | PromptModule 结构校验 | 6 用例 (types.test.ts) |
+| i18n shim | 废弃 shim 的委托验证 | 4 用例 (i18n.test.ts) |
+| 版本管理 | 注册 + changelog + 版本比较 + 不重复注册 | 4 用例 (version.test.ts) |
+| 核心模块 (×8) | id/version/locales 存在性 + 内容关键片段 | 5 用例/模块 |
+| 辅助模块 (×5) | 同上 | 6-13 用例/模块 |
+| 总计 | 13 测试文件 | 63+ 用例 |
+
+### 演进里程碑
+
+| 阶段 | 日期 | 变化 |
+|------|------|------|
+| Phase 0 | 2026-06-10 前 | 各 prompt 文件独立，side-effect import 注册，无统一管理 |
+| Phase 1 | 2026-06-16 | PromptModule 类型 + PromptRegistry + version 管理器；`registerAllPrompts()` 入 main.ts |
+| Phase 2 | 2026-06-17 | utils 拆分；消除 side-effect 注册；Excalidraw prompt 统一（解决 main 分支冲突） |
+
+---
+
 | 日期 | 变更 |
 |---|---|
-| 2026-06-10 | 初版：基于 `src/agent/graph/prompts/*` 8 文件 968 行的架构视角文档。XML 标签结构 + AnalyticalPromptContext 共享接口 + 8 节点 prompt 总览 + 跨节点共享模式 + 19 条已知限制 |
+| 2026-06-17 | 补充辅助模块列表、Excalidraw 统一方案、注册流程、演进里程碑、测试覆盖统计 |
+| 2026-06-16 | 新增统一提示词管理系统章节 |
+| 2026-06-10 | 初版：XML 标签结构 + AnalyticalPromptContext 共享接口 + 8 节点 prompt 总览 + 跨节点共享模式 + 19 条已知限制 |

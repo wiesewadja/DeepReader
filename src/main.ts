@@ -22,6 +22,8 @@ import { exportToObsidian } from './pageindex/exporters/epub-to-obsidian.js';
 import { setActivePluginId } from './pageindex/paths.js';
 import { ExcerptService } from './services/excerpt-service.js';
 import { HighlightService } from './services/highlight-service.js';
+import { registerAllPrompts, promptRegistry } from './agent/prompts/index.js';
+import { sanitizeHumanizedHtml } from './components/message/utils.js';
 import { DeepPDFSettingTab } from './settings/setting-tab.js';
 import { serviceLog, setLogEnabled } from "./utils/logger.js";
 import { getVaultPath } from './utils/mobile-fs.js';
@@ -57,6 +59,8 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         parseEpub,
         exportToObsidian,
         PageIndex,
+        promptRegistry,
+        sanitizeHumanizedHtml,
         createProfileBuilder: () => {
             const { ProfileBuilder } = require('./services/profile-builder');
             this.profileBuilder = new ProfileBuilder(this.app, this.settings);
@@ -86,6 +90,9 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
 
         // 初始化 DeepReader 目录和图书管理文档
         await this.ensureInitialization();
+
+        // 注册所有提示词模块到注册表和版本管理器
+        registerAllPrompts();
 
         // 迁移旧路径哈希 bookId → 内容哈希 bookId（一次性，幂等）
         const vaultPath = getVaultPath(this.app);

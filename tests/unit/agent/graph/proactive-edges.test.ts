@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { routeFromStart, routeByDepth, routeAfterInspectional } from '@/agent/graph/edges';
 import { NODE_NAMES, EDGE_KEYS } from '@/agent/graph/node-names';
-import { buildProactiveSystemPrompt, buildSocraticDialoguePrompt, buildSocraticDialogueUserMessage } from '@/agent/graph/prompts/proactive-formatter-prompt';
+import { buildProactiveSystemPrompt, buildSocraticDialoguePrompt, buildSocraticDialogueUserMessage } from '@/agent/prompts/utils/index.js';
 
 describe('proactive edge routing', () => {
   describe('routeFromStart', () => {
