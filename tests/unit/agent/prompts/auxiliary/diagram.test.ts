@@ -19,30 +19,29 @@ describe('Diagram Prompt Module', () => {
   });
 
   describe('结构完整性', () => {
-    it('zh locale 应包含设计原则', () => {
+    it('zh locale 应包含设计哲学', () => {
       const { systemPrompt } = diagramPrompt.locales.zh;
-      expect(systemPrompt).toContain('设计原则');
+      expect(systemPrompt).toContain('设计哲学');
       expect(systemPrompt).toContain('论证而非展示');
     });
 
     it('zh locale 应包含语义布局选项', () => {
       const { systemPrompt } = diagramPrompt.locales.zh;
-      expect(systemPrompt).toContain('语义布局选择');
       expect(systemPrompt).toContain('mind-map');
       expect(systemPrompt).toContain('flow-horizontal');
     });
 
-    it('zh locale 应包含色板和审美设置', () => {
+    it('zh locale 应包含色板和元素尺寸', () => {
       const { systemPrompt } = diagramPrompt.locales.zh;
       expect(systemPrompt).toContain('书卷审美色板');
-      expect(systemPrompt).toContain('roughness');
-      expect(systemPrompt).toContain('roundness');
+      expect(systemPrompt).toContain('semanticColor');
+      expect(systemPrompt).toContain('fontSize');
     });
 
-    it('zh locale 应包含输出格式', () => {
+    it('zh locale 应包含连接规则', () => {
       const { systemPrompt } = diagramPrompt.locales.zh;
-      expect(systemPrompt).toContain('输出格式');
-      expect(systemPrompt).toContain('JSON');
+      expect(systemPrompt).toContain('关系连接');
+      expect(systemPrompt).toContain('startBinding');
     });
 
     it('en locale 也应包含核心内容', () => {
