@@ -284,7 +284,7 @@ describe('generateDiagramProgressive (B3)', () => {
     };
   }
 
-  it('3 节正常流程：累积所有元素，onSectionReady 触发 3 次，返回 .excalidraw.md', async () => {
+  it('3 节正常流程：累积所有元素，onSectionReady 触发 3 次，返回 .excalidraw', async () => {
     const ctx = makeMockToolContext();
     // 1 次 plan + 3 次 section
     const model = makeSequenceModel([
@@ -297,14 +297,14 @@ describe('generateDiagramProgressive (B3)', () => {
 
     expect(onSectionReady).toHaveBeenCalledTimes(3);
     expect(embed).toContain('![[Excalidraw/测试图-');
-    expect(embed).toContain('.excalidraw.md]]');
+    expect(embed).toContain('.excalidraw]]');
     // onSectionReady 的 embed 是 .excalidraw（中间态）
     expect(onSectionReady.mock.calls[0][0]).toContain('![[Excalidraw/测试图-');
     // sectionIndex 递增 1,2,3
     expect(onSectionReady.mock.calls.map((c: any) => c[1])).toEqual([1, 2, 3]);
   });
 
-  it('每节落盘 .excalidraw（累积），收尾写 .excalidraw.md', async () => {
+  it('每节落盘 .excalidraw（累积），收尾写 .excalidraw', async () => {
     const ctx = makeMockToolContext();
     const model = makeSequenceModel([
       makePlanResponse(), makeSectionResponse(1), makeSectionResponse(2), makeSectionResponse(3),
@@ -313,14 +313,14 @@ describe('generateDiagramProgressive (B3)', () => {
     await generateDiagramProgressive('画图', '内容', model as any, ctx, {}, {});
 
     const writes = (ctx.vault.app.vault.adapter.write as any).mock.calls;
-    // 3 次中间态 .excalidraw + 1 次收尾 .excalidraw.md = 4 次
+    // 3 次中间态 .excalidraw + 1 次收尾 .excalidraw（覆盖）= 4 次
     expect(writes.length).toBe(4);
     expect(writes[0][0]).toContain('Excalidraw/测试图-');
     expect(writes[3][0]).toContain('Excalidraw/测试图-');
-    expect(writes[3][0]).toContain('.excalidraw.md');
+    expect(writes[3][0]).toContain('.excalidraw');
   });
 
-  it('收尾后删除中间 .excalidraw 文件', async () => {
+  it('收尾用 .excalidraw 覆盖中间态，不额外删除', async () => {
     const ctx = makeMockToolContext();
     const model = makeSequenceModel([
       makePlanResponse(), makeSectionResponse(1), makeSectionResponse(2), makeSectionResponse(3),
@@ -328,7 +328,13 @@ describe('generateDiagramProgressive (B3)', () => {
 
     await generateDiagramProgressive('画图', '内容', model as any, ctx, {}, {});
 
-    expect(ctx.vault.app.vault.adapter.remove).toHaveBeenCalledWith(expect.stringMatching(/Excalidraw\/测试图-\d+\.excalidraw/));
+    const writes = (ctx.vault.app.vault.adapter.write as any).mock.calls;
+    // 3 次中间态 + 1 次收尾覆盖 = 4 次写入
+    expect(writes.length).toBe(4);
+    // 中间态路径和最终路径相同（都是 .excalidraw）
+    expect(writes[0][0]).toBe(writes[3][0]);
+    expect(writes[3][0]).toMatch(/Excalidraw\/测试图-\d+\.excalidraw/);
+    expect(ctx.vault.app.vault.adapter.remove).not.toHaveBeenCalled();
   });
 
   it('单节首次失败 + 重试成功 → 最终包含该节', async () => {
@@ -368,7 +374,7 @@ describe('generateDiagramProgressive (B3)', () => {
     expect(onSectionReady).toHaveBeenCalledTimes(2);
     expect(onSectionFailed).toHaveBeenCalledWith(2, expect.any(String));
     expect(embed).toContain('![[Excalidraw/测试图-');
-    expect(embed).toContain('.excalidraw.md]]');
+    expect(embed).toContain('.excalidraw]]');
   });
 
   it('所有节失败 → 返回空串', async () => {
@@ -397,7 +403,7 @@ describe('generateDiagramProgressive (B3)', () => {
 
     const embed = await generateDiagramProgressive('画图', '内容', model as any, ctx, {}, {});
 
-    // fallback 走单次生成，写 .excalidraw（纯 JSON，插件原生支持 embed 渲染）
+    // fallback 走单次生成，写 .excalidraw（纯 JSON）
     expect(embed).toContain('![[Excalidraw/fallback-');
     expect(embed).toContain('.excalidraw]]');
   });

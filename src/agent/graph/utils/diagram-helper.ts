@@ -14,7 +14,6 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import { agentLog as log } from '../../../utils/logger.js';
 import { excalidrawTool, writeExcalidrawJson, buildExcalidrawJSON } from '../../tools/excalidraw.js';
-import { buildExcalidrawMd } from '../../tools/excalidraw-md.js';
 import type { ElementDef, DiagramLayoutType } from '../../tools/excalidraw-types.js';
 import type { ToolContext } from '../../tools/types.js';
 
@@ -34,7 +33,7 @@ const DIAGRAM_SYSTEM_PROMPT = `你是一个 Excalidraw 图形生成专家。根�
 - "hierarchical-tree"：多层父子关系按垂直层级对齐（类似组织结构图）。
 - "flow-horizontal"：链式/分支流转的步骤、因果或串行流程。
 - "timeline"：按先后顺序演变的时间线，各节点会交错上下排布。
-- "radial"：单层放射（中心主题 -> 周围无父子连接的关联词）。
+- "radial"：单层放射（中心主题 -> 周围无父子连接 of 关联词）。
 - "matrix"：分类对比、四象限，按 2x2 格排列。
 注：你仍需为每个元素提供一个初始估算的 x 和 y，系统会自动优化它们。
 
@@ -64,30 +63,25 @@ const DIAGRAM_SYSTEM_PROMPT = `你是一个 Excalidraw 图形生成专家。根�
 - 混合: 逐字符估算求和
 - 多行文本高度 = 行数 × fontSize × 1.25
 
-## 书卷审美色板（颜色即语义，勿任意发挥）
-- 宣纸白背景: canvas #ffffff, 形状填充 #fffaf0 或 #fdfbf7
-- 墨色（主文字/主线条）: #2c2c2c / #1e293b
-- 朱砂（重点、起点、关键决策）: fill #fde8e8, stroke #c53030
-- 靛青（主流程、主节点）: fill #e8f0fe, stroke #1e3a5f
-- 黛绿（成功、终点、生长）: fill #e6f4ea, stroke #1f5e3b
-- 赭石（警告、备选、冲突）: fill #fff3e0, stroke #b45309
-- 藤黄（高亮、注释）: fill #fef9c3, stroke #a16207
-- 文本层级色: 标题 #1e3a5f, 副标题 #475569, 正文 #4b5563
-规则：深 stroke + 浅 fill 形成对比；同类概念用同色；一图中主色不超过 4-5 种。
+## 书卷审美色板（必须使用 semanticColor 属性表达颜色语义）
+不要在任何元素中硬编码十六进制色值（如 strokeColor、backgroundColor）。系统会根据你指定的 semanticColor 自动渲染适配 Light/Dark 主题的书卷风格颜色：
+- primary: 主流程、主节点（靛青色系）
+- emphasis: 重点、起点、关键决策（朱砂红色系）
+- success: 成功、终点、生长（黛绿色系）
+- warning: 警告、备选、冲突（赭石黄色系）
+- highlight: 高亮、注释（藤黄色系）
+- neutral: 默认、普通节点（黑白灰宣纸色系）
+规则：同一类概念使用相同的语义颜色；一个图中使用的语义主色不要超过 4 种。
 
-## 审美设置
-- roughness: 0（干净、专业、书卷气）
-- opacity: 100（所有元素，不用透明度做层次）
-- strokeWidth: 2（形状与主箭头）/ 1（细分支、结构线）
-- fontFamily: 5（中文友好字体，渲染稳定无报错）
-- lineHeight: 1.25
-- roundness: { type: 3 }（轻微圆角，温润）
+## 审美与风格设置
+- 系统风格处理器在开启时会自动应用「有机书卷风」（轻手绘质感、圆角、手绘连线等）。
+- 你无需指定 roughness、fillStyle、strokeWidth，系统会做统一优化，你只需指定正确的 type、x, y 坐标、width/height 和 semanticColor 即可。
 
 ## 形状语义（默认无容器）
 | 概念类型 | 形状 |
 |----------|------|
 | 标签、描述、详情 | 自由文本（无容器） |
-| 章节/部分标题 | 自由文本（fontSize 24-32） |
+| 章节/部分标题 | 自由文本（fontSize L(28) 或 XL(36)） |
 | 起点、触发、输入 | ellipse |
 | 终点、输出、结果 | ellipse |
 | 决策、条件 | diamond |
@@ -95,11 +89,11 @@ const DIAGRAM_SYSTEM_PROMPT = `你是一个 Excalidraw 图形生成专家。根�
 | 层级节点 | line + 自由文本（无框） |
 | 时间线标记 | 小 ellipse 10-20px |
 
-## 箭头连接规则（关键）
-- 箭头的 x/y 坐标和 points 会被系统自动计算为元素边缘交点
-- 你只需要提供正确的 startBinding 和 endBinding
-- gap 固定为 2，focus 固定为 0
-- 不要手动计算箭头的 x/y 和 points，系统会覆盖
+## 关系连接规则（关键）
+- 连线的 x/y 坐标和 points 会被系统自动计算为元素边缘交点。
+- 你只需要提供正确的 startBinding 和 endBinding。
+- gap 固定为 2，focus 固定为 0。
+- 不要手动计算连线的 x/y 和 points，系统会覆盖。
 
 ## 输出格式
 严格输出 JSON 对象，包含 filename、layout（可选）和 elements 字段。不要包含任何其他文字。
@@ -115,21 +109,14 @@ const DIAGRAM_SYSTEM_PROMPT = `你是一个 Excalidraw 图形生成专家。根�
       "width": 数字,
       "height": 数字,
       "text": "文本内容（可选）",
-      "strokeColor": "#颜色",
-      "backgroundColor": "#颜色",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "roughness": 0,
-      "opacity": 100,
       "fontSize": 20,
       "textAlign": "center",
       "verticalAlign": "middle",
-      "lineHeight": 1.25,
       "containerId": null,
       "boundElements": [{"id": "子元素ID", "type": "text"}],
       "startBinding": {"elementId": "ID", "gap": 2, "focus": 0},
-      "endBinding": {"elementId": "ID", "gap": 2, "focus": 0}
-      // 注：箭头元素的 x/y/points 可省略，系统会根据 binding 自动计算
+      "endBinding": {"elementId": "ID", "gap": 2, "focus": 0},
+      "semanticColor": "primary|emphasis|success|warning|highlight|neutral"
     }
   ]
 }`;
@@ -568,36 +555,20 @@ export async function generateDiagramProgressive(
     return '';
   }
 
-  // 5. 收尾：转 .excalidraw.md + 删中间文件
-  if (options.signal?.aborted) {
-    log('[DiagramHelper] generateDiagramProgressive: abortSignal 已触发，保留中间 .excalidraw 供部分查看');
-    // 返回中间态 embed（.excalidraw），让用户看到部分图
-    return `![[Excalidraw/${filename}.excalidraw]]`;
-  }
-
+  // 5. 收尾：写入最终 .excalidraw（覆盖中间态）
   try {
-    const excalidrawFile = buildExcalidrawJSON(cumulative);
-    const mdContent = buildExcalidrawMd(excalidrawFile as any);
+    const excalidrawFile = buildExcalidrawJSON(cumulative, undefined, toolContext);
 
-    const adapter = toolContext.vault.app.vault.adapter;
     const dir = 'Excalidraw';
-    if (!(await adapter.exists(dir))) {
-      await adapter.mkdir(dir);
-    }
-    const mdFilepath = `${dir}/${filename}.excalidraw.md`;
-    await adapter.write(mdFilepath, mdContent);
+    const adapter = toolContext.vault.app.vault.adapter;
+    const filepath = `${dir}/${filename}.excalidraw`;
+    await adapter.write(filepath, JSON.stringify(excalidrawFile, null, 2));
 
-    // 删除中间 .excalidraw 文件
-    const jsonFilepath = `${dir}/${filename}.excalidraw`;
-    if (await adapter.exists(jsonFilepath)) {
-      await adapter.remove(jsonFilepath);
-    }
-
-    log(`[DiagramHelper] generateDiagramProgressive: 收尾完成 ${mdFilepath}（${cumulative.length} 元素，${succeededSections}/${total} 节）`);
-    return `![[${mdFilepath}]]`;
+    log(`[DiagramHelper] generateDiagramProgressive: 收尾完成 ${filepath}（${cumulative.length} 元素，${succeededSections}/${total} 节）`);
+    return `![[${filepath}]]`;
   } catch (err) {
-    log('[DiagramHelper] generateDiagramProgressive: 收尾转换失败:', err instanceof Error ? err.message : String(err));
-    // 转换失败但中间态可用，返回 .excalidraw embed
+    log('[DiagramHelper] generateDiagramProgressive: 收尾写入失败:', err instanceof Error ? err.message : String(err));
+    // 写入失败但中间态可用，返回 .excalidraw embed
     return `![[Excalidraw/${filename}.excalidraw]]`;
   }
 }
