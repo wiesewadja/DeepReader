@@ -91,5 +91,97 @@ ${standaloneQuery}
 在限定范围内分析，提取关键内容并附带 block_id。`;
 }
 
+export function buildScopedChaptersBlock(
+  scopeNodeIds: string[],
+  markdownFiles: Record<string, string>,
+  nodeFileMap?: Record<string, string>
+): string {
+  if (scopeNodeIds.length === 0) return '';
+
+  const lines: string[] = [];
+
+  for (const nodeId of scopeNodeIds) {
+    const indexFileName = nodeFileMap?.[nodeId]?.replace(/\.md$/, '');
+    if (indexFileName) {
+      lines.push(`- node_id: ${nodeId}, file_name: "${indexFileName}"`);
+      continue;
+    }
+
+    const numericPart = nodeId.replace(/^0+/, '');
+    const matchedKey = Object.keys(markdownFiles).find(key => {
+      const fileName = key.split('/').pop() ?? '';
+      const fileNumMatch = fileName.match(/^(\d+)\s*-\s*/);
+      if (fileNumMatch) {
+        const fileNum = fileNumMatch[1].replace(/^0+/, '');
+        return fileNum === numericPart;
+      }
+      return false;
+    });
+
+    if (matchedKey) {
+      const fileName = matchedKey.split('/').pop() ?? '';
+      const fileNameForLink = fileName.replace(/\.md$/, '');
+      lines.push(`- node_id: ${nodeId}, file_name: "${fileNameForLink}"`);
+    } else {
+      lines.push(`- node_id: ${nodeId}`);
+    }
+  }
+
+  const inner = lines.join('\n');
+  const full = `<scoped_chapters>\n${inner}\n</scoped_chapters>`;
+
+  if (full.length > 1500) {
+    const truncated = full.slice(0, 1500 - '...[已截断]'.length);
+    return `${truncated}...[已截断]`;
+  }
+
+  return full;
+}
+
+/**
+ * Build the full analytical prompt context (system prompt + user message).
+ * Shared by pre-search and analytical nodes to avoid duplication.
+ */
+export function buildFullAnalyticalContext(params: {
+  scopeNodeIds: string[];
+  tocSummary?: string;
+  currentNodeId?: string;
+  currentChapterName?: string;
+  userProfileSummary?: string;
+  markdownFiles: Record<string, string>;
+  nodeFileMap?: Record<string, string>;
+  standaloneQuery: string;
+  betterQuestion?: string;
+  recentHistorySummaries?: import('../utils/history-summarizer').HistorySummary[];
+  prevSearchedBlockIds?: string[];
+  skipUserMessage?: boolean;
+}): { fullSystemPrompt: string; userMessage?: string } {
+  const systemPrompt = buildAnalyticalSystemPrompt({
+    scopeNodeIds: params.scopeNodeIds,
+    tocSummary: params.tocSummary,
+    currentNodeId: params.currentNodeId,
+    currentChapterName: params.currentChapterName,
+    userProfileSummary: params.userProfileSummary,
+  });
+
+  const scopedChapters = buildScopedChaptersBlock(params.scopeNodeIds, params.markdownFiles, params.nodeFileMap);
+  const fullSystemPrompt = scopedChapters
+    ? `${systemPrompt}\n${scopedChapters}`
+    : systemPrompt;
+
+  if (params.skipUserMessage) {
+    return { fullSystemPrompt };
+  }
+
+  const userMessage = buildAnalyticalUserMessage(
+    params.standaloneQuery,
+    params.betterQuestion,
+    params.recentHistorySummaries,
+    params.prevSearchedBlockIds,
+  );
+
+  return { fullSystemPrompt, userMessage };
+}
+
 // Also export the new prompt module for new code
 export { analyticalPrompt };
