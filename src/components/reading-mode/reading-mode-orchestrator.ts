@@ -129,14 +129,21 @@ export class ReadingModeService implements ScrollPatchService {
 	}
 
 	/**
-	 * 高亮指定文本
+	 * 获取当前页的段落列表（元素 + 文本），供逐段 TTS 朗读
 	 */
-	highlightText(text: string): void {
-		this.paginator?.highlightText(text);
+	getPageParagraphs(): { element: HTMLElement; text: string }[] {
+		return this.paginator?.getPageParagraphs() || [];
 	}
 
 	/**
-	 * 清除所有高亮
+	 * 高亮第 N 个段落
+	 */
+	highlightParagraph(index: number): void {
+		this.paginator?.highlightParagraph(index);
+	}
+
+	/**
+	 * 清除段落高亮
 	 */
 	clearHighlight(): void {
 		this.paginator?.clearHighlight();

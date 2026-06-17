@@ -277,18 +277,14 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-/* ── TTS 朗读页面高亮 ── */
+/* ── TTS 朗读段落高亮 ── */
 
-.deeppdf-tts-reading-active {
-    position: relative;
-}
-
-.deeppdf-tts-reading-active::after {
-    content: '';
-    position: absolute;
-    inset: 0;
+.deeppdf-tts-paragraph-active {
     background-color: var(--interactive-accent);
-    opacity: 0.06;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
+    opacity: 0.92;
+    color: var(--text-on-accent);
+    border-radius: 4px;
+    padding: 2px 4px;
+    margin: 0 -4px;
+    transition: background-color 0.2s ease;
 }

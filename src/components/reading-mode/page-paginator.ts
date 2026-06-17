@@ -121,56 +121,61 @@ export class PagePaginator {
 	}
 
 	/**
-	 * 高亮指定文本在页面中的位置
-	 * @param text 要高亮的文本片段
+	 * 获取当前页的段落列表（元素 + 文本），供逐段 TTS 朗读 + 高亮
 	 */
-	highlightText(text: string): void {
-		if (!this._isActive || !this.scrollView) return;
+	getPageParagraphs(): { element: HTMLElement; text: string }[] {
+		if (!this._isActive || !this.scrollView) return [];
 
-		// 先清除旧的高亮
+		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
+		if (!sizer) return [];
+
+		const allParagraphs = Array.from(
+			sizer.querySelectorAll<HTMLElement>('p, h1, h2, h3, h4, h5, h6, li'),
+		);
+
+		// 按当前页筛选段落范围
+		const totalParagraphs = allParagraphs.length;
+		const currentPage = this._currentPage;
+		const totalPages = this._totalPages;
+
+		let startIdx = 0;
+		let endIdx = totalParagraphs;
+
+		if (totalPages > 1) {
+			startIdx = Math.floor((currentPage - 1) * totalParagraphs / totalPages);
+			endIdx = Math.floor(currentPage * totalParagraphs / totalPages);
+		}
+
+		return allParagraphs
+			.slice(startIdx, endIdx)
+			.map(el => ({ element: el, text: el.textContent?.trim() || '' }))
+			.filter(p => p.text.length > 0);
+	}
+
+	/**
+	 * 高亮当前页的第 N 个段落
+	 * @param index 段落索引（0-based，对应 getPageParagraphs 返回的顺序）
+	 */
+	highlightParagraph(index: number): void {
 		this.clearHighlight();
+		if (!this._isActive || !this.scrollView) return;
 
 		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
 		if (!sizer) return;
 
-		// 查找包含目标文本的元素
-		const walker = document.createTreeWalker(sizer, NodeFilter.SHOW_TEXT);
-		let node: Text | null;
-		while ((node = walker.nextNode() as Text | null)) {
-			const idx = node.textContent?.indexOf(text) ?? -1;
-			if (idx >= 0) {
-				// 找到文本节点，创建高亮范围
-				const range = document.createRange();
-				range.setStart(node, idx);
-				range.setEnd(node, idx + text.length);
+		const paragraphs = sizer.querySelectorAll<HTMLElement>('p, h1, h2, h3, h4, h5, h6, li');
+		if (index < 0 || index >= paragraphs.length) return;
 
-				const highlight = document.createElement('mark');
-				highlight.className = 'deeppdf-tts-highlight';
-				range.surroundContents(highlight);
-
-				// 滚动到高亮位置
-				highlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
-				return;
-			}
-		}
+		paragraphs[index].classList.add('deeppdf-tts-paragraph-active');
+		paragraphs[index].scrollIntoView({ behavior: 'smooth', block: 'center' });
 	}
 
-	/**
-	 * 清除所有 TTS 高亮
-	 */
+	/** 清除段落高亮 */
 	clearHighlight(): void {
 		if (!this.scrollView) return;
-
-		const highlights = this.scrollView.querySelectorAll('.deeppdf-tts-highlight');
-		highlights.forEach(el => {
-			const parent = el.parentNode;
-			if (parent) {
-				while (el.firstChild) {
-					parent.insertBefore(el.firstChild, el);
-				}
-				parent.removeChild(el);
-			}
-		});
+		this.scrollView
+			.querySelectorAll('.deeppdf-tts-paragraph-active')
+			.forEach(el => el.classList.remove('deeppdf-tts-paragraph-active'));
 	}
 
 	/** 外部设置当前页码（用于 blockId 跳转后同步状态） */

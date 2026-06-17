@@ -150,17 +150,16 @@ export class SidebarView extends ItemView {
 	stopReadingTTS(): void {
 		this.ttsCtrl.stopReading();
 		this.readingTopbar?.setReadingTTSState('idle');
-		this.setPageHighlight(false);
+		this.clearHighlight();
 	}
 
 	/** 朗读时标记当前页高亮 */
-	private setPageHighlight(active: boolean): void {
-		const service = this.plugin.readingModeService;
-		if (!service) return;
-		const container = (service as any).activeContainerEl as HTMLElement | null;
-		if (container) {
-			container.classList.toggle('deeppdf-tts-reading-active', active);
-		}
+	private highlightParagraph(index: number): void {
+		this.plugin.readingModeService?.highlightParagraph(index);
+	}
+
+	private clearHighlight(): void {
+		this.plugin.readingModeService?.clearHighlight();
 	}
 
 	/** 获取当前页文本 */
@@ -195,7 +194,8 @@ export class SidebarView extends ItemView {
 			text = selection;
 		} else {
 			const service = this.plugin.readingModeService;
-			text = service?.getCurrentPageText?.() || '';
+			const paragraphs = service?.getPageParagraphs?.() || [];
+			text = paragraphs.map(p => p.text).join('\n\n');
 		}
 
 		if (!text) {
@@ -272,8 +272,12 @@ export class SidebarView extends ItemView {
 					self.readingTopbar?.setReadingTTSState('playing');
 				}
 			},
-			setPageHighlight: (active) => self.setPageHighlight(active),
-			getCurrentPageText: () => self.getCurrentPageText(),
+			highlightParagraph: (index) => self.highlightParagraph(index),
+			clearHighlight: () => self.clearHighlight(),
+			getPageParagraphs: () => {
+				const service = self.plugin.readingModeService;
+				return service?.getPageParagraphs?.() || [];
+			},
 			goToNextPage: () => self.goToNextPage(),
 		});
 		this.sessionMgr = new SessionManager({

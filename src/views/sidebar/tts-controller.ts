@@ -31,9 +31,12 @@ export interface TTSControllerHost {
 	getCurrentIndexId(): string | null;
 	setTtsService(service: TTSService | null): void;
 	onReadingTTSStateChange?: (state: TTSPlayState) => void;
-	/** 朗读时标记当前页高亮 */
-	setPageHighlight?: (active: boolean) => void;
-	getCurrentPageText?: () => string;
+	/** 获取当前页的段落列表 */
+	getPageParagraphs?: () => { element: HTMLElement; text: string }[];
+	/** 高亮第 N 个段落 */
+	highlightParagraph?: (index: number) => void;
+	/** 清除段落高亮 */
+	clearHighlight?: () => void;
 	goToNextPage?: () => boolean;
 }
 
@@ -71,7 +74,7 @@ export class TTSController {
 
 		this.currentSource = 'message';
 		this.host.onReadingTTSStateChange?.('idle');
-		this.host.setPageHighlight?.(false);
+		this.host.clearHighlight?.();
 	}
 
 	private initTTSService(): TTSService | null {
@@ -193,67 +196,75 @@ export class TTSController {
 			if (this.currentSource === 'reading') {
 				this.currentSource = 'message';
 				this.host.onReadingTTSStateChange?.('idle');
-				this.host.setPageHighlight?.(false);
+				this.host.clearHighlight?.();
 			}
 		}
 	}
 
 	/**
-	 * 朗读当前页，完成后自动翻页继续
+	 * 朗读当前页，按段落逐段合成 + 高亮
+	 * 每段开始前高亮该段，播放完毕后进入下一段，读完所有段后翻页。
 	 */
 	private async readCurrentPage(): Promise<void> {
 		if (this.currentSource !== 'reading') return;
 
-		// 获取当前页文本
-		const text = this.host.getCurrentPageText?.() || '';
-		const cleanText = preprocessForTTS(text);
-		if (!cleanText.trim()) {
-			// 当前页没有文本，尝试翻页
+		// 获取当前页段落列表
+		const paragraphs = this.host.getPageParagraphs?.() || [];
+		if (paragraphs.length === 0) {
+			// 无内容，尝试翻页
 			if (this.host.goToNextPage?.()) {
 				await new Promise(r => setTimeout(r, 500));
 				await this.readCurrentPage();
 			} else {
-				// 章节结束
 				this.stopReading();
+				new Notice('朗读完毕');
 			}
 			return;
 		}
 
-		// 标记当前页高亮
-		this.host.setPageHighlight?.(true);
 		this.host.onReadingTTSStateChange?.('playing');
-
-		// 使用流式合成 + PCM 实时播放
-		const player = new PCMStreamPlayer();
-		this.readingPlayer = player;
-
 		const profile = getDefaultVoiceProfile();
 
-		try {
-			const stream = this.ttsService!.getClient().synthesizeStream(
-				cleanText,
-				{ voiceProfile: { voice: profile.voice } },
-				this.readingAbort?.signal,
-			);
+		// 逐段朗读
+		for (let i = 0; i < paragraphs.length; i++) {
+			if (this.currentSource !== 'reading') return;
 
-			for await (const chunk of stream) {
-				player.enqueue(chunk);
+			const cleanText = preprocessForTTS(paragraphs[i].text);
+			if (!cleanText.trim()) continue;
+
+			// 高亮当前段
+			this.host.highlightParagraph?.(i);
+
+			// 流式合成 + 播放
+			const player = new PCMStreamPlayer();
+			this.readingPlayer = player;
+
+			try {
+				const stream = this.ttsService!.getClient().synthesizeStream(
+					cleanText,
+					{ voiceProfile: { voice: profile.voice } },
+					this.readingAbort?.signal,
+				);
+
+				for await (const chunk of stream) {
+					player.enqueue(chunk);
+				}
+				player.seal();
+				await player.waitForEnd();
+			} finally {
+				this.readingPlayer = null;
 			}
-			player.seal();
-			await player.waitForEnd();
-		} finally {
-			this.readingPlayer = null;
 		}
 
-		// 播放完毕，翻页继续（仅当未被手动停止）
+		// 读完所有段，翻页继续
 		if (this.currentSource === 'reading') {
-			this.host.setPageHighlight?.(false);
+			this.host.clearHighlight?.();
 			if (this.host.goToNextPage?.()) {
 				await new Promise(r => setTimeout(r, 300));
 				await this.readCurrentPage();
 			} else {
-				// 章节结束
 				this.stopReading();
+				new Notice('朗读完毕');
 			}
 		}
 	}
