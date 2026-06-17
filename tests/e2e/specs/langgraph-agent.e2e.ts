@@ -466,8 +466,8 @@ describe('LangGraph Agent E2E', function () {
     // LangSmith Trace 分析
     const trace = await getTraceAnalysis(Date.now() - testStartTime + 5000);
     if (trace.totalRuns > 0) {
-      // depth=0 应该走 Router + Formatter，无工具调用
-      expect(trace.hasRouter).toBe(true);
+      // depth=0 走 S1 Unified（短路）→ Formatter，无工具调用
+      expect(trace.hasInspectional).toBe(true);
       expect(trace.hasFormatter).toBe(true);
       expect(trace.toolCalls.length).toBe(0);
       console.log('[E2E] LangSmith: depth=0 trace 验证通过');
@@ -494,16 +494,11 @@ describe('LangGraph Agent E2E', function () {
     // 不应包含错误信息
     expect(response).not.toContain('LangGraph 引擎错误');
 
-    // 检查日志中是否经过了 S0 Router
-    const logs = await getPluginLogs();
-    const hasRouter = logs.some(l => l.includes('S0') || l.includes('Router') || l.includes('depth'));
-    console.log('[E2E] Router logs found:', hasRouter);
-
     // LangSmith Trace 分析
     const trace = await getTraceAnalysis(Date.now() - testStartTime + 5000);
     if (trace.totalRuns > 0) {
-      // depth=1 应该走 Router + Inspectional + Formatter，无工具调用
-      expect(trace.hasRouter).toBe(true);
+      // depth=1 走 S1 Unified + Formatter，无工具调用
+      expect(trace.hasInspectional).toBe(true);
       expect(trace.hasFormatter).toBe(true);
       console.log(`[E2E] LangSmith: depth=1 验证 - S1=${trace.hasInspectional}, tools=${trace.toolCalls.length}`);
     }
@@ -546,8 +541,8 @@ describe('LangGraph Agent E2E', function () {
     // LangSmith Trace 分析
     const trace = await getTraceAnalysis(Date.now() - testStartTime + 5000);
     if (trace.totalRuns > 0) {
-      // depth=2 应该走完整路径：Router + Inspectional + Analytical + Formatter
-      expect(trace.hasRouter).toBe(true);
+      // depth=2 走 S1 Unified + PreSearch + Analytical + Formatter
+      expect(trace.hasInspectional).toBe(true);
       expect(trace.hasAnalytical).toBe(true);
       expect(trace.hasFormatter).toBe(true);
       // 应该有工具调用（search_book / read_book_section）
