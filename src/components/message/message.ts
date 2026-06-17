@@ -646,6 +646,7 @@ export function createMessage(
 		onDelete?: () => void;
 		getAllMessages?: () => MessageData[];
 		onTTS?: (messageId: string, content: string) => void;
+		onStreamingEnd?: (messageId: string, content: string) => void;
 		getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
 		getBubbleTheme?: () => string;
 		app?: App;

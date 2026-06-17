@@ -363,6 +363,9 @@ export class MessageList extends Component {
 			onTTS: (messageId: string, content: string) => {
 				this.callbacks.onTTS?.(messageId, content);
 			},
+			onStreamingEnd: (messageId: string, content: string) => {
+				this.callbacks.onStreamingEnd?.(messageId, content);
+			},
 			getAllMessages: () => this.getMessagesData(),
 			getCurrentBookInfo: this.callbacks.getCurrentBookInfo,
 			getBubbleTheme: this.callbacks.getBubbleTheme,
@@ -518,6 +521,13 @@ export class MessageList extends Component {
 		if (msg?.setTTSState) {
 			msg.setTTSState(state);
 		}
+	}
+
+	/**
+	 * 通知 AI 回复流式结束
+	 */
+	notifyStreamingEnd(messageId: string, content: string): void {
+		this.callbacks.onStreamingEnd?.(messageId, content);
 	}
 
 	/**
