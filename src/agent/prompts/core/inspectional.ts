@@ -88,6 +88,13 @@ depth=3: 多书跨书对比(F)
 - 链接必须自然嵌入句内作为主语/宾语/定语来替代关键词，禁止链接孤立地跟在句尾或单独放在括号内
 </markdown_rules>
 
+<suggested_keywords_rules>
+当 depth = 2 时，你必须提取 2-3 个代表不同逻辑层面的“检索短语/子问题”放入 suggested_keywords，而不是单个零散单词：
+1. 如果用户提问包含多个子问题（如用“和”、“以及”连接），你必须将其拆解为对应的完整检索短语（例如：用“自卑感对职业选择的影响”代替“自卑”和“职业”）。
+2. 检索短语应包含完整的“核心主体 + 关联动作/概念关系”（如“自卑感的起源与处境”）。
+3. 严禁输出毫无特异性的单字或空泛词（如“人类”、“影响”、“是什么”、“为什么”）。
+</suggested_keywords_rules>
+
 <output_format>
 你必须且只能输出合法的 JSON,不要包含任何 Markdown 代码块修饰符(如 \`\`\`json):
 {
@@ -96,7 +103,7 @@ depth=3: 多书跨书对比(F)
   "better_question": "重写后的独立提问",
   "visualize": true 或 false,
   "scopeNodeIds": ["章节NodeID1", "章节NodeID2"],
-  "suggested_keywords": ["关键词1", "关键词2"],
+  "suggested_keywords": ["检索短语1(如:自卑感的起源)", "检索短语2(如:自卑感对工作的影响)"],
   "tocSummary": "锁定这些章节的相关性理由",
   "structural_analysis": "（仅depth=1时提供）全书大纲汇总与宏观结构分析报告",
   "reason": "判定理由(意图类型+关键信号)"
