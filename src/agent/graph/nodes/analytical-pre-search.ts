@@ -458,7 +458,18 @@ export async function preSearchNode(
 
       const blockLines = formatBlockLines(hits);
       const userQuery = stateBetterQuestion || stateQuery || ctx?.rawUserQuery || '';
-      const directPrompt = buildEarlyStopPrompt(fullSystemPrompt, blockLines, userQuery);
+
+      const preSearchRecords = hits.flatMap(h =>
+        h.matched_blocks.map(b => ({
+          toolName: 'pre_search',
+          args: { query: 'auto', node_id: h.node_id },
+          result: b.content,
+          originalResultLength: b.content.length,
+          extractedBlockIds: [b.block_id],
+        }))
+      );
+
+      const directPrompt = buildEarlyStopPrompt(fullSystemPrompt, blockLines, userQuery, preSearchRecords);
 
       const directResponse = await mainModel.invoke([
         new SystemMessage(directPrompt),
@@ -473,16 +484,6 @@ export async function preSearchNode(
               .map(c => c.text)
               .join('')
           : '';
-
-      const preSearchRecords = hits.flatMap(h =>
-        h.matched_blocks.map(b => ({
-          toolName: 'pre_search',
-          args: { query: 'auto', node_id: h.node_id },
-          result: b.content,
-          originalResultLength: b.content.length,
-          extractedBlockIds: [b.block_id],
-        }))
-      );
 
       // 核验核准并开启 LLM 纠正支持（注入 mainModel)
       const verifyResult = await verifyAndCleanContent(directContent, preSearchRecords, {

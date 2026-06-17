@@ -15,7 +15,53 @@ import { verifyAndCleanContent } from '../utils/self-verification.js';
 import type { SubgraphConfig, SubgraphResult, ToolResultRecord } from './tool-execution.js';
 import { compressMessagesForLLM, executeToolBatch, reportPlan } from './tool-execution.js';
 
-function buildSynthesisPrompt(config: SubgraphConfig): string {
+export function buildReferenceCandidates(toolResults: ToolResultRecord[]): string {
+  const candidates: string[] = [];
+  for (const r of toolResults) {
+    if (r.toolName !== 'search_book' && r.toolName !== 'read_book_section' && r.toolName !== 'pre_search') continue;
+    if (r.extractedBlockIds && r.extractedBlockIds.length > 0) {
+      for (const bid of r.extractedBlockIds) {
+        if (!bid) continue;
+        const cleanBid = bid.replace(/^\^/, '');
+        let snippet = '';
+        if (typeof r.result === 'string') {
+          const idx = r.result.indexOf(bid);
+          if (idx !== -1) {
+            snippet = r.result.slice(idx + bid.length).trim();
+          } else {
+            snippet = r.result;
+          }
+        }
+        const cleanSnippet = snippet.replace(/[\r\n\t]+/g, ' ').slice(0, 60).trim();
+        candidates.push(`- ^${cleanBid}：${cleanSnippet}...`);
+      }
+    } else if (typeof r.result === 'string') {
+      const blockMatches = [...r.result.matchAll(/\^([\w-]+)/g)];
+      for (const m of blockMatches) {
+        const bid = m[1];
+        const idx = m.index ?? 0;
+        let snippet = r.result.slice(Math.max(0, idx - 80), idx).trim();
+        if (!snippet) {
+          snippet = r.result.slice(idx + bid.length + 1, idx + bid.length + 80).trim();
+        }
+        const cleanSnippet = snippet.replace(/[\r\n\t]+/g, ' ').slice(0, 60).trim();
+        candidates.push(`- ^${bid}：${cleanSnippet}...`);
+      }
+    }
+  }
+
+  const uniqueCandidates = Array.from(new Set(candidates)).slice(0, 10);
+  if (uniqueCandidates.length === 0) return '';
+
+  return `\n<reference_basket>
+可用 block_id 列表（请从中选择最相关的 block_id 引用原文）：
+${uniqueCandidates.join('\n')}
+引用时，必须使用语义别名格式：[[书名/文件名#^block_id|语义别名]]。别名应为 2-6 字的核心概念，不要直接用章节名。
+</reference_basket>`;
+}
+
+function buildSynthesisPrompt(config: SubgraphConfig, toolResults: ToolResultRecord[]): string {
+  const refBasket = buildReferenceCandidates(toolResults);
   let prompt = `现在请基于你请求的所有工具执行结果，输出完整的分析结论。
 
 要求：
@@ -24,7 +70,8 @@ function buildSynthesisPrompt(config: SubgraphConfig): string {
 3. 如果某些结果不完整，基于已有信息给出尽可能完整的回答
 4. 严格遵守 <output_rules> 中的 wiki 链接格式
 5. 提取逻辑骨架：定义 → 主旨 → 论述 → 结论
-6. 如果工具返回中包含 ![[Excalidraw/xxx.excalidraw]] 嵌入语法，必须原样包含在输出中，这是图形嵌入标记`;
+6. 如果工具返回中包含 ![[Excalidraw/xxx.excalidraw]] 嵌入语法，必须原样包含在输出中，这是图形嵌入标记
+${refBasket}`;
 
   if (config.forcedConclusionContext) {
     const { pdfName, scopeNodeIds } = config.forcedConclusionContext;
@@ -47,7 +94,7 @@ function buildSynthesisPrompt(config: SubgraphConfig): string {
  *
  * Total: 3 LLM calls for 2 rounds (vs ReAct's 4-6 calls).
  * If a round produces no tool calls, synthesize immediately.
- */
+ * */
 export async function runPlanExecute(
   messages: BaseMessage[],
   config: SubgraphConfig,
@@ -106,7 +153,7 @@ export async function runPlanExecute(
 
   // Final: Synthesize
   const synthesisMessages = compressMessagesForLLM(conversationHistory);
-  const synthesisPrompt = buildSynthesisPrompt(config);
+  const synthesisPrompt = buildSynthesisPrompt(config, allToolResults);
 
   const synthesisResponse = await model.invoke([
     ...synthesisMessages,

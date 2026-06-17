@@ -139,9 +139,9 @@ export function searchBM25(
     if (!postings) continue;
 
     const docFreq = df[token] || 0;
-    // Clamp IDF to 0 — negative IDF means the term appears in >50% of docs
-    // and provides no discriminative signal
-    const idf = Math.max(0, Math.log((totalDocs - docFreq + 0.5) / (docFreq + 0.5)));
+    // Use Lucene BM25 IDF formula to ensure positive IDF for common terms
+    // that are still highly descriptive in books with a small number of chapters
+    const idf = Math.log(1 + (totalDocs - docFreq + 0.5) / (docFreq + 0.5));
 
     for (const { nodeId, tf } of postings) {
       const docLength = index.nodes[nodeId]?.length || 0;

@@ -42,6 +42,10 @@ export function buildFormatterSystemPrompt(
   return `${formatterPrompt.locales.zh.systemPrompt}${timeSection}${advisorSection}${memorySection}${profileSection}`;
 }
 
+function countWikiLinks(text: string): number {
+  return (text.match(/\[\[[^\]]+\]\]/g) || []).length;
+}
+
 export function buildFormatterUserMessage(
   rawUserQuery: string,
   analysisResult: string,
@@ -81,25 +85,31 @@ ${retrievalCoverage.isCoverageGap
 
   const effectiveQuery = betterQuestion || rawUserQuery;
 
+  const linkCount = (analysisResult ? countWikiLinks(analysisResult) : 0) + 
+                    (structuralAnalysis ? countWikiLinks(structuralAnalysis) : 0);
+  const linkCountHint = linkCount > 0
+    ? `（系统检测到 analysis 和 structural_analysis 共包含 ${linkCount} 个 wiki 链接，你的最终回复中也必须精准出现这 ${linkCount} 个链接，一个都不能少）`
+    : '';
+
   const bookInstruction = multiBook
-    ? `1. analysis 和 structural_analysis 中的 [[...]] wiki 链接必须原样保留，不可修改或删除书名前缀
-2. 别名要自然嵌入句子中，替代对应的关键词`
-    : `1. analysis 和 structural_analysis 中的 [[...]] wiki 链接必须原样保留
-2. 别名要自然嵌入句子中，替代对应的关键词`;
+    ? `1. wiki 链接硬性要求${linkCountHint}：每一个 [[...]] 链接都必须原样保留在你的回复中。禁止修改其路径和 block_id 部分，禁止漏掉任何一个链接！
+2. 别名自然嵌入句中：把别名作为主语、宾语或定语融入句子，使其读起来像一个通顺自然的句子，禁止链接孤立地放在句尾或放在括号内。`
+    : `1. wiki 链接硬性要求${linkCountHint}：每一个 [[...]] 链接都必须原样保留在你的回复中。禁止修改其路径和 block_id 部分，禁止漏掉任何一个链接！
+2. 别名自然嵌入句中：把别名作为主语、宾语或定语融入句子，使其读起来像一个通顺自然的句子，禁止链接孤立地放在句尾或放在括号内。`;
 
   return `<history>
 ${historyText}
 </history>
-
+ 
 <query>${effectiveQuery}</query>
-
+ 
 <analysis>
 ${analysisResult || '(无分析结果)'}
 </analysis>
 ${structureSection}${scopeSection}${retrievalSection}<book>${bookName}</book>
-
+ 
 用奚童的口吻分享你读后的理解。
-
+ 
 **重要提醒**：
 ${bookInstruction}
 3. 如果有阅读范围信息，在末尾自然地引导用户继续探索。`;

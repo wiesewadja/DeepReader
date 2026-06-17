@@ -16,10 +16,9 @@ export function formatTreeStructure(
     const prefix = '    '.repeat(indent) + (isLast ? '└── ' : '├── ');
 
     const fullLink = bookName && node.file_name
-      ? `[[${bookName}/${node.file_name}]]`
-      : node.file_name ? `[[${node.file_name}]]` : '';
-    const linkPart = fullLink ? `, link: ${fullLink}` : '';
-    const titleLine = `${prefix}${node.heading} (node_id: ${node.node_id}${linkPart})`;
+      ? `[[${bookName}/${node.file_name}|${node.heading}]]`
+      : node.file_name ? `[[${node.file_name}|${node.heading}]]` : node.heading;
+    const titleLine = `${prefix}${fullLink} (node_id: ${node.node_id})`;
     lines.push(titleLine);
 
     if (node.summary && indent < maxDepth) {
