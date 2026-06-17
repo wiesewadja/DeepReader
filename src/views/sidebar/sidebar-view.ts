@@ -1197,6 +1197,7 @@ export class SidebarView extends ItemView {
 		if (!this.ttsService) return;
 
 		try {
+			log(`[TTS] Preload preview started for message ${messageId}`);
 			const context = {
 				bookId: this.bookMgr.currentIndexId || undefined,
 				bookTitle: this.getDisplayName(this.bookMgr.currentPdfName || '') || undefined,
@@ -1205,8 +1206,9 @@ export class SidebarView extends ItemView {
 			};
 
 			await this.ttsService.preloadPreview(messageId, content, context);
-		} catch {
-			// 预加载失败，静默处理
+			log(`[TTS] Preload preview completed for message ${messageId}`);
+		} catch (err) {
+			log(`[TTS] Preload preview failed for message ${messageId}:`, err);
 		}
 	}
 
