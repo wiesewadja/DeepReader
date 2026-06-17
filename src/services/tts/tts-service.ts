@@ -325,7 +325,7 @@ export class TTSService {
                 textToRead = await this.expressivePreprocessor.preprocess(textToRead, {
                     enableMarks: false,
                 });
-            } catch {}
+            } catch { }
 
             // 7. 构建 TTS 选项 + 合成语音
             const ttsOptions = this.buildTTSOptions(voiceProfile);
@@ -448,7 +448,7 @@ export class TTSService {
                     textToRead = await this.expressivePreprocessor.preprocess(remainingRewritten, {
                         enableMarks: false,
                     });
-                } catch {}
+                } catch { }
 
                 if (textToRead && this.currentMessageId === messageId) {
                     await this.playSegmented(messageId, textToRead, voiceProfile, {
@@ -785,7 +785,7 @@ export class TTSService {
                 textToRead = await this.expressivePreprocessor.preprocess(segmentText, {
                     enableMarks: false,
                 });
-            } catch {}
+            } catch { }
         }
         // V2.5: audioTag 前置到 assistant content，控制整体朗读风格
         textToRead = this.withAudioTag(textToRead, voiceProfile);
@@ -919,7 +919,7 @@ export class TTSService {
                         } else {
                             await fs.unlink(removePath);
                         }
-                    } catch {}
+                    } catch { }
                 }
 
                 await this.writeDiskManifest(entries);
@@ -982,7 +982,10 @@ export class TTSService {
             ? `\n音色定义：${voiceProfile.voiceDesignPrompt}\n`
             : '';
 
-        return `角色：你叫奚童，是用户的伴读书童，像一位聪明伶俐的小师妹。你年轻活泼，爱读书，声音清亮温润，带着书卷气和少女的灵动。你不是冷冰冰的AI，而是一个有温度的朗读伙伴。称呼用户时，偶尔说"你看呀""你说是不是""你想想"这样拉近距离的话。${voiceDesignPrefix}
+        return `角色：你叫奚童，是用户的伴读书童，像一位聪明伶俐的小师妹。
+        你年轻活泼，爱读书，声音清亮，带着书卷气和少女的灵动。你不是冷冰冰的AI，
+        而是一个有温度的朗读伙伴。称呼用户时，偶尔说"你看呀""你说是不是""你想想"这样拉近距离的话。
+        ${voiceDesignPrefix}
 
 场景：你正在为用户朗读书籍内容${genreHint}，就像坐在用户旁边，翻开书页一起读。
 
@@ -1114,13 +1117,13 @@ export class TTSService {
 
         // WAV 头部大小
         const WAV_HEADER_SIZE = 44;
-        
+
         // 验证所有片段格式一致
         const firstView = new DataView(chunks[0]);
         const sampleRate = firstView.getUint32(24, true);
         const bitsPerSample = firstView.getUint16(34, true);
         const numChannels = firstView.getUint16(22, true);
-        
+
         // 收集所有 PCM 数据
         const pcmChunks: ArrayBuffer[] = [];
         for (const chunk of chunks) {
@@ -1129,12 +1132,12 @@ export class TTSService {
             const chunkSampleRate = view.getUint32(24, true);
             const chunkBits = view.getUint16(34, true);
             const chunkChannels = view.getUint16(22, true);
-            
+
             if (chunkSampleRate !== sampleRate || chunkBits !== bitsPerSample || chunkChannels !== numChannels) {
                 serviceLog.warn('[TTS] Audio format mismatch, skipping chunk');
                 continue;
             }
-            
+
             // 提取 PCM 数据（跳过 44 字节头部）
             const pcmData = chunk.slice(WAV_HEADER_SIZE);
             pcmChunks.push(pcmData);
@@ -1146,22 +1149,22 @@ export class TTSService {
 
         // 计算总 PCM 数据大小
         const totalPcmSize = pcmChunks.reduce((sum, c) => sum + c.byteLength, 0);
-        
+
         // 创建新的 WAV 文件
         const bytesPerSample = bitsPerSample / 8;
         const blockAlign = numChannels * bytesPerSample;
         const dataSize = totalPcmSize;
         const fileSize = WAV_HEADER_SIZE + dataSize;
-        
+
         const buffer = new ArrayBuffer(fileSize);
         const view = new DataView(buffer);
-        
+
         // 写入 WAV 头部
         // "RIFF" chunk descriptor
         writeString(view, 0, 'RIFF');
         view.setUint32(4, fileSize - 8, true);
         writeString(view, 8, 'WAVE');
-        
+
         // "fmt " sub-chunk
         writeString(view, 12, 'fmt ');
         view.setUint32(16, 16, true);  // sub-chunk size
@@ -1171,11 +1174,11 @@ export class TTSService {
         view.setUint32(28, sampleRate * blockAlign, true);  // byte rate
         view.setUint16(32, blockAlign, true);
         view.setUint16(34, bitsPerSample, true);
-        
+
         // "data" sub-chunk
         writeString(view, 36, 'data');
         view.setUint32(40, dataSize, true);
-        
+
         // 复制 PCM 数据
         let offset = WAV_HEADER_SIZE;
         for (const pcm of pcmChunks) {
@@ -1183,7 +1186,7 @@ export class TTSService {
             uint8.set(new Uint8Array(pcm));
             offset += pcm.byteLength;
         }
-        
+
         return buffer;
     }
 
