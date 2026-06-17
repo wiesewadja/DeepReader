@@ -112,4 +112,27 @@ describe('MessageList — loading / error / 重试 三态', () => {
             expect(getMessagesContainer().getAttribute('aria-busy')).toBe('false');
         });
     });
+
+    describe('onStreamingEnd 回调', () => {
+        it('notifyStreamingEnd 调用 onStreamingEnd 回调', () => {
+            const mockOnStreamingEnd = vi.fn();
+            const listWithCallback = new MessageList({ onStreamingEnd: mockOnStreamingEnd });
+            
+            listWithCallback.notifyStreamingEnd('msg-1', 'test content');
+            
+            expect(mockOnStreamingEnd).toHaveBeenCalledWith('msg-1', 'test content');
+            
+            listWithCallback.destroy();
+        });
+
+        it('notifyStreamingEnd 在没有回调时不报错', () => {
+            const listWithoutCallback = new MessageList({});
+            
+            expect(() => {
+                listWithoutCallback.notifyStreamingEnd('msg-1', 'test content');
+            }).not.toThrow();
+            
+            listWithoutCallback.destroy();
+        });
+    });
 });
