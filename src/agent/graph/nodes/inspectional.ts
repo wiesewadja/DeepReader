@@ -26,7 +26,7 @@ import { loadTreeJson } from '../utils/tree-loader';
 import { IntentRouter } from '../../router/intent-router.js';
 import { inheritDepthOnContinuity } from '../../router/continuity-guard.js';
 import { upgradeToSyntopical } from '../../router/booklist-resolver.js';
-import { verifyExistence } from '../../router/existence-verifier.js';
+import { verifyExistence, needsExistenceCheck } from '../../router/existence-verifier.js';
 import { detectCorrection } from '../utils/correction-detector.js';
 
 const intentRouter = new IntentRouter();
@@ -80,45 +80,25 @@ export async function inspectionalNode(
     initialDepth = ReadingDepth.ANALYTICAL;
   }
 
-  // 5. Existence check (BM25)
-  let antiHallucinationQuery = '';
-  let checkedDepth: ReadingDepth = initialDepth;
-
-  if (toolContext?.book.indexId && toolContext.vault.app) {
-    const existence = await verifyExistence({
-      rawQuery,
-      standaloneQuery: rawQuery,
-      depth: checkedDepth,
-      bookId: toolContext.book.indexId,
-      app: toolContext.vault.app,
-    });
-    checkedDepth = existence.depth;
-    antiHallucinationQuery = existence.antiHallucinationQuery;
-  }
-
-  // 6. Inherit tools follow-up rule
+  // 5. Inherit tools follow-up rule
   const hasNewIntent = rawIntent.detectedIntents.length > 0
     && !rawIntent.detectedIntents.every(i => i === 'general_qa' || i === '闲聊');
   const inheritedTools = (prevTools.length > 0 && !hasNewIntent) ? prevTools : [];
 
-  // 7. Short-circuit: Casual chat or confirmed "not in book"
+  // 6. Short-circuit: Casual chat (pure TS rules)
   const isCasualGreeting = /^(你好|hi|hello|谢谢|thank you|早上好|中午好|下午好|晚上好|再见|bye)\s*[。！？?!]*$/i.test(rawQuery.trim());
   const isShortCasual = rawQuery.trim().length <= 5 && !continuity.didUpgrade && !isCorrection && rawIntent.detectedIntents.includes('闲聊');
 
-  if (isCasualGreeting || isShortCasual || antiHallucinationQuery) {
-    let rewrittenQuery = rawQuery;
-    if (antiHallucinationQuery) {
-      rewrittenQuery = `请直接回答：经检索确认，这本书中并未提及"${antiHallucinationQuery}"相关内容。请简洁回复，说明书中未提及该内容，不要展开讨论或用书中概念去分析它。`;
-    }
-    log(`[S1 Unified] 触发纯 TS 短路返回: isCasualGreeting=${isCasualGreeting}, isShortCasual=${isShortCasual}, antiHallucinationQuery=${antiHallucinationQuery}`);
+  if (isCasualGreeting || isShortCasual) {
+    log(`[S1 Unified] 触发纯 TS 短路返回: isCasualGreeting=${isCasualGreeting}, isShortCasual=${isShortCasual}`);
     return {
       depth: ReadingDepth.CASUAL,
-      rewrittenQuery,
+      rewrittenQuery: rawQuery,
       allowedTools: mergeTools(rawIntent.allowedTools, inheritedTools),
       correctionDetected: isCorrection,
       scopeNodeIds: [],
-      tocSummary: antiHallucinationQuery ? '书内未提及该内容' : '闲聊/常规问答',
-      betterQuestion: rewrittenQuery,
+      tocSummary: '闲聊/常规问答',
+      betterQuestion: rawQuery,
       structuralAnalysis: '',
       suggestedKeywords: [],
       shouldVisualize: false,
@@ -128,7 +108,7 @@ export async function inspectionalNode(
   // Default return when config is incomplete (e.g. testing)
   if (!fastModel || !toolContext) {
     return {
-      depth: checkedDepth,
+      depth: initialDepth,
       rewrittenQuery: rawQuery,
       allowedTools: mergeTools(rawIntent.allowedTools, inheritedTools),
       correctionDetected: isCorrection,
@@ -196,7 +176,7 @@ export async function inspectionalNode(
       log('[S1 Unified] 无法解析 JSON，使用 fallback。原始输出:', text.slice(0, 200));
       const fallbackScope = buildFallbackScope(currentNodeId, citedNodeIds);
       return {
-        depth: checkedDepth || ReadingDepth.ANALYTICAL,
+        depth: initialDepth || ReadingDepth.ANALYTICAL,
         rewrittenQuery: rawQuery,
         allowedTools: mergeTools(rawIntent.allowedTools, inheritedTools),
         correctionDetected: isCorrection,
@@ -213,7 +193,7 @@ export async function inspectionalNode(
     const rawDepth = parsed.depth;
     const validDepths = Object.values(ReadingDepth) as number[];
     let depth: ReadingDepth = validDepths.includes(rawDepth)
-      ? rawDepth : (checkedDepth || ReadingDepth.ANALYTICAL);
+      ? rawDepth : (initialDepth || ReadingDepth.ANALYTICAL);
 
     if (isCorrection && depth < ReadingDepth.ANALYTICAL) {
       depth = ReadingDepth.ANALYTICAL;
@@ -234,9 +214,8 @@ export async function inspectionalNode(
       inheritedTools,
     );
 
-    // Existence verify if LLM pre-marked
-    if (standaloneQuery.startsWith('[ANTI_HALLUCINATION]')) {
-      const cleaned = standaloneQuery.replace('[ANTI_HALLUCINATION]', '').trim();
+    // Post-LLM Existence verify (BM25)
+    if (toolContext.book.indexId && toolContext.vault.app && needsExistenceCheck(rawQuery, standaloneQuery)) {
       const existence = await verifyExistence({
         rawQuery,
         standaloneQuery,
@@ -245,6 +224,7 @@ export async function inspectionalNode(
         app: toolContext.vault.app,
       });
       if (existence.antiHallucinationQuery) {
+        const cleaned = standaloneQuery.replace('[ANTI_HALLUCINATION]', '').trim();
         return {
           depth: ReadingDepth.CASUAL,
           rewrittenQuery: `请直接回答：经检索确认，这本书中并未提及"${existence.antiHallucinationQuery}"相关内容。请简洁回复，说明书中未提及该内容，不要展开讨论或用书中概念去分析它。`,
@@ -301,7 +281,7 @@ export async function inspectionalNode(
     log('[S1 Unified] LLM 调用失败，降级到全局搜索:', err instanceof Error ? err.message : String(err));
     const fallbackScope = buildFallbackScope(currentNodeId, citedNodeIds);
     return {
-      depth: checkedDepth || ReadingDepth.ANALYTICAL,
+      depth: initialDepth || ReadingDepth.ANALYTICAL,
       rewrittenQuery: rawQuery,
       allowedTools: mergeTools(rawIntent.allowedTools, inheritedTools),
       correctionDetected: isCorrection,
