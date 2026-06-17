@@ -21,8 +21,8 @@ export interface VoiceProfile {
 
 /** VoiceDesign 默认音色描述：温柔书伴 */
 export const DEFAULT_VOICE_DESIGN_PROMPT =
-  '一位二十多岁的年轻女性，声音清亮柔和，像一位温柔耐心的读书伙伴。' +
-  '语速中等偏慢，咬字清晰，语调平缓中带着微微的暖意，' +
+  '一位二十多岁的年轻女性，声音清亮，一位温柔活泼的读书伙伴。' +
+  '语速中等偏快，咬字清晰，不急不躁，' +
   '仿佛在安静的午后陪你看书时，轻声为你讲解书中的内容。';
 
 /**
@@ -36,45 +36,45 @@ export const DEFAULT_VOICE_DESIGN_PROMPT =
  */
 function resolveAudioTag(mood: string): string {
   const tags: Record<string, string> = {
-    warm:       '(温暖 活泼 书卷气)',
-    serious:    '(沉稳 清晰 书卷气)',
+    warm: '(温暖 活泼 书卷气)',
+    serious: '(沉稳 清晰 书卷气)',
     melancholy: '(轻柔 忧伤 书卷气)',
-    lively:     '(清亮 活泼 灵动)',
+    lively: '(清亮 活泼 灵动)',
     mysterious: '(低沉 神秘 书卷气)',
-    epic:       '(大气 雄浑 书卷气)',
-    intimate:   '(温柔 轻柔 书卷气)',
+    epic: '(大气 雄浑 书卷气)',
+    intimate: '(温柔 轻柔 书卷气)',
     reflective: '(平和 深沉 书卷气)',
-    neutral:    '(清亮 自然 书卷气)',
+    neutral: '(清亮 自然 书卷气)',
   };
   return tags[mood] || '(清亮 自然 书卷气)';
 }
 
 function resolveSpeedHint(mood: string): string {
   const hints: Record<string, string> = {
-    warm:       '语速中等偏快，娓娓道来。',
-    serious:    '语速中等，沉稳有力。',
+    warm: '语速中等偏快，娓娓道来。',
+    serious: '语速中等，沉稳有力。',
     melancholy: '语速缓慢，略带忧伤的停顿。',
-    lively:    '语速中等偏快，轻快活泼。',
+    lively: '语速中等偏快，轻快活泼。',
     mysterious: '语速缓慢，营造悬疑感。',
-    epic:       '语速中等偏慢，大气磅礴。',
-    intimate:   '语速缓慢，轻声细语。',
+    epic: '语速中等偏慢，大气磅礴。',
+    intimate: '语速缓慢，轻声细语。',
     reflective: '语速中等偏慢，给人思考空间。',
-    neutral:    '语速中等偏快，清晰自然。',
+    neutral: '语速中等偏快，清晰自然。',
   };
   return hints[mood] || '语速中等偏快，清晰自然。';
 }
 
 function resolveMoodHint(mood: string): string {
   const hints: Record<string, string> = {
-    warm:       '整体语调温暖亲切，像和朋友分享读书心得。',
-    serious:    '整体语调严谨认真，像在讲一堂重要的课。',
+    warm: '整体语调温暖亲切，像和朋友分享读书心得。',
+    serious: '整体语调严谨认真，像在讲一堂重要的课。',
     melancholy: '整体语调略带感伤，像在诉说一段往事。',
-    lively:    '整体语调活泼轻快，充满好奇心和热情。',
+    lively: '整体语调活泼轻快，充满好奇心和热情。',
     mysterious: '整体语调低沉神秘，像是在揭示一个秘密。',
-    epic:       '整体语调大气磅礴，像是在讲述一段传奇。',
-    intimate:   '整体语调亲密柔和，像是在耳边轻声细语。',
+    epic: '整体语调大气磅礴，像是在讲述一段传奇。',
+    intimate: '整体语调亲密柔和，像是在耳边轻声细语。',
     reflective: '整体语调平静深沉，像是在独自思索。',
-    neutral:    '整体语调自然平和，不疾不徐。',
+    neutral: '整体语调自然平和，不疾不徐。',
   };
   return hints[mood] || '整体语调自然平和。';
 }
