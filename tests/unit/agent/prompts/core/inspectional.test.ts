@@ -23,7 +23,8 @@ describe('Inspectional Prompt Module', () => {
       const { systemPrompt } = inspectionalPrompt.locales.zh;
       expect(systemPrompt).toContain('<role>');
       expect(systemPrompt).toContain('</role>');
-      expect(systemPrompt).toContain('<task_branch');
+      expect(systemPrompt).toContain('<task>');
+      expect(systemPrompt).toContain('<intent_types>');
       expect(systemPrompt).toContain('<output_format>');
       expect(systemPrompt).toContain('JSON');
     });
@@ -32,7 +33,7 @@ describe('Inspectional Prompt Module', () => {
       const { systemPrompt } = inspectionalPrompt.locales.en!;
       expect(systemPrompt).toContain('<role>');
       expect(systemPrompt).toContain('</role>');
-      expect(systemPrompt).toContain('<task_branch');
+      expect(systemPrompt).toContain('<task>');
       expect(systemPrompt).toContain('<output_format>');
     });
   });

@@ -232,6 +232,8 @@ export interface BookSearchOptionsV2 {
   vaultPath?: string;
   /** Obsidian App 实例，提供时使用 vault.adapter API（桌面端和移动端通用） */
   app?: import('obsidian').App;
+  /** 预计算 query embedding，避免在多关键词检索中重复生成 */
+  precomputedEmbedding?: number[];
 }
 
 /** 匹配片段（聚焦到 block_id 级别） */

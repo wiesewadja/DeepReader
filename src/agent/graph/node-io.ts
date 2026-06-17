@@ -30,8 +30,9 @@ export interface RouterOutput {
 export interface InspectionalInput {
   bookId: string;
   pdfName: string;
-  rewrittenQuery: string;
-  depth: ReadingDepth;
+  messages: BaseMessage[];
+  allowedTools?: string[];
+  crossBookMode?: boolean;
 }
 
 export interface InspectionalOutput {

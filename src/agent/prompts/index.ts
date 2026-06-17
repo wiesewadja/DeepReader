@@ -22,7 +22,6 @@ export type { ChangelogEntry } from './version.js';
 // ===== 显式批量注册 =====
 
 // 核心模块
-import { routerPrompt } from './core/router.js';
 import { inspectionalPrompt } from './core/inspectional.js';
 import { preSearchPrompt } from './core/pre-search.js';
 import { analyticalPrompt } from './core/analytical.js';
@@ -44,7 +43,6 @@ import { promptVersionManager } from './version.js';
 
 /** 所有需要注册的模块列表 */
 const ALL_MODULES = [
-  routerPrompt,
   inspectionalPrompt,
   preSearchPrompt,
   analyticalPrompt,

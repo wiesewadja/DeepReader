@@ -23,29 +23,16 @@ function userHasDiagramIntent(state: CognitiveEngineState): boolean {
 
 /**
  * Route from START node.
- * - proactive: skip router, go directly to inspectional
- * - otherwise: go to router (normal flow)
+ * - No book selected AND not in booklist mode → advisor or casual
+ * - otherwise: go directly to inspectional (which handles routing & chapter selection)
  */
 export function routeFromStart(state: CognitiveEngineState): string {
   const mode = resolveMode(state);
-  if (mode === 'proactive') return NODE_NAMES.INSPECTIONAL;
-  return NODE_NAMES.ROUTER;
-}
-
-/**
- * Route after S0 Router based on classified depth.
- */
-export function routeByDepth(state: CognitiveEngineState): string {
-  // No book selected AND not in booklist mode → advisor or casual
   if (!state.pdfName && !state.crossBookMode) {
-    const mode = resolveMode(state);
     if (mode === 'socratic') return NODE_NAMES.FORMATTER;
     if (state.wereadAvailable) return NODE_NAMES.ADVISOR;
     return NODE_NAMES.FORMATTER;
   }
-  if (state.depth === ReadingDepth.CASUAL) return NODE_NAMES.FORMATTER;
-  // Syntopical (depth=3) skips Inspectional — multi-book search doesn't use single-book TOC analysis
-  if (state.depth === ReadingDepth.SYNTOPICAL) return NODE_NAMES.SYNTOPICAL;
   return NODE_NAMES.INSPECTIONAL;
 }
 
@@ -54,6 +41,7 @@ export function routeByDepth(state: CognitiveEngineState): string {
  *
  * - mode=proactive → visualizer or formatter (ask Socratic question)
  * - mode=socratic → formatter (dialogue mode, skip S2, reuse chatHistory)
+ * - depth=0 (casual) → formatter
  * - depth=3 → S3 (syntopical)
  * - depth=1 + diagram intent → visualizer (use S1's structural analysis)
  * - depth=1 + no diagram → formatter
@@ -69,6 +57,10 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
 
   // Socratic: skip S2, go to formatter with dialogue mode (reuses chatHistory)
   if (mode === 'socratic') {
+    return EDGE_KEYS.DONE;
+  }
+
+  if (state.depth === ReadingDepth.CASUAL) {
     return EDGE_KEYS.DONE;
   }
 

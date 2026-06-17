@@ -9,9 +9,8 @@
 
 import { evalObsidian } from '../../lib/obsidian-cli.mjs';
 
-const EXPECTED_MODULE_COUNT = 18;
+const EXPECTED_MODULE_COUNT = 17;
 const EXPECTED_MODULE_PREFIXES = [
-  'router',
   'inspectional',
   'pre-search',
   'analytical',

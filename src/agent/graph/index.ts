@@ -11,14 +11,13 @@
  */
 
 import { StateGraph, START, END, MemorySaver } from '@langchain/langgraph';
-import { routeFromStart, routeByDepth, routeAfterInspectional, routeAfterPreSearch, routeAfterAnalysis } from './edges';
+import { routeFromStart, routeAfterInspectional, routeAfterPreSearch, routeAfterAnalysis } from './edges';
 import { NODE_NAMES, EDGE_KEYS } from './node-names';
 import { advisorNode } from './nodes/advisor';
 import { analyticalNode } from './nodes/analytical';
 import { preSearchNode } from './nodes/analytical-pre-search';
 import { formatterNode } from './nodes/formatter';
 import { inspectionalNode } from './nodes/inspectional';
-import { routerNode } from './nodes/router';
 import { syntopicalNode } from './nodes/syntopical';
 import { visualizerNode } from './nodes/visualizer';
 import { CognitiveEngineAnnotation } from './state';
@@ -54,7 +53,6 @@ const safeFormatter = safeNode(NODE_NAMES.FORMATTER, formatterNode, (state) => (
 
 // Build the graph
 const workflow = new StateGraph(CognitiveEngineAnnotation)
-  .addNode(NODE_NAMES.ROUTER, routerNode)
   .addNode(NODE_NAMES.INSPECTIONAL, safeInspectional)
   .addNode(NODE_NAMES.PRE_SEARCH, safePreSearch)
   .addNode(NODE_NAMES.ANALYTICAL, safeAnalytical)
@@ -71,14 +69,9 @@ const workflow = new StateGraph(CognitiveEngineAnnotation)
   })))
   .addNode(NODE_NAMES.FORMATTER, safeFormatter)
   .addConditionalEdges(START, routeFromStart, {
-    [NODE_NAMES.ROUTER]: NODE_NAMES.ROUTER,
     [NODE_NAMES.INSPECTIONAL]: NODE_NAMES.INSPECTIONAL,
-  })
-  .addConditionalEdges(NODE_NAMES.ROUTER, routeByDepth, {
     [NODE_NAMES.FORMATTER]: NODE_NAMES.FORMATTER,
-    [NODE_NAMES.INSPECTIONAL]: NODE_NAMES.INSPECTIONAL,
     [NODE_NAMES.ADVISOR]: NODE_NAMES.ADVISOR,
-    [NODE_NAMES.SYNTOPICAL]: NODE_NAMES.SYNTOPICAL,
   })
   .addConditionalEdges(NODE_NAMES.INSPECTIONAL, routeAfterInspectional, {
     [NODE_NAMES.PRE_SEARCH]: NODE_NAMES.PRE_SEARCH,

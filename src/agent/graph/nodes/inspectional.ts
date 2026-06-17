@@ -1,48 +1,124 @@
 /**
- * S1: Inspectional Reading Node — Native LangChain implementation
+ * S1: Inspectional Reading Node - Unified Routing & Inspectional
  *
- * Loads tree.json, selects scope chapters, generates TOC summary.
- * Uses ChatOpenAI and parses JSON from text output
- * (avoids withStructuredOutput which requires json_schema support).
+ * Merges Router S0 and Inspectional S1 into a single node.
+ * Performs regex intent routing, correction detection, continuity guard,
+ * existence verification, and makes a single LLM call for depth classification,
+ * query rewriting, scope selection, and visualization intent.
  */
 
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { RunnableConfig } from '@langchain/core/runnables';
+import type { BaseMessage } from '@langchain/core/messages';
 import { agentLog as log } from '../../../utils/logger.js';
 import { TREE_STRUCTURE_MAX_TEXT_LENGTH, TREE_STRUCTURE_MAX_DEPTH } from '../../config/agent-constants.js';
 import type { InspectionalInput } from '../node-io.js';
 import { formatTreeStructure, buildInspectionalSystemPrompt, buildInspectionalUserMessage } from '../../prompts/utils/index.js';
 import type { CognitiveEngineState } from '../state';
+import { ReadingDepth } from '../state';
 import { extractCitedNodeIds } from '../utils/chapter-reference-parser.js';
 import { extractHumanMessageContents } from '../utils/engine-helpers.js';
 import { extractJSON } from '../utils/parse.js';
 import { enforceScopeHardGuard, buildFallbackScope, formatGuardInjectedLog } from '../utils/scope-guard.js';
-import { loadTreeJson, type OutlineTreeResult } from '../utils/tree-loader';
+import { loadTreeJson } from '../utils/tree-loader';
 
-/**
- * S1 Inspectional node: reads tree.json, selects scope, generates TOC summary.
- *
- * Flow:
- * 1. Load tree.json from .pageindex/{bookId}/
- * 2. Format tree structure for prompt
- * 3. Call fast model and parse JSON from text output
- * 4. Return scope/toc/betterQuestion/structuralAnalysis
- */
+// Router utilities
+import { IntentRouter } from '../../router/intent-router.js';
+import { inheritDepthOnContinuity } from '../../router/continuity-guard.js';
+import { upgradeToSyntopical } from '../../router/booklist-resolver.js';
+import { verifyExistence, needsExistenceCheck } from '../../router/existence-verifier.js';
+import { detectCorrection } from '../utils/correction-detector.js';
+
+const intentRouter = new IntentRouter();
+
+function extractLastHumanMessage(messages: BaseMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.getType() === 'human' && typeof m.content === 'string') {
+      return m.content;
+    }
+  }
+  return '';
+}
+
+function mergeTools(a: string[], b: string[]): string[] {
+  const set = new Set([...a, ...b]);
+  return Array.from(set);
+}
+
 export async function inspectionalNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
-  const { bookId, pdfName: statePdfName, rewrittenQuery, depth }: InspectionalInput = state;
+  const { messages, allowedTools: prevTools = [], pdfName, bookId, crossBookMode } = state;
   const fastModel = config.configurable?.fastModel;
   const toolContext = config.configurable?.toolContext;
+  const chatHistory = config.configurable?.chatHistory ?? [];
+
+  const rawQuery = extractLastHumanMessage(messages);
+
+  // 1. Correction detection
+  const isCorrection = detectCorrection(rawQuery);
+  if (isCorrection) {
+    log(`[S1 Unified] 纠错信号检测: 强制 depth=2 (ANALYTICAL)`);
+  }
+
+  // 2. Continuity check
+  const continuity = inheritDepthOnContinuity(ReadingDepth.CASUAL, rawQuery, chatHistory);
+  let initialDepth: ReadingDepth = ReadingDepth.CASUAL;
+  if (continuity.didUpgrade) {
+    log(`[S1 Unified] 延续性对话检测: 升级 depth 0→2`);
+    initialDepth = ReadingDepth.ANALYTICAL;
+  }
+
+  // 3. Correction override
+  if (isCorrection && initialDepth < ReadingDepth.ANALYTICAL) {
+    initialDepth = ReadingDepth.ANALYTICAL;
+  }
+
+  // 4. Short-circuit: Casual chat — check before heavy IntentRouter analysis
+  const trimmedQuery = rawQuery.trim();
+  const isCasualGreeting = /^(你好|hi|hello|谢谢|thank you|早上好|中午好|下午好|晚上好|再见|bye)\s*[。！？?!]*$/i.test(trimmedQuery);
+  const isPossibleShortCasual = trimmedQuery.length <= 5 && !continuity.didUpgrade && !isCorrection;
+
+  if (isCasualGreeting || isPossibleShortCasual) {
+    log(`[S1 Unified] 触发纯 TS 短路返回: isCasualGreeting=${isCasualGreeting}, isShortCasual=${isPossibleShortCasual}`);
+    return {
+      depth: ReadingDepth.CASUAL,
+      rewrittenQuery: rawQuery,
+      allowedTools: [],
+      correctionDetected: isCorrection,
+      scopeNodeIds: [],
+      tocSummary: '闲聊/常规问答',
+      betterQuestion: rawQuery,
+      structuralAnalysis: '',
+      suggestedKeywords: [],
+      shouldVisualize: false,
+    };
+  }
+
+  // 5. IntentRouter analysis (after short-circuit, only for non-trivial messages)
+  const rawIntent = intentRouter.analyze(rawQuery);
+  log(`[S1 Unified] IntentRouter(raw): intents=${rawIntent.detectedIntents.join(',')}, tools=${rawIntent.allowedTools.join(',')}`);
+
+  // 6. Inherit tools follow-up rule
+  const hasNewIntent = rawIntent.detectedIntents.length > 0
+    && !rawIntent.detectedIntents.every(i => i === 'general_qa' || i === '闲聊');
+  const inheritedTools = (prevTools.length > 0 && !hasNewIntent) ? prevTools : [];
 
   // Default return when config is incomplete (e.g. testing)
   if (!fastModel || !toolContext) {
     return {
+      depth: initialDepth,
+      rewrittenQuery: rawQuery,
+      allowedTools: mergeTools(rawIntent.allowedTools, inheritedTools),
+      correctionDetected: isCorrection,
       scopeNodeIds: [],
       tocSummary: '',
-      betterQuestion: '',
+      betterQuestion: rawQuery,
       structuralAnalysis: '',
+      suggestedKeywords: [],
+      shouldVisualize: false,
     };
   }
 
@@ -50,34 +126,24 @@ export async function inspectionalNode(
   const outlineNodes = await loadTreeJson(
     toolContext.vault.app,
     toolContext.book.indexId || bookId,
-    statePdfName || toolContext.book.pdfName,
+    pdfName || toolContext.book.pdfName,
   );
 
-  if (outlineNodes.length === 0) {
-    return {
-      scopeNodeIds: [],
-      tocSummary: '无法获取目录结构，使用全局搜索。',
-      betterQuestion: rewrittenQuery,
-      structuralAnalysis: '',
-    };
+  let treeText = '无法获取目录结构。';
+  if (outlineNodes.length > 0) {
+    const actualPdfName = pdfName || toolContext.book.pdfName;
+    treeText = formatTreeStructure(outlineNodes, 0, TREE_STRUCTURE_MAX_TEXT_LENGTH, TREE_STRUCTURE_MAX_DEPTH, actualPdfName);
   }
 
-  // Step 2: Format tree structure (include book name in links)
-  const pdfName = statePdfName;
-  const treeText = formatTreeStructure(outlineNodes, 0, TREE_STRUCTURE_MAX_TEXT_LENGTH, TREE_STRUCTURE_MAX_DEPTH, pdfName);
-
-  // Step 3: Build prompt
-  const docDescription = config.configurable?.sharedContext?.toolContext?.book.docDescription;
+  // Step 2: Build prompt
+  const docDescription = toolContext.book.docDescription;
   const recentHistorySummaries = config.configurable?.sharedContext?.recentHistorySummaries;
-  // currentNodeId: 注入用户当前正在阅读的章节，触发 prompt 中的硬约束
-  const currentNodeId = toolContext?.book?.currentNodeId;
-  // citedNodeIds: 提取用户消息中显式引用的章节 nodeId
-  // 既看最新消息，也看 chatHistory（防止前几轮引用被忽略）
-  const allHumanContents = extractHumanMessageContents(state.messages);
+  const currentNodeId = toolContext.book.currentNodeId;
+  const allHumanContents = extractHumanMessageContents(messages);
   const citedNodeIds = extractCitedNodeIds(allHumanContents);
 
   if (currentNodeId || citedNodeIds.length > 0) {
-    log(`[S1 Inspectional] currentNodeId=${currentNodeId || '(none)'}, citedNodeIds=[${citedNodeIds.join(',')}]`);
+    log(`[S1 Unified] currentNodeId=${currentNodeId || '(none)'}, citedNodeIds=[${citedNodeIds.join(',')}]`);
   }
 
   const quality = outlineNodes.quality;
@@ -85,8 +151,7 @@ export async function inspectionalNode(
 
   const systemPrompt = buildInspectionalSystemPrompt(
     treeText,
-    statePdfName || '',
-    depth,
+    pdfName || toolContext.book.pdfName || '',
     docDescription,
     currentNodeId,
     citedNodeIds,
@@ -94,12 +159,11 @@ export async function inspectionalNode(
     qualityReason
   );
   const userMessage = buildInspectionalUserMessage(
-    rewrittenQuery,
-    depth,
+    rawQuery,
     recentHistorySummaries,
   );
 
-  // Step 4: Call fast model and parse JSON from text
+  // Step 3: Call fast model and parse JSON from text
   try {
     const response = await fastModel.invoke([
       new SystemMessage(systemPrompt),
@@ -110,53 +174,124 @@ export async function inspectionalNode(
     const parsed = extractJSON(text);
 
     if (!parsed) {
-      log('[S1 Inspectional] 无法解析 JSON，降级到全局搜索。原始输出:', text.slice(0, 200));
-      // 即使降级到全局搜索，也要兜底注入 current chapter + cited chapters
+      log('[S1 Unified] 无法解析 JSON，使用 fallback。原始输出:', text.slice(0, 200));
       const fallbackScope = buildFallbackScope(currentNodeId, citedNodeIds);
       return {
+        depth: initialDepth || ReadingDepth.ANALYTICAL,
+        rewrittenQuery: rawQuery,
+        allowedTools: mergeTools(rawIntent.allowedTools, inheritedTools),
+        correctionDetected: isCorrection,
         scopeNodeIds: fallbackScope,
-        tocSummary: '无法解析目录范围，使用全局搜索。',
-        betterQuestion: rewrittenQuery,
+        tocSummary: '无法解析大模型规划，进行全局搜索。',
+        betterQuestion: rawQuery,
         structuralAnalysis: '',
         suggestedKeywords: [],
+        shouldVisualize: false,
       };
     }
 
-    // === Scope hard-guard (see utils/scope-guard.ts docstring for rationale) ===
-    const llmScope: string[] = Array.isArray(parsed.scopeNodeIds)
-      ? parsed.scopeNodeIds.filter((id): id is string => typeof id === 'string')
-      : [];
-    const excludedReason = typeof parsed.excludedCurrentChapter === 'string'
-      ? parsed.excludedCurrentChapter.trim()
-      : '';
-    const guardResult = enforceScopeHardGuard(
-      llmScope,
-      currentNodeId,
-      citedNodeIds,
-      excludedReason,
-    );
-    if (guardResult.injected.length > 0) {
-      log(`[S1 Inspectional] Scope hard-guard injected ${guardResult.injected.length} ids: ${formatGuardInjectedLog(guardResult.injected)}`);
+    // Determine depth
+    const rawDepth = parsed.depth;
+    const validDepths = Object.values(ReadingDepth) as number[];
+    let depth: ReadingDepth = validDepths.includes(rawDepth)
+      ? rawDepth : (initialDepth || ReadingDepth.ANALYTICAL);
+
+    if (isCorrection && depth < ReadingDepth.ANALYTICAL) {
+      depth = ReadingDepth.ANALYTICAL;
     }
 
+    let standaloneQuery = parsed.better_question || rawQuery;
+    log(`[S1 Unified] LLM response: depth=${rawDepth} (effective=${depth}), reason="${parsed.reason || '(none)'}", query="${standaloneQuery.slice(0, 80)}"`);
+
+    // Upgrade to Syntopical if applicable
+    const hasBooklist = (toolContext.crossBook?.booklistBookIds?.length ?? 0) > 0 || crossBookMode;
+    const syntopical = upgradeToSyntopical(depth, !!hasBooklist);
+    const effectiveDepth = syntopical.depth;
+
+    // IntentRouter on rewritten query
+    const rewrittenIntent = intentRouter.analyze(standaloneQuery);
+    const finalTools = mergeTools(
+      mergeTools(rawIntent.allowedTools, rewrittenIntent.allowedTools),
+      inheritedTools,
+    );
+
+    // Post-LLM Existence verify (BM25)
+    if (toolContext.book.indexId && toolContext.vault.app && needsExistenceCheck(rawQuery, standaloneQuery)) {
+      const existence = await verifyExistence({
+        rawQuery,
+        standaloneQuery,
+        depth: effectiveDepth,
+        bookId: toolContext.book.indexId,
+        app: toolContext.vault.app,
+      });
+      if (existence.antiHallucinationQuery) {
+        const cleaned = standaloneQuery.replace('[ANTI_HALLUCINATION]', '').trim();
+        return {
+          depth: ReadingDepth.CASUAL,
+          rewrittenQuery: `请直接回答：经检索确认，这本书中并未提及"${existence.antiHallucinationQuery}"相关内容。请简洁回复，说明书中未提及该内容，不要展开讨论或用书中概念去分析它。`,
+          allowedTools: finalTools,
+          correctionDetected: isCorrection,
+          scopeNodeIds: [],
+          tocSummary: '书内未提及该内容',
+          betterQuestion: cleaned,
+          structuralAnalysis: '',
+          suggestedKeywords: [],
+          shouldVisualize: false,
+        };
+      }
+    }
+
+    // === Scope hard-guard ===
+    let finalScope: string[] = [];
+    if (effectiveDepth === ReadingDepth.ANALYTICAL) {
+      const llmScope: string[] = Array.isArray(parsed.scopeNodeIds)
+        ? parsed.scopeNodeIds.filter((id): id is string => typeof id === 'string')
+        : [];
+      const excludedReason = typeof parsed.excludedCurrentChapter === 'string'
+        ? parsed.excludedCurrentChapter.trim()
+        : '';
+      const guardResult = enforceScopeHardGuard(
+        llmScope,
+        currentNodeId,
+        citedNodeIds,
+        excludedReason,
+      );
+      if (guardResult.injected.length > 0) {
+        log(`[S1 Unified] Scope hard-guard injected ${guardResult.injected.length} ids: ${formatGuardInjectedLog(guardResult.injected)}`);
+      }
+      finalScope = guardResult.scope;
+    }
+
+    const shouldVisualize = effectiveDepth !== ReadingDepth.CASUAL && parsed.visualize === true;
+
     return {
-      scopeNodeIds: guardResult.scope,
+      depth: effectiveDepth,
+      rewrittenQuery: standaloneQuery,
+      allowedTools: finalTools,
+      correctionDetected: isCorrection,
+      scopeNodeIds: finalScope,
       tocSummary: parsed.tocSummary ?? '',
-      betterQuestion: parsed.better_question ?? rewrittenQuery,
+      betterQuestion: standaloneQuery,
       structuralAnalysis: parsed.structural_analysis ?? '',
       suggestedKeywords: Array.isArray(parsed.suggested_keywords)
         ? parsed.suggested_keywords.filter((k): k is string => typeof k === 'string')
         : [],
+      shouldVisualize,
     };
   } catch (err) {
-    // Graceful degradation on LLM error
-    log('[S1 Inspectional] LLM 调用失败，降级到全局搜索:', err instanceof Error ? err.message : String(err));
+    log('[S1 Unified] LLM 调用失败，降级到全局搜索:', err instanceof Error ? err.message : String(err));
+    const fallbackScope = buildFallbackScope(currentNodeId, citedNodeIds);
     return {
-      scopeNodeIds: buildFallbackScope(currentNodeId, citedNodeIds),
-      tocSummary: '无法解析目录范围，使用全局搜索。',
-      betterQuestion: rewrittenQuery,
+      depth: initialDepth || ReadingDepth.ANALYTICAL,
+      rewrittenQuery: rawQuery,
+      allowedTools: mergeTools(rawIntent.allowedTools, inheritedTools),
+      correctionDetected: isCorrection,
+      scopeNodeIds: fallbackScope,
+      tocSummary: 'LLM调用失败，降级进行全局搜索。',
+      betterQuestion: rawQuery,
       structuralAnalysis: '',
       suggestedKeywords: [],
+      shouldVisualize: false,
     };
   }
 }

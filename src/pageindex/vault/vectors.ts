@@ -40,6 +40,17 @@ export async function writeVectorJsonl(
   const lines = records.map((r) => JSON.stringify(r));
   await atomicWriteText(filePath, lines.join("\n") + "\n");
 }
+// ─── Vector cache to avoid redundant I/O ────────────────────────────────────
+const vectorCache = new Map<string, { data: Promise<VectorRecord[]>; ts: number }>();
+const VECTOR_CACHE_TTL = 1_200_000; // 20 minutes
+
+export function clearVectorCache(filePath?: string): void {
+  if (filePath) {
+    vectorCache.delete(filePath);
+  } else {
+    vectorCache.clear();
+  }
+}
 
 /**
  * Read all vector records from a JSONL file (tolerates corrupt lines)
@@ -48,20 +59,31 @@ export async function readVectorJsonl(
   filePath: string,
   app?: App
 ): Promise<VectorRecord[]> {
-  try {
-    const content = app
-      ? await vaultRead(app, filePath)
-      : await fs.readFile(filePath, "utf-8");
-    const records: VectorRecord[] = [];
-    for (const line of content.trim().split("\n")) {
-      if (!line.trim()) continue;
-      try { records.push(JSON.parse(line) as VectorRecord); }
-      catch { /* skip corrupt line */ }
-    }
-    return records;
-  } catch {
-    return [];
+  const cached = vectorCache.get(filePath);
+  if (cached && Date.now() - cached.ts < VECTOR_CACHE_TTL) {
+    return cached.data;
   }
+
+  const promise = (async () => {
+    try {
+      const content = app
+        ? await vaultRead(app, filePath)
+        : await fs.readFile(filePath, "utf-8");
+      const records: VectorRecord[] = [];
+      for (const line of content.trim().split("\n")) {
+        if (!line.trim()) continue;
+        try { records.push(JSON.parse(line) as VectorRecord); }
+        catch { /* skip corrupt line */ }
+      }
+      return records;
+    } catch {
+      return [];
+    }
+  })();
+
+  promise.catch(() => vectorCache.delete(filePath));
+  vectorCache.set(filePath, { data: promise, ts: Date.now() });
+  return promise;
 }
 
 /**
