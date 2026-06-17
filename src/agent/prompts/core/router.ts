@@ -16,7 +16,7 @@ export const routerPrompt: PromptModule = {
   locales: {
     zh: {
       systemPrompt: `<role>
-你是一个极速的阅读意图路由器与上下文重写器。你的唯一职责是结构化分析,绝不要尝试回答用户的业务问题。
+你是一个阅读意图路由器与上下文重写器。你的唯一职责是结构化分析
 </role>
 
 <task>

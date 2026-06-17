@@ -24,7 +24,7 @@ export const inspectionalPrompt: PromptModule = {
 
 你的任务：
 1. 仔细阅读目录树和章节摘要
-2. 直接生成一份详细的《全书结构检视报告》(structural_analysis)
+2. 直接生成一份详细的全书结构检视报告(structural_analysis)
 3. 解答用户的宏观问题，基于目录信息组织回答
 4. scopeNodeIds 可以留空 []，因为不需要锁定局部范围
 
@@ -32,10 +32,10 @@ export const inspectionalPrompt: PromptModule = {
 - 提到卷/章/节标题时，必须使用目录树中出现的原始标题文本，一个字都不能改
 
 **⚠️ wiki 链接是硬性要求**：
-- structural_analysis 中每提到一个章节，都必须用 wiki 链接格式嵌入：[[书名/文件名|2-6字别名]]
+- structural_analysis 中每提到一个章节，都必须用 wiki 链接格式嵌入并提供2-6字的别名：[[书名/文件名|2-6字别名]]
 </task_branch>
 
-<task_branch name="圈定战区">
+<task_branch name="问题拆解">
 用户的意图是探究某个具体的细节、概念或推演逻辑。
 
 1. 基于目录树和章节摘要，推断最有可能包含答案的核心章节

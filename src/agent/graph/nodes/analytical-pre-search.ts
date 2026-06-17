@@ -331,7 +331,7 @@ export async function preSearchNode(
       }
       return maxScore;
     }
-    const SUBSTANTIVE_THRESHOLD = 30;
+    const SUBSTANTIVE_THRESHOLD = 40;
     const substantiveScore = computeSubstantiveScore();
 
     if (wScore >= earlyStopThreshold && hits.length >= 2 && substantiveScore >= SUBSTANTIVE_THRESHOLD
@@ -367,7 +367,23 @@ export async function preSearchNode(
         }))
       );
 
-      const verifyResult = await verifyAndCleanContent(directContent, preSearchRecords);
+      const verifyResult = await verifyAndCleanContent(directContent, preSearchRecords, {
+        llmClient: {
+          chat: async (promptText: string) => {
+            const resp = await mainModel.invoke([
+              new HumanMessage(promptText),
+            ], config);
+            return typeof resp.content === 'string'
+              ? resp.content
+              : Array.isArray(resp.content)
+                ? (resp.content as { type: string; text: string }[])
+                    .filter(c => c.type === 'text')
+                    .map(c => c.text)
+                    .join('')
+                : '';
+          }
+        }
+      });
 
       return {
         validatedScopeNodeIds: finalScopeNodeIds,
