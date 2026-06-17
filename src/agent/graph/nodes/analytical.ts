@@ -90,8 +90,9 @@ export async function analyticalNode(
     ? `${preSearchBlock}\n\n${rawUserMessage || ''}`
     : rawUserMessage || '';
 
-  // Create scoped tools
-  const allTools = createLangChainTools(toolContext);
+  // Create scoped tools (with cached queryVector for reuse)
+  const updatedToolContext = { ...toolContext, queryVector: state.queryVector };
+  const allTools = createLangChainTools(updatedToolContext);
   const s2ToolNames = ['search_book', 'read_book_section'];
   const s2Tools = allTools.filter(t => s2ToolNames.includes(t.name));
 

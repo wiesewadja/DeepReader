@@ -5,19 +5,24 @@ import { buildProactiveSystemPrompt, buildSocraticDialoguePrompt, buildSocraticD
 
 describe('proactive edge routing', () => {
   describe('routeFromStart', () => {
-    it('routes to inspectional when mode=proactive', () => {
-      const state = { mode: 'proactive', depth: 1 } as any;
+    it('routes to inspectional when mode=proactive and book selected', () => {
+      const state = { mode: 'proactive', depth: 1, pdfName: 'test.pdf' } as any;
       expect(routeFromStart(state)).toBe(NODE_NAMES.INSPECTIONAL);
     });
 
-    it('routes to router when mode=normal', () => {
-      const state = { mode: 'normal' } as any;
-      expect(routeFromStart(state)).toBe(NODE_NAMES.ROUTER);
+    it('routes to inspectional when mode=normal and book selected', () => {
+      const state = { mode: 'normal', pdfName: 'test.pdf' } as any;
+      expect(routeFromStart(state)).toBe(NODE_NAMES.INSPECTIONAL);
     });
 
-    it('routes to router when mode is undefined', () => {
-      const state = {} as any;
-      expect(routeFromStart(state)).toBe(NODE_NAMES.ROUTER);
+    it('routes to inspectional when mode is undefined and book selected', () => {
+      const state = { pdfName: 'test.pdf' } as any;
+      expect(routeFromStart(state)).toBe(NODE_NAMES.INSPECTIONAL);
+    });
+
+    it('routes to formatter when no book selected', () => {
+      const state = { mode: 'normal' } as any;
+      expect(routeFromStart(state)).toBe(NODE_NAMES.FORMATTER);
     });
   });
 
@@ -58,18 +63,6 @@ describe('proactive edge routing', () => {
     it('mode=normal routes to pre_search', () => {
       const state = { mode: 'normal', depth: 2, structuralAnalysis: '...' } as any;
       expect(routeAfterInspectional(state)).toBe(NODE_NAMES.PRE_SEARCH);
-    });
-  });
-
-  describe('routeByDepth — unchanged', () => {
-    it('still routes depth=0 to formatter', () => {
-      const state = { depth: 0 } as any;
-      expect(routeByDepth(state)).toBe(NODE_NAMES.FORMATTER);
-    });
-
-    it('still routes depth>=1 to inspectional', () => {
-      const state = { depth: 2, pdfName: 'test.pdf' } as any;
-      expect(routeByDepth(state)).toBe(NODE_NAMES.INSPECTIONAL);
     });
   });
 });

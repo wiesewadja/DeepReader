@@ -186,6 +186,10 @@ export const searchBookTool: ToolExecutor = {
         app,
       };
 
+      if (context.queryVector) {
+        baseOptions.precomputedEmbedding = context.queryVector;
+      }
+
       if (indexId) {
         baseOptions.bookId = indexId;
       } else {

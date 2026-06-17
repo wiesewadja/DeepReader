@@ -39,6 +39,7 @@ import { getOrGenerateEmbedding } from "./vault/embedding-cache.js";
 import type { RerankerOptions } from "./vault/types.js";
 import {
   cosineSearchJsonl,
+  clearVectorCache,
 } from "./vault/vectors.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -52,7 +53,30 @@ interface ChunkHit {
 // ─── Index file cache (avoids redundant disk reads in multi-keyword RRF) ─────
 
 const indexCache = new Map<string, { data: any; ts: number }>();
-const INDEX_CACHE_TTL = 60_000; // 1 minute
+const INDEX_CACHE_TTL = 1_200_000; // 20 minutes (covers active conversational sessions)
+const MAX_CACHED_BOOKS = 3;
+const cachedBookQueue: string[] = [];
+
+function touchBookCache(indexDir: string, app?: App) {
+  const idx = cachedBookQueue.indexOf(indexDir);
+  if (idx !== -1) {
+    cachedBookQueue.splice(idx, 1);
+  }
+  cachedBookQueue.push(indexDir);
+
+  if (cachedBookQueue.length > MAX_CACHED_BOOKS) {
+    const evictedDir = cachedBookQueue.shift();
+    if (evictedDir) {
+      indexCache.delete(`tree:${evictedDir}`);
+      indexCache.delete(`bm25:${evictedDir}`);
+      const vectorsPath = app 
+        ? joinPath(evictedDir, "vectors.jsonl") 
+        : path.join(evictedDir, "vectors.jsonl");
+      clearVectorCache(vectorsPath);
+      piLog(`[book-search-v2] LRU cache evicted book: ${evictedDir}`);
+    }
+  }
+}
 
 function getCached<T>(key: string, loader: () => Promise<T>): Promise<T> {
   const cached = indexCache.get(key);
@@ -122,6 +146,8 @@ export async function searchBookV2(
       "请在 Library 中添加此书籍"
     );
   }
+  // Touch cache to update LRU order
+  touchBookCache(indexDir, app);
 
   // Load tree.json (cached to avoid redundant reads in multi-keyword searches)
   const treeData = await getCached(`tree:${indexDir}`, () => loadTreeJson(indexDir, app));

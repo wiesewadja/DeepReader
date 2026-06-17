@@ -25,6 +25,7 @@ export interface ToolContext {
   mode?: EngineMode;
   proactiveTrigger?: string;
   highlightContext?: string[];
+  queryVector?: number[] | null;
 }
 
 /**

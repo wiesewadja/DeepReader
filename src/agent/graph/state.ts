@@ -101,6 +101,7 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   validatedScopeNodeIds: Annotation<string[]>(overwriteWithDefault([])),
   nodeFileMap: Annotation<Record<string, string>>(overwriteWithDefault({})),
   prevSearchedBlockIds: Annotation<string[]>(overwriteWithDefault([])),
+  queryVector: Annotation<number[] | null>(overwriteWithDefault(null as number[] | null)),
 
   // === S4: Formatter output ===
   formattedOutput: Annotation<string>(),

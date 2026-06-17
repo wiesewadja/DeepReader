@@ -27,6 +27,57 @@ import {
 import { resolveCurrentChapterName, extractHumanMessageContents } from '../utils/engine-helpers.js';
 import { enforceScopeHardGuard, formatGuardInjectedLog } from '../utils/scope-guard.js';
 import { verifyAndCleanContent } from '../utils/self-verification.js';
+import { getOrGenerateEmbedding } from '../../../pageindex/vault/embedding-cache.js';
+import { tokenize } from '../../../pageindex/bm25.js';
+
+
+function computeMaxTheoryBM25(keywords: string[], bm25Index: any): number {
+  if (!bm25Index || !bm25Index.stats || !bm25Index.invertedIndex) {
+    return 10.0;
+  }
+  const { totalDocs, df } = bm25Index.stats;
+  const k1 = bm25Index.params?.k1 ?? 1.5;
+
+  const CJK_STOPWORDS = new Set([
+    '的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一',
+    '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有',
+    '看', '好', '自己', '这', '他', '她', '它', '们', '那', '些', '个', '么',
+    '什么', '如何', '怎么', '为', '与', '及', '等', '被', '从', '把', '让',
+  ]);
+  const uniqueKeywords = Array.from(new Set(keywords.map(k => k.trim()).filter(Boolean)));
+  const queryTokens = uniqueKeywords.filter(t => !CJK_STOPWORDS.has(t));
+
+  let maxTheoryScore = 0;
+  for (const token of queryTokens) {
+    const docFreq = df[token] || 0;
+    if (docFreq === 0) continue;
+    const idf = Math.max(0, Math.log((totalDocs - docFreq + 0.5) / (docFreq + 0.5)));
+    const maxTokenScore = idf * (k1 + 1);
+    maxTheoryScore += maxTokenScore;
+  }
+  return maxTheoryScore || 10.0;
+}
+
+function computeKeywordCoverage(keywords: string[], textContent: string): number {
+  const CJK_STOPWORDS = new Set([
+    '的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一',
+    '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有',
+    '看', '好', '自己', '这', '他', '她', '它', '们', '那', '些', '个', '么',
+    '什么', '如何', '怎么', '为', '与', '及', '等', '被', '从', '把', '让',
+  ]);
+  const uniqueKeywords = Array.from(new Set(keywords.map(k => k.trim()).filter(Boolean)));
+  const queryTokens = uniqueKeywords.filter(t => !CJK_STOPWORDS.has(t));
+  if (queryTokens.length === 0) return 0;
+
+  let matches = 0;
+  const textLower = textContent.toLowerCase();
+  for (const token of queryTokens) {
+    if (textLower.includes(token.toLowerCase())) {
+      matches++;
+    }
+  }
+  return matches / queryTokens.length;
+}
 
 /** 空的 pre-search 返回结构，多处复用 */
 function emptyPreSearchResult(validatedScopeNodeIds: string[] = []): Partial<CognitiveEngineState> {
@@ -217,75 +268,139 @@ export async function preSearchNode(
   const pluginSettings = toolContext.vault.plugin?.settings;
   const earlyStopThreshold = getEarlyStopThreshold(pluginSettings);
 
+  // 本地读取 bm25.json 索引以计算理论最大 BM25 置信度
+  const indexId = toolContext.book.indexId;
+  let bm25Index: any = null;
+  if (indexId && toolContext.vault.app) {
+    try {
+      const bm25Path = `${PAGEINDEX_DIR}/${indexId}/bm25.json`;
+      const bm25Content = await toolContext.vault.app.vault.adapter.read(bm25Path);
+      bm25Index = JSON.parse(bm25Content);
+    } catch (err) {
+      log(`[S2-Pre] 读取 bm25.json 索引失败:`, err);
+    }
+  }
+
+  let queryVector: number[] | null = null;
   try {
-    const embeddingRole = pluginSettings ? resolveRoleConfig('embedding', pluginSettings) : null;
-    const rerankerRole = pluginSettings ? resolveRoleConfig('reranker', pluginSettings) : null;
-    const rerankerWeight = pluginSettings?.rerankerWeight ?? 0.7;
+    const uniqueKeywords = [...new Set(stateKeywords.map(k => k.trim()).filter(Boolean))];
+    const limitedKeywords = uniqueKeywords.slice(0, 5);
 
     // #6: 动态 topK — 事实性短查询用少量精确结果，概念性长查询提高召回
     const queryText = stateBetterQuestion || stateQuery || ctx?.rawUserQuery || '';
     const queryLen = queryText.length;
     const dynamicTopK = queryLen < 8 ? 5 : queryLen > 30 ? 15 : 10;
 
-    const baseSearchOpts: Omit<BookSearchOptionsV2, 'query'> = {
+    const bm25SearchOpts: BookSearchOptionsV2 = {
       filePath: '',
       topK: dynamicTopK,
-      embedding: embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined,
-      reranker: rerankerRole ? toRerankerOptions(rerankerRole, rerankerWeight) : undefined,
       scopeNodeIds: finalScopeNodeIds.length > 0 ? finalScopeNodeIds : undefined,
       app: toolContext.vault.app,
+      bookId: toolContext.book.indexId || undefined,
+      query: '', // 将在检索中被替换
     };
-    if (toolContext.book.indexId) {
-      baseSearchOpts.bookId = toolContext.book.indexId;
-    }
 
-    // Deduplicate and limit keywords (S1 may produce overlapping terms)
-    const uniqueKeywords = [...new Set(stateKeywords.map(k => k.trim()).filter(Boolean))];
-    const limitedKeywords = uniqueKeywords.slice(0, 5);
-    const preSearchRunnable = RunnableLambda.from(
-      async () => {
-        const subResults = await Promise.all(
-          limitedKeywords.map(async (kw) => {
-            try {
-              return await searchBookV2({ ...baseSearchOpts, query: kw });
-            } catch (err) {
-              log(`[S2-Pre] Keyword search failed for "${kw}":`, err instanceof Error ? err.message : String(err));
-              return [];
-            }
-          })
-        );
+    // 辅助函数：针对指定选项和关键词并发检索并合并
+    async function runSearchAndFusion(opts: BookSearchOptionsV2): Promise<BookSearchResultV2[]> {
+      const subResults = await Promise.all(
+        limitedKeywords.map(async (kw) => {
+          try {
+            return await searchBookV2({ ...opts, query: kw });
+          } catch (err) {
+            log(`[S2-Pre] Keyword search failed for "${kw}":`, err instanceof Error ? err.message : String(err));
+            return [];
+          }
+        })
+      );
 
-        const mergedMap = new Map<string, { result: BookSearchResultV2; hitCount: number }>();
-        for (const results of subResults) {
-          for (const r of results) {
-            const existing = mergedMap.get(r.nodeId);
-            if (existing) {
-              existing.hitCount++;
-              if (r.score > existing.result.score) existing.result = r;
-            } else {
-              mergedMap.set(r.nodeId, { result: r, hitCount: 1 });
-            }
+      const mergedMap = new Map<string, { result: BookSearchResultV2; hitCount: number }>();
+      for (const results of subResults) {
+        for (const r of results) {
+          const existing = mergedMap.get(r.nodeId);
+          if (existing) {
+            existing.hitCount++;
+            if (r.score > existing.result.score) existing.result = r;
+          } else {
+            mergedMap.set(r.nodeId, { result: r, hitCount: 1 });
           }
         }
-        return Array.from(mergedMap.values())
-          .sort((a, b) => {
-            let scoreA = a.result.score + a.hitCount * 0.1;
-            let scoreB = b.result.score + b.hitCount * 0.1;
-            if (currentNodeId && a.result.nodeId === currentNodeId) scoreA += 0.2;
-            if (currentNodeId && b.result.nodeId === currentNodeId) scoreB += 0.2;
-            return scoreB - scoreA;
-          })
-          .map(e => e.result);
       }
-    ).withConfig({ runName: 'pre_search_rrf' });
-    const preResults = await preSearchRunnable.invoke({}, { callbacks: config.callbacks });
-
-    if (!Array.isArray(preResults) || preResults.length < 2) {
-      log(`[S2-Pre] 预检索结果不足 (${Array.isArray(preResults) ? preResults.length : 0} 条), 跳过注入`);
-      return emptyPreSearchResult(finalScopeNodeIds);
+      return Array.from(mergedMap.values())
+        .sort((a, b) => {
+          let scoreA = a.result.score + a.hitCount * 0.1;
+          let scoreB = b.result.score + b.hitCount * 0.1;
+          if (currentNodeId && a.result.nodeId === currentNodeId) scoreA += 0.2;
+          if (currentNodeId && b.result.nodeId === currentNodeId) scoreB += 0.2;
+          return scoreB - scoreA;
+        })
+        .map(e => e.result);
     }
 
-    const hits = preResults.slice(0, 3).map(r => ({
+    // --- 阶段一：本地快速字面秒杀 (仅跑 BM25，无 Embedding, 无 Reranker) ---
+    let bm25Results = await runSearchAndFusion(bm25SearchOpts);
+    let finalHits = bm25Results;
+    queryVector = null;
+    let isEarlyStopped = false;
+
+    if (bm25Results.length >= 2) {
+      const top1 = bm25Results[0];
+      const maxTheoryScore = computeMaxTheoryBM25(limitedKeywords, bm25Index);
+      const confidence = top1.score / maxTheoryScore;
+      const coverage = computeKeywordCoverage(limitedKeywords, top1.matchedBlocks.map(b => b.content).join(' '));
+
+      // 提取 Top-1 的实质性分数作为局部质量检测
+      const top1SubstantiveScore = (top1.matchedBlocks[0]?.blockId ? 20 : 0)
+        + Math.min((top1.matchedBlocks[0]?.content.length || 0) / 10, 30)
+        + ((top1.matchedBlocks[0]?.content.length || 0) > 20 ? 15 : 0);
+
+      // 字面秒杀早停：置信度高且覆盖高，且正文质量好且未被 L5 强拦
+      if (confidence >= 0.7 && coverage >= 0.8 && top1SubstantiveScore >= 40 && !l5ForcesAnalytical) {
+        log(`[S2-Pre] 触发本地字面秒杀早停: confidence=${confidence.toFixed(2)}, coverage=${coverage.toFixed(2)}, top1.score=${top1.score.toFixed(2)}`);
+        finalHits = bm25Results;
+        isEarlyStopped = true;
+      } else if (confidence >= 0.25) {
+        // --- 阶段二：动态语义升级 (处于字面灰色区间，拉取 Embedding 进行向量重排核实) ---
+        log(`[S2-Pre] 字面置信度中等 (${confidence.toFixed(2)}), 启动网络向量检索重排`);
+        const embeddingRole = pluginSettings ? resolveRoleConfig('embedding', pluginSettings) : null;
+        const rerankerRole = pluginSettings ? resolveRoleConfig('reranker', pluginSettings) : null;
+        const rerankerWeight = pluginSettings?.rerankerWeight ?? 0.7;
+
+        if (embeddingRole) {
+          try {
+            const queryText = stateBetterQuestion || stateQuery || ctx?.rawUserQuery || '';
+            const embOpts = toEmbeddingOptions(embeddingRole);
+            queryVector = await getOrGenerateEmbedding(queryText, embOpts);
+          } catch (embErr) {
+            log(`[S2-Pre] 动态生成 Query 向量失败:`, embErr);
+          }
+        }
+
+        const hybridOpts: BookSearchOptionsV2 = {
+          ...bm25SearchOpts,
+          embedding: embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined,
+          reranker: rerankerRole ? toRerankerOptions(rerankerRole, rerankerWeight) : undefined,
+        };
+
+        if (queryVector) {
+          (hybridOpts as any).precomputedEmbedding = queryVector;
+        }
+
+        const hybridResults = await runSearchAndFusion(hybridOpts);
+        if (hybridResults.length >= 2) {
+          finalHits = hybridResults;
+        }
+      }
+    }
+
+    if (!Array.isArray(finalHits) || finalHits.length < 2) {
+      log(`[S2-Pre] 预检索结果不足 (${Array.isArray(finalHits) ? finalHits.length : 0} 条), 跳过注入`);
+      return {
+        ...emptyPreSearchResult(finalScopeNodeIds),
+        queryVector,
+      };
+    }
+
+    const hits = finalHits.slice(0, 3).map(r => ({
       node_id: r.nodeId,
       title: r.title,
       file_name: r.fileName,
@@ -306,16 +421,12 @@ export async function preSearchNode(
       });
     }
 
-    // 4. Early stop check
-    // #1: 加权 avgScore — Top-1 占 60%, Top-2 占 30%, Top-3 占 10%
+    // 4. Early stop check (weighted score and substantive score)
     const wScore = hits[0].score * 0.6
       + (hits[1]?.score ?? 0) * 0.3
       + (hits[2]?.score ?? 0) * 0.1;
 
-    // #3: 连续性实质性分数（0-100），替代原来的二元 hasSubstantiveBlocks
-    // 考虑: block_id 非空 +20, 内容长度每 10 字 +1(上限+30), 非空壳 +15
     function computeSubstantiveScore(): number {
-      // 所有 block_id 均为空 → 纯标题回退，直接返回 0
       if (hits.every(h => h.matched_blocks.every(b => !b.block_id))) {
         return 0;
       }
@@ -331,15 +442,20 @@ export async function preSearchNode(
       }
       return maxScore;
     }
-    const SUBSTANTIVE_THRESHOLD = 30;
+    const SUBSTANTIVE_THRESHOLD = 40; // 调升至 40，限制过于简短的正文碎片触发早停
     const substantiveScore = computeSubstantiveScore();
 
-    if (wScore >= earlyStopThreshold && hits.length >= 2 && substantiveScore >= SUBSTANTIVE_THRESHOLD
-        && !l5ForcesAnalytical) {
-      log(`[S2-Pre] 早停: wScore=${wScore.toFixed(2)} >= ${earlyStopThreshold}, substantive=${substantiveScore}, 跳过 ReAct`);
+    const shouldEarlyStop = isEarlyStopped || (
+      wScore >= earlyStopThreshold 
+      && hits.length >= 2 
+      && substantiveScore >= SUBSTANTIVE_THRESHOLD
+      && !l5ForcesAnalytical
+    );
+
+    if (shouldEarlyStop) {
+      log(`[S2-Pre] 早停: isEarlyStopped=${isEarlyStopped}, wScore=${wScore.toFixed(2)} >= ${earlyStopThreshold}, substantive=${substantiveScore}, 跳过 ReAct`);
 
       const blockLines = formatBlockLines(hits);
-
       const userQuery = stateBetterQuestion || stateQuery || ctx?.rawUserQuery || '';
       const directPrompt = buildEarlyStopPrompt(fullSystemPrompt, blockLines, userQuery);
 
@@ -367,7 +483,24 @@ export async function preSearchNode(
         }))
       );
 
-      const verifyResult = await verifyAndCleanContent(directContent, preSearchRecords);
+      // 核验核准并开启 LLM 纠正支持（注入 mainModel)
+      const verifyResult = await verifyAndCleanContent(directContent, preSearchRecords, {
+        llmClient: {
+          chat: async (promptText: string) => {
+            const resp = await mainModel.invoke([
+              new HumanMessage(promptText),
+            ], config);
+            return typeof resp.content === 'string'
+              ? resp.content
+              : Array.isArray(resp.content)
+                ? (resp.content as { type: string; text: string }[])
+                    .filter(c => c.type === 'text')
+                    .map(c => c.text)
+                    .join('')
+                : '';
+          }
+        }
+      });
 
       return {
         validatedScopeNodeIds: finalScopeNodeIds,
@@ -376,6 +509,7 @@ export async function preSearchNode(
         analysisResult: verifyResult.content,
         toolResultsSnapshot: preSearchRecords,
         verifiedFullBookHits,
+        queryVector,
       };
     }
 
@@ -395,18 +529,16 @@ export async function preSearchNode(
     const mergedBlockIds = [...new Set([...existingBlockIds, ...preSearchBlockIds])];
 
     const mainPreSearchBlock = `<pre_search_results>
-基于目录分析自动检索到的相关段落（共 ${preResults.length} 条，取前 ${hits.length} 条），请优先利用。不够可用 search_book 补充。
+基于目录分析自动检索到的相关段落（共 ${finalHits.length} 条，取前 ${hits.length} 条），请优先利用。不够可用 search_book 补充。
 
 ${blockLines.join('\n\n')}
 </pre_search_results>`;
 
-    // L5 注入：把全量书库复核命中的 hits 放在 main pre-search 之前，
-    // 让 S2 ReAct 看到「之前 S2 答错了，但全量复核已找到证据」的上下文。
     const preSearchBlock = l5ForcesAnalytical
       ? `${formatVerifiedFullBookBlock(verifiedFullBookHits)}\n\n${mainPreSearchBlock}`
       : mainPreSearchBlock;
 
-    log(`[S2-Pre] 预检索注入: ${preResults.length} 条结果, wScore=${wScore.toFixed(2)}, substantive=${substantiveScore}, ${stateKeywords.length} 个关键词, ${mergedBlockIds.length} 个 block_id 已标记, L5=${verifiedFullBookHits.length}`);
+    log(`[S2-Pre] 预检索注入: ${finalHits.length} 条结果, wScore=${wScore.toFixed(2)}, substantive=${substantiveScore}, ${stateKeywords.length} 个关键词, ${mergedBlockIds.length} 个 block_id 已标记, L5=${verifiedFullBookHits.length}`);
 
     return {
       validatedScopeNodeIds: finalScopeNodeIds,
@@ -416,9 +548,13 @@ ${blockLines.join('\n\n')}
       toolResultsSnapshot: [],
       prevSearchedBlockIds: mergedBlockIds,
       verifiedFullBookHits,
+      queryVector,
     };
   } catch (err) {
-    log('[S2-Pre] 预检索失败 (非致命):', err instanceof Error ? err.message : String(err));
-    return emptyPreSearchResult(finalScopeNodeIds);
+    console.error('[S2-Pre] 预检索失败:', err);
+    return {
+      ...emptyPreSearchResult(finalScopeNodeIds),
+      queryVector,
+    };
   }
 }

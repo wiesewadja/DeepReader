@@ -123,16 +123,19 @@ describe('HITL Interrupt in Graph Nodes', () => {
   });
 });
 
-// === Test: Edge routing ===
-
 describe('Graph Edge Routing', () => {
-  it('should route depth=0 to formatter (casual → S4)', async () => {
-    const { routeByDepth } = await import('@/agent/graph/edges.js');
-    expect(routeByDepth({ depth: 0 } as any)).toBe('formatter');
+  it('should route start to inspectional when book selected', async () => {
+    const { routeFromStart } = await import('@/agent/graph/edges.js');
+    expect(routeFromStart({ pdfName: 'test.pdf' } as any)).toBe('inspectional');
   });
 
-  it('should route depth=2 to inspectional (scope narrowing before analytical)', async () => {
-    const { routeByDepth } = await import('@/agent/graph/edges.js');
-    expect(routeByDepth({ depth: 2, pdfName: 'test.pdf' } as any)).toBe('inspectional');
+  it('should route after inspectional for depth=0 (casual) to done/formatter', async () => {
+    const { routeAfterInspectional } = await import('@/agent/graph/edges.js');
+    expect(routeAfterInspectional({ depth: 0 } as any)).toBe('done');
+  });
+
+  it('should route after inspectional for depth=2 (analytical) to pre-search', async () => {
+    const { routeAfterInspectional } = await import('@/agent/graph/edges.js');
+    expect(routeAfterInspectional({ depth: 2 } as any)).toBe('pre_search');
   });
 });

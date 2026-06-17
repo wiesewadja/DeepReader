@@ -89,7 +89,7 @@ export default {
 						const leaves = app.workspace.getLeavesOfType('deeppdf-sidebar-view');
 						if (leaves.length === 0) return { streaming: false, msgCount: 0 };
 						const view = leaves[0].view;
-						const streaming = view.isAiStreaming;
+						const streaming = view.agentChatCtrl?.aiStreaming ?? view.isAiStreaming ?? false;
 						const msgs = view.messageList?.getMessagesData() || [];
 						const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
 						return {
@@ -99,7 +99,7 @@ export default {
 							lastRole: lastMsg?.role || '',
 						};
 					})()`);
-					if (!state.streaming && state.msgCount > 0 && state.lastRole === 'assistant') {
+					if (!state.streaming && state.msgCount > 0 && state.lastRole === 'assistant' && state.lastContent.trim().length > 0) {
 						response = state.lastContent;
 						break;
 					}
