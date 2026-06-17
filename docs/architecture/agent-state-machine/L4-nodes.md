@@ -1,8 +1,8 @@
 # L4 — 节点层
 
-> 8 个 LangGraph 节点逐一拆解
+> 7 个 LangGraph 节点逐一拆解（S0 Router 已合并到 S1 Inspectional）
 >
-> S0 Router / S1 Inspectional / S2-Pre / S2 Analytical / S3 Syntopical / Advisor / Visualizer / S4 Formatter
+> S1 Inspectional (含 S0 Router) / S2-Pre / S2 Analytical / S3 Syntopical / Advisor / Visualizer / S4 Formatter
 
 ---
 
@@ -10,98 +10,83 @@
 
 | 节点 | 触发条件 | 模型 | 工具 | 输出 | 降级 |
 |------|---------|------|------|------|------|
-| S0 Router | routeFromStart → ROUTER | fast (1次) | — | depth / rewrittenQuery / allowedTools | LLM 失败 → depth=2 |
-| S1 Inspectional | routeByDepth → INSPECTIONAL | fast (1次) | — | scopeNodeIds / tocSummary / betterQuestion / structuralAnalysis / suggestedKeywords | tree 失败 → 全局搜索 |
+| S1 Inspectional (含 S0 Router) | routeFromStart → INSPECTIONAL | fast (1次) | — | depth / rewrittenQuery / allowedTools / scopeNodeIds / tocSummary / betterQuestion / structuralAnalysis / suggestedKeywords | info缺失→depth=2空scope；LLM失败→fallback；tree失败→全局搜索 |
 | S2-Pre | routeAfterInspectional → PRE_SEARCH | main (0\~1次) | search_book (RRF 5 词) | validatedScopeNodeIds / preSearchBlock / earlyStopContent | 全部 catch → pass-through |
 | S2 Analytical | routeAfterPreSearch → ANALYTICAL | main (3-6次) | search_book + read_book_section | analysisResult / toolResultsSnapshot | safeAnalytical 兜底 |
-| S3 Syntopical | routeByDepth/routeAfterInspectional → SYNTOPICAL | main (1-2次) | 跨书搜索 (内部实现) | analysisResult | safeNode 兜底 |
-| Advisor | routeByDepth → ADVISOR | main (3-4次) | weread_* + search_journal | analysisResult | safeNode 兜底 |
+| S3 Syntopical | routeAfterInspectional → SYNTOPICAL | main (1-2次) | 跨书搜索 (内部实现) | analysisResult | safeNode 兜底 |
+| Advisor | routeFromStart → ADVISOR | main (3-4次) | weread_* + search_journal | analysisResult | safeNode 兜底 |
 | Visualizer | edges.ts 三个路由点检测到可视化意图 | main (1次) | — | analysisResult 追加 embed | safeNode 兜底，返回原 analysisResult |
 | S4 Formatter | 几乎所有路径 → FORMATTER | main (1次流式 + HITL refine 1次) | — | formattedOutput | safeFormatter fallbackAction='abort' |
 
 ---
 
-## 1. S0 Router
+## 1. S1 Inspectional（合并了 S0 Router 功能）
 
-**文件**：`src/agent/graph/nodes/router.ts`
+**文件**：`src/agent/graph/nodes/inspectional.ts`
+
+> ⚠️ **架构变更说明**：原先独立的 S0 Router 节点（`src/agent/graph/nodes/router.ts`）已合并到
+> inspectional 节点。纯 TS 的条件边 `routeFromStart`（`edges.ts`）取代了原先的 "START → ROUTER
+> → routeByDepth → INSPECTIONAL" 路径。详情见下方「职责」与「关键步骤」。
 
 ### 职责
-用 `fastModel` 把用户消息分类到 0/1/2/3 四个阅读深度、改写 query、合并历史 tools。
+**统一的路由 + 检视阅读节点**。一次 `fastModel` 调用同时完成：
+
+- depth 分类（0/1/2/3）
+- 查询重写（rewrittenQuery）
+- 范围选择（scopeNodeIds）
+- 结构分析（structuralAnalysis）
+- 可视化意图（shouldVisualize）
+
+前方还有**纯 TS 预处理**（问候短路、纠错检测、延续性检测、IntentRouter），
+和**后处理**（BM25 存在性验证、Scope hard-guard）。
 
 ### 状态读写
-- **读**：`messages`（取最后一条 human）、`allowedTools`（历史继承）、`pdfName`、`config.configurable.chatHistory`
-- **写**：`depth`、`rewrittenQuery`、`allowedTools`
+- **读**：`messages`、`allowedTools`（历史继承）、`pdfName`、`bookId`、`config.configurable.chatHistory`、`toolContext.*`
+- **写**：`depth`、`rewrittenQuery`、`allowedTools`、`scopeNodeIds`、`tocSummary`、`betterQuestion`、`structuralAnalysis`、`suggestedKeywords`、`shouldVisualize`、`correctionDetected`
 
 ### LLM 调用
 - `fastModel.invoke([sys, user])` × 1（非流式）
 
 ### Prompt 入口
-- `src/agent/graph/prompts/router-prompt.ts` — `PROMPT_S0_ROUTER` + `buildRouterUserMessage`
+- `src/agent/graph/prompts/inspectional-prompt.ts` — `buildInspectionalSystemPrompt` / `buildInspectionalUserMessage`
 
 ### 关键步骤
-1. **IntentRouter on raw query**（L1 已经做过，L0 重复）
-2. **继承历史 intent**：`inheritedTools = prevTools` 如果"无新意图"
-3. **调 fastModel** 分类 + 重写
-4. **Anti-hallucination guard**：`[ANTI_HALLUCINATION]` 前缀 → BM25 验证
-5. **Continuity guard**：短回复 + 长历史 + 上次是深度对话 → 升级 depth 0→2
-6. **IntentRouter on rewritten query**（再次分类，补漏）
-7. **Hybrid trigger**：hasSyntopicalKeywords / booklist → 升级到 SYNTOPICAL
-8. **合并 tools**：raw ∪ rewritten ∪ inherited
-9. **重写 query**（BM25 命中时去掉 `[ANTI_HALLUCINATION]` 前缀）
+
+**纯 TS 预处理（无 LLM）：**
+1. **问候短路**：短问候/谢谢直接返回 CASUAL
+2. **纠错检测**（`detectCorrection`）：检测用户是否在纠错 → 强制 depth=2
+3. **延续性检测**（`inheritDepthOnContinuity`）：短回复 + 长历史 + 上次是深度对话 → 升级 depth 0→2
+4. **IntentRouter 正则分析**：从查询中提取意图 → 允许的工具集
+5. **历史 tools 继承**：无新意图时继承上一轮的 `allowedTools`
+
+**LLM 阶段：**
+6. 加载 `.pageindex/{bookId}/tree.json` + 格式化目录树
+7. 拼 prompt（注入目录、docDescription、currentNodeId、历史摘要）
+8. 调 `fastModel`，解析 JSON 输出（同时得到 depth / rewrittenQuery / scopeNodeIds / structuralAnalysis / visualize 等）
+9. **跨书升级**（`upgradeToSyntopical`）：有书单 + depth=2 时升级到 SYNTOPICAL
+10. **IntentRouter on rewritten query**：二次分类补漏
+
+**后处理：**
+11. **BM25 存在性验证**（`verifyExistence`）：检查书中是否真有相关内容，防幻觉
+12. **Scope hard-guard**（`enforceScopeHardGuard`）：确保当前章+引用的章节不被 LLM 排除
 
 ### 降级策略
-- `fastModel` 缺失 → `depth=2`，原 query，rawIntent tools ∪ inherited
-- LLM 抛错 → 同上 catch
-- JSON 解析失败或 `depth` 不在枚举 → `depth=2`（ANALYTICAL）
-- ANTI_HALLUCINATION BM25 搜不到 → 改写 query 为"未提及"引导
+- 配置缺失 → `depth=2`，原 query，rawIntent tools，scopeNodeIds=[]
+- LLM 抛错 / JSON 解析失败 → 同上 fallback
+- tree 加载失败 → `tocSummary='无法获取目录结构，使用全局搜索'`
+- ANTI_HALLUCINATION BM25 命中 → 改写 query 为"未提及"引导，depth=0
 
 ### 已知问题
 - `ANTI_HALLUCINATION_SCORE_THRESHOLD = 0.3` 是 magic number
 - `CONTINUITY_THRESHOLD = 5` 字符数硬编码
-- `intentRouter.analyze` 调了两次（raw + rewritten），重复（L1 也调过）
+- `intentRouter.analyze` 调了两次（raw + rewritten），与 L1 的调用重复
 - `mergeTools` 用 Set 转数组，**原顺序丢失**
-- `validDepths = Object.values(ReadingDepth) as number[]` 强制类型断言，运行期不再验真
-- BM25 搜索失败只 log 一次，**没 fallback**——depth 升级逻辑会跳过
-
----
-
-## 2. S1 Inspectional
-
-**文件**：`src/agent/graph/nodes/inspectional.ts`
-
-### 职责
-加载 `tree.json`，让 fastModel 选定 `scopeNodeIds` + 生成 tocSummary + betterQuestion + structuralAnalysis + suggestedKeywords。
-
-### 状态读写
-- **读**：`bookId`、`pdfName`、`rewrittenQuery`、`depth`、`toolContext.vault.app`、`toolContext.book.indexId/pdfName`、`docDescription`
-- **写**：`scopeNodeIds`、`tocSummary`、`betterQuestion`、`structuralAnalysis`、`suggestedKeywords`
-
-### LLM 调用
-- `fastModel.invoke([sys, user])` × 1
-
-### Prompt 入口
-- `src/agent/graph/prompts/inspectional-prompt.ts` — `buildInspectionalSystemPrompt` / `buildInspectionalUserMessage`
-
-### 关键步骤
-1. 加载 `.pageindex/{bookId}/tree.json`
-2. 格式化目录树（截断：`TREE_STRUCTURE_MAX_TEXT_LENGTH=100` / `TREE_STRUCTURE_MAX_DEPTH=4`）
-3. 拼 prompt + 注入目录
-4. 调 fastModel，解析 JSON 输出
-5. 写入 state
-
-### 降级策略
-- 配置缺失 → `scopeNodeIds=[]`，空字段
-- tree 加载为空 → `tocSummary='无法获取目录结构，使用全局搜索'`
-- JSON 解析失败 / LLM 抛错 → `tocSummary='无法解析目录范围，使用全局搜索'`
-
-### 已知问题
 - `TREE_STRUCTURE_MAX_TEXT_LENGTH` / `TREE_STRUCTURE_MAX_DEPTH` 截断可能丢深层节点
 - 不传 `withStructuredOutput` 走 JSON 解析，**模型偶发 markdown 包裹**会导致 `extractJSON` 失败
-- `pdfName` 优先用 state，state 为空才 fallback 到 toolContext，但 `scopeNodeIds` 与 `bookId/indexId` 的关系**没校验**——可能 scope 出不属于该书的 nodeId
 
 ---
 
-## 3. S2-Pre (analytical-pre-search)
+## 2. S2-Pre (analytical-pre-search)
 
 **文件**：`src/agent/graph/nodes/analytical-pre-search.ts`
 
@@ -144,7 +129,7 @@
 
 ---
 
-## 4. S2 Analytical
+## 3. S2 Analytical
 
 **文件**：`src/agent/graph/nodes/analytical.ts`
 
@@ -182,7 +167,7 @@ PlanExecute ReAct 循环（首选 L5 子图），可注入 S2-Pre 的 preSearchB
 
 ---
 
-## 5. S3 Syntopical
+## 4. S3 Syntopical
 
 **文件**：`src/agent/graph/nodes/syntopical.ts`
 
@@ -220,7 +205,7 @@ PlanExecute ReAct 循环（首选 L5 子图），可注入 S2-Pre 的 preSearchB
 
 ---
 
-## 6. Advisor（无书模式）
+## 5. Advisor（无书模式）
 
 **文件**：`src/agent/graph/nodes/advisor.ts`
 
@@ -256,7 +241,7 @@ PlanExecute ReAct 循环（首选 L5 子图），可注入 S2-Pre 的 preSearchB
 
 ---
 
-## 7. Visualizer（统一图表生成）
+## 6. Visualizer（统一图表生成）
 
 **文件**：`src/agent/graph/nodes/visualizer.ts`
 
@@ -313,7 +298,7 @@ S4 Formatter 用 `%%EMBED_N%%` 占位符保护 `![[Excalidraw/xxx.excalidraw]]` 
 
 ---
 
-## 8. S4 Formatter（最复杂）
+## 7. S4 Formatter（最复杂）
 
 **文件**：`src/agent/graph/nodes/formatter.ts`（最大节点，~600 行）
 
@@ -411,9 +396,11 @@ function safeNode(name, node, fallback) {
 
 ## 10. 优化探讨（节点级）
 
-### 10.1 S0 Router 的 IntentRouter 双调用
+### 10.1 S1 Inspectional 合并后的 IntentRouter 调用
 
-见 L1 §3.1 — 三次调用点统一。
+由于 S0 Router 的功能已合并到 inspectional 节点，原先的 "S0 Router 调两次" 问题现在
+变为 "inspectional 内部调两次"（rawQuery 一次 + rewrittenQuery 一次），加上 L1 层也调一次，
+合计三次调用点。见 L1 §3.1 — 三次调用点统一。
 
 ### 10.2 S1 scope 校验
 
@@ -462,15 +449,14 @@ VISUALIZER 已从占位升级为真实图表生成节点。详见上方第 7 节
 
 | 文件 | 角色 |
 |------|------|
-| `src/agent/graph/nodes/router.ts` | S0 Router |
-| `src/agent/graph/nodes/inspectional.ts` | S1 Inspectional |
+| `src/agent/graph/nodes/inspectional.ts` | S1 Inspectional（含 S0 Router 功能） |
 | `src/agent/graph/nodes/analytical-pre-search.ts` | S2-Pre |
 | `src/agent/graph/nodes/analytical.ts` | S2 Analytical |
 | `src/agent/graph/nodes/syntopical.ts` | S3 Syntopical |
 | `src/agent/graph/nodes/advisor.ts` | Advisor |
 | `src/agent/graph/nodes/visualizer.ts` | Visualizer（统一图表生成） |
 | `src/agent/graph/nodes/formatter.ts` | S4 Formatter（最复杂） |
-| `src/agent/graph/prompts/*.ts` | 7 个 prompt 文件 |
+| `src/agent/graph/prompts/*.ts` | 6 个 prompt 文件（router-prompt.ts 已移除） |
 | `src/agent/graph/utils/safe-node.ts` | safeNode 包装 |
 | `src/agent/graph/utils/engine-helpers.ts` | `resolveMode` 等 |
 

@@ -44,7 +44,7 @@
 用户消息 "画个思维导图"
         │
         ▼
-S0 Router ──→ 检测到可视化意图（userHasDiagramIntent）
+Inspectional (含 S0 Router) ──→ 检测到可视化意图（userHasDiagramIntent）
         │
         ▼
 S1 / S2 / S3 正常执行（生成分析内容）

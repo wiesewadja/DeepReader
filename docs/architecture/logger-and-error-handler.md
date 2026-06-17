@@ -87,7 +87,7 @@ endTimer(timer);  // 输出: [LLM call] 1234ms
 **典型使用**：
 - S2 ReAct 循环：每个工具调用的耗时
 - S1 Inspectional：树加载耗时
-- S0 Router：意图分类耗时
+- S1 Inspectional（含原 S0 Router）：意图分类耗时
 
 ### `agentLog` 别名
 

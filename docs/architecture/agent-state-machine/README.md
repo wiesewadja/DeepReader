@@ -162,7 +162,7 @@ L8 → L6 → L5 → L4 → L7 → L3 → L2 → L1 → L0
    → L1
 4. cognitiveEngine.stream() 启动 LangGraph
    → L2
-5. S0 Router 决定 depth → 边 routeByDepth
+5. Inspectional (含 S0 Router) 决定 depth + scope → 边 routeAfterInspectional
    → L2 + L4
 6. 路径 1：S1 → S2-Pre → S2 → S4
    路径 2：S1 → S3（跨书）→ S4

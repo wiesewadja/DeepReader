@@ -22,64 +22,35 @@ L2 是 LangGraph 的**纯编排层**。它：
 ### 1.2 完整拓扑
 
 ```
-                    ┌─────────────────────┐
-                    │ START               │
-                    └──────────┬──────────┘
-                               │
-              ┌────────────────┴───────────────┐
-              │  routeFromStart                │
-              │  proactive → INSPECTIONAL      │
-              │  其它 → ROUTER                 │
-              └────┬───────────────────┬───────┘
-                   │                   │
-                   ▼                   ▼
-            ┌──────────────┐    ┌─────────────────┐
-            │ ROUTER (S0)  │    │ INSPECTIONAL(S1)│
-            │ safeNode ✅  │    │ safeInspectional │
-            └──────┬───────┘    └──┬────────┬─────┘
-                   │               │        │
-        routeByDepth│              │        │  (depth=3)
-                   │               │        │  SYNTOPICAL
-    ┌──────┬───────┴──┐            │        │
-    ▼      ▼          ▼            │        ▼
-[FORMATTER][ADVISOR]│            │   [SYNTOPICAL (S3)]
-                    │            │   safeNode
-                    │            │
-                    ▼            ▼
-              [INSPECTIONAL] ←──┘
-                    │
-                    │  routeAfterInspectional
-                    │  - proactive → DONE (FORMATTER)
-                    │  - socratic → DONE
-                    │  - depth=3 → SYNTOPICAL
-                    │  - depth=1 + structuralAnalysis → VISUALIZER / DONE
-                    │  - depth=2 → PRE_SEARCH
-                    │
-        ┌───────────┼────────────┐
-        ▼           ▼            ▼
-   [PRE_SEARCH]  [SYNTOPICAL]  [VISUALIZER]
-   safePreSearch    (S3)        (图表生成)
-        │
-        │  routeAfterPreSearch
-        │  - earlyStopContent='done' → VISUALIZER/FORMATTER
-        │  - 否则 → ANALYTICAL
-        │
-        ▼
-   [ANALYTICAL (S2)] ──HITL──→ (interrupt) ──恢复──→ 精修
-        │
-        │  routeAfterAnalysis
-        │
-        ▼
-   [VISUALIZER] (图表生成) → [FORMATTER]
-   或 [SYNTOPICAL] (S3)  → [FORMATTER]
-   或 [ANALYTICAL] (S2)  → [FORMATTER]
-        │
-        ▼
-   [FORMATTER (S4)]
-   safeFormatter (fallbackAction='abort' —— 唯一可能让图中止)
-        │
-        ▼
-   [END]
+                    +-----------------------+
+                    | START                 |
+                    +-----------+-----------+
+                                |
+                 +--------------+----------------+
+                 |  routeFromStart               |
+                 |  proactive -> INSPECTIONAL    |
+                 |  无书+WeRead -> ADVISOR       |
+                 |  无书 -> FORMATTER            |
+                 |  有书 -> INSPECTIONAL         |
+                 +-------+----------------------+
+                         |
+                         v
+                 +-----------------------+
+                 | INSPECTIONAL (S1)     |
+                 | (含 S0 Router 功能)    |
+                 | safeInspectional      |
+                 +-----------+-----------+
+                             |
+               +-------------+-------------------+
+               | (depth=0 casual / socratic)      |
+               |               -> FORMATTER       |
+               | (depth=3 syntopical)             |
+               |               -> SYNTOPICAL(S3)  |
+               | (depth=1 + 图)                   |
+               |               -> VISUALIZER      |
+               | (depth=1 无图 / depth=2)         |
+               |               -> PRE_SEARCH      |
+               +---------------------------------+
 ```
 
 ### 1.3 节点注册
@@ -88,8 +59,7 @@ L2 是 LangGraph 的**纯编排层**。它：
 
 | 节点名 | 实际函数 | safeNode 包装 | 备注 |
 |--------|---------|---------------|------|
-| `ROUTER` | `routerNode` | ❌ 无 | router 失败直接被 try/catch 兜底降级 |
-| `INSPECTIONAL` | `inspectionalNode` | ✅ `safeInspectional` | 失败 → 空 scope + 全局搜索 |
+| `INSPECTIONAL` | `inspectionalNode` | ✅ `safeInspectional` | 合并了 S0 Router 功能，失败 → depth=2 空 scope |
 | `PRE_SEARCH` | `preSearchNode` | ✅ `safePreSearch` | 失败 → pass-through 到 analytical |
 | `ANALYTICAL` | `analyticalNode` | ✅ `safeAnalytical` | 失败 → 空 analysisResult |
 | `SYNTOPICAL` | `syntopicalNode` | ✅ inline safe | 失败 → 空 analysisResult |
@@ -97,7 +67,7 @@ L2 是 LangGraph 的**纯编排层**。它：
 | `VISUALIZER` | `visualizerNode` | ✅ `safeNode` | 图表生成失败时返回原 analysisResult |
 | `FORMATTER` | `formatterNode` | ✅ `safeFormatter` | 唯一 `fallbackAction='abort'` |
 
-**关键不变量**：所有"业务节点"都有 safeNode 包装（**safeNode 是图的核心防御**），只有"纯入口"（Router）例外。
+**关键不变量**：所有业务节点都有 safeNode 包装（**safeNode 是图的核心防御**）。没有单独的 "Router" 节点——路由判定现在在 inspectional 节点内部完成，而 `routeFromStart` 只是纯 TS 入口门卫。
 
 ### 1.4 边与路由决策
 
@@ -105,10 +75,9 @@ L2 是 LangGraph 的**纯编排层**。它：
 
 | 函数 | 来源节点 | 决策依据 | 目标 |
 |------|---------|---------|------|
-| `routeFromStart(state)` | START | `resolveMode(state)` | proactive→INSPECTIONAL, 其他→ROUTER |
-| `routeByDepth(state)` | ROUTER | depth + crossBook + weread + mode | depth=0→FORMATTER, depth=3→SYNTOPICAL, depth≥1→INSPECTIONAL, advisor→ADVISOR |
-| `routeAfterInspectional(state)` | INSPECTIONAL | mode + depth + nodeErrors | 多目标 |
-| `routeAfterPreSearch(state)` | PRE_SEARCH | `earlyStopContent` | 有内容→VISUALIZER/FORMATTER, 否则→ANALYTICAL |
+| `routeFromStart(state)` | START | `resolveMode(state)` + `pdfName` + `wereadAvailable` | proactive→INSPECTIONAL, 无书+WeRead→ADVISOR, 无书→FORMATTER, 有书→INSPECTIONAL |
+| `routeAfterInspectional(state)` | INSPECTIONAL | mode + depth + nodeErrors | 多目标（见拓扑图） |
+| `routeAfterPreSearch(state)` | PRE_SEARCH | `earlyStopContent` + `correctionDetected` + `verifiedFullBookHits` | 早停→VISUALIZER/FORMATTER, 纠错/L5→ANALYTICAL, 否则→ANALYTICAL |
 | `routeAfterAnalysis(state)` | ANALYTICAL/SYNTOPICAL | `hasDiagramIntent` | 图表→VISUALIZER, 否则→FORMATTER |
 
 **`resolveMode` 优先级**（`engine-helpers.ts`）：
@@ -184,7 +153,7 @@ export const cognitiveEngine = workflow.compile({
 
 ```typescript
 export const NODE_NAMES = {
-  ROUTER: 'router',
+  ROUTER: 'router',          // 历史遗留，图结构中不再使用
   INSPECTIONAL: 'inspectional',
   PRE_SEARCH: 'pre_search',
   ANALYTICAL: 'analytical',
@@ -259,20 +228,15 @@ return {
 - 但万一挂了（LLM 错误、prompt 解析失败），用户连错误信息都看不到
 - `executeWithStream` 兜底会捕获 `GraphInterrupt` 但 formatter 异常是别的类型
 
-### 2.6 PROACTIVE 模式跳过 S0 Router
+### 2.6 PROACTIVE 模式直接走 INSPECTIONAL
 
-**现象**：`routeFromStart` 在 proactive 模式直接跳到 INSPECTIONAL。
+**现象**：`routeFromStart` 在 proactive 模式直接走到 INSPECTIONAL。
 
-**后果**：
-- proactive 触发的对话**没经过 depth 分类**（depth=INSPECTIONAL 是硬编码的）
-- proactive 也没经过 IntentRouter 二次调用（这是 L1 的事）
-- 对话质量与"用户问 INSPECTIONAL 类问题"一致
-
-**根因**：设计假设 proactive 触发器知道"什么时候用 INSPECTIONAL"是合理的，但不同触发器（inspectional/highlight/chapter）的诉求可能不同。
+**现状**：由于 S0 Router 已合并到 INSPECTIONAL，proactive 模式走 INSPECTIONAL 意味着也会走一遍 LLM 深度判定——但 INSPECTIONAL 内的 depth 分类会受 proactive 注入的 prompt 影响。
 
 ### 2.7 边决策函数没有单元测试
 
-`edges.ts` 是状态机"调度"的核心，但**没有专门的单测**（推测，需要确认）。`routeAfterInspectional` 的 5 个分支、`routeByDepth` 的 6 个分支全是隐式行为。
+`edges.ts` 是状态机"调度"的核心，但**没有专门的单测**（推测，需要确认）。`routeFromStart` 的 3 个分支、`routeAfterInspectional` 的 5 个分支全是隐式行为。
 
 **风险**：改 prompt 或新增 mode 时容易踩雷。
 
@@ -319,14 +283,14 @@ return {
 
 ### 3.5 边函数的纯化 + 单测
 
-把 `routeByDepth` / `routeAfterInspectional` 等函数的依赖项**显式注入**（而不是从 state 里取 hidden 字段），便于单测：
+把 `routeFromStart` / `routeAfterInspectional` 等函数的依赖项**显式注入**（而不是从 state 里取 hidden 字段），便于单测：
 
 ```typescript
 // 当前
-export function routeByDepth(state: CognitiveEngineState): string { ... }
+export function routeFromStart(state: CognitiveEngineState): string { ... }
 
 // 建议
-export function routeByDepth(deps: {
+export function routeFromStart(deps: {
   depth: ReadingDepth;
   pdfName: string;
   crossBookMode: boolean;
@@ -339,11 +303,9 @@ export function routeByDepth(deps: {
 
 ### 3.6 Proactive 模式重新设计
 
-当前 proactive 直跳 INSPECTIONAL。可以演化为：
-- proactive 触发时也走 S0 Router，但 prompt 里注入"这是 proactive 引导"的 hint
-- 或为 proactive 加独立的 PROACTIVE_GUIDE 节点（用 PROACTIVE_SYSTEM_PROMPT）
-
-**待讨论**：proactive 是不是该有自己的节点。
+当前 proactive 直跳 INSPECTIONAL（INSPECTIONAL 内含 depth 分类，会受到 proactive prompt hint 影响）。可以演化为：
+- 为 proactive 加独立的 PROACTIVE_GUIDE 节点（用 PROACTIVE_SYSTEM_PROMPT）
+- 或让 proactive 走完整的 INSPECTIONAL 但使用特殊 system prompt
 
 ---
 
@@ -353,7 +315,7 @@ export function routeByDepth(deps: {
 |------|------|
 | `src/agent/graph/index.ts` | 图的编译（`cognitiveEngine = workflow.compile()`） |
 | `src/agent/graph/state.ts` | State Schema（`CognitiveEngineAnnotation`） |
-| `src/agent/graph/edges.ts` | 5 个条件边函数 |
+| `src/agent/graph/edges.ts` | 4 个条件边函数 |
 | `src/agent/graph/node-names.ts` | 节点名常量 |
 | `src/agent/graph/node-io.ts` | RouterInput / 其他输入类型 |
 | `src/agent/graph/utils/safe-node.ts` | 节点安全包装 |

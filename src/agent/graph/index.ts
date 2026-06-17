@@ -1,13 +1,21 @@
 /**
  * Cognitive Engine — LangGraph StateGraph
  *
- * Main graph compiling S0→S1→S2/S3→S4 nodes with conditional edges.
+ * Main graph with 7 functional nodes + conditional edges.
  *
- * S0: Router (depth classification + intent routing)
- * S1: Inspectional (TOC analysis, scope narrowing)
- * S2: Analytical (single-book deep analysis)
- * S3: Syntopical (multi-book fusion analysis)
- * S4: Formatter (output formatting)
+ * routeFromStart (pure TS gate, no LLM) → inspectional or formatter or advisor
+ * └─ inspectional — Merges S0 Router + S1 Inspectional: depth classification,
+ *    query rewrite, scope selection, structural analysis, visualization intent,
+ *    correction detection, existence verification
+ * S2-Pre: Fast pre-search with early-stop
+ * S2 Analytical: Deep ReAct/PlanExecute loop
+ * S3 Syntopical: Multi-book fusion analysis
+ * Advisor: No-book mode (WeRead tools)
+ * Visualizer: Excalidraw diagram generation
+ * S4 Formatter: Output formatting with wiki-link pipeline
+ *
+ * There is NO separate "S0 Router" node — its functionality is merged
+ * into the inspectional node. See src/agent/graph/nodes/inspectional.ts
  */
 
 import { StateGraph, START, END, MemorySaver } from '@langchain/langgraph';

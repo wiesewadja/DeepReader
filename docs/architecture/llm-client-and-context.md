@@ -247,7 +247,7 @@ FrontendAgent.runGraphEngine
 ### 2 个 LLMClient 实例
 
 **`mainModel`** —— 用于 S2 Analytical / S4 Formatter（**高质量，昂贵**）
-**`fastModel`** —— 用于 S0 Router / S1 Inspectional（**便宜快**）
+**`fastModel`** —— 用于 S1 Inspectional（含原 S0 Router，**便宜快**）
 
 典型配置：
 - main = `mimo-v2.5-pro`（Pro 版）

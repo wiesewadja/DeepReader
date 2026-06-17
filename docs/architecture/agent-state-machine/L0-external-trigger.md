@@ -202,7 +202,7 @@ interface ToolContext {
 - 显式 `ProactiveTriggerEvent` 事件总线
 - 或把 proactive 状态写入共享 state，由 L1 / L2 主动读
 
-**待讨论**：proactive 应不应该走完整 LangGraph？现在它走的是"绕过 L0→L1 的 fast path"，未经过 `IntentRouter`（注意：`routerNode` 内部还是调了 `IntentRouter` 一次，但触发 proactive 时走 `routeFromStart → INSPECTIONAL`，没有 S0 Router）。这意味着 proactive 触发的对话没经过 depth 分类。
+**待讨论**：proactive 应不应该走完整 LangGraph？现在它走的是"绕过 L0→L1 的 fast path"，未经过 `IntentRouter`（注意：`inspectionalNode` 内部还是调了 `IntentRouter` 一次，但触发 proactive 时仍走 `routeFromStart → INSPECTIONAL`，即走了一遍 inspectional 节点的 LLM 分类）。
 
 ### 3.3 ToolContext 的可观测性
 

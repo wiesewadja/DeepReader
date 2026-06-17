@@ -11,7 +11,12 @@
 import type { BaseMessage } from '@langchain/core/messages';
 import type { ToolResultSnapshot, ReadingDepth, EngineMode } from './state';
 
-// ============ S0: Router ============
+// ============ S0: Router (historical) ============
+// These interfaces are kept for reference but no longer correspond to
+// a separate graph node. S0 Router functionality was merged into
+// the inspectional node (src/agent/graph/nodes/inspectional.ts).
+// The inspectional node now handles depth classification, query rewrite,
+// intent routing, scope selection, and structural analysis in one LLM call.
 
 export interface RouterInput {
   messages: BaseMessage[];

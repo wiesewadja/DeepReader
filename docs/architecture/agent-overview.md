@@ -39,10 +39,11 @@ DeepReader Agent 是一个**分层可插拔**的认知系统。从外到内拆�
 ┌────────────────────────▼────────────────────────────────────────┐
 │  L3  认知引擎层：LangGraph StateGraph                            │
 │      src/agent/graph/                                           │
-│      • 4 个状态节点：S0 Router / S1 Inspectional /               │
-│                       S2 Analytical / S4 Formatter              │
+│      • 7 个状态节点：S1 Inspectional (含 S0 Router) / S2-Pre /   │
+│      │     S2 Analytical / S3 Syntopical / Advisor /             │
+│      │     Visualizer / S4 Formatter                            │
 │      • ReAct 子图：S2 内部的工具调用循环                         │
-│      • 边：routeByDepth / routeAfterInspectional                │
+│      • 边：routeFromStart / routeAfterInspectional / routeAfterPreSearch / routeAfterAnalysis
 │      • 持久化：FileCheckpointer (JSONL)                          │
 └────────────────────────┬────────────────────────────────────────┘
                          │ 工具调用
@@ -144,20 +145,22 @@ runGraphEngine()
 ```
 cognitiveEngine.stream(input, { configurable, signal })
   │
-  ├─→ START → routerNode (S0)  [L3 状态机]
-  │     ├─ fastModel.withStructuredOutput(RouterOutputSchema)
-  │     ├─ 输出: { depth: 0|1|2|3, rewrittenQuery, reason }
-  │     └─→ state.depth = 2（本例「第三章核心论点」= 分析阅读）
+  ├─→ routeFromStart(state) → 'inspectional' (有书)
   │
-  ├─→ routeByDepth(state) → 'inspectional' (depth=2)
+  ├─→ inspectionalNode (S1)  [L3 状态机，含 S0 Router]
+  │     ├─ fastModel.invoke(分析查询 + 目录树)  ← 一次性 LLM 调用
+  │     ├─ 输出: { depth: 2, rewrittenQuery, scopeNodeIds: ['0003'], ... }
+  │     │   （本例「第三章核心论点」→ depth=2 分析阅读 + 锁定第三章）
+  │     └─ 也含: 问候短路、纠错检测、延续性检测、IntentRouter、BM25 验证
   │
-  ├─→ inspectionalNode (S1)  [L3 状态机]
-  │     ├─ loadTreeJson(app, bookId, pdfName)  [L5 PageIndex]
-  │     ├─ formatTreeStructure(outlineNodes)    [把树转 LLM 友好格式]
-  │     ├─ fastModel.withStructuredOutput()
-  │     └─→ state.scopeNodeIds = ['0003']  （锁定第三章）
+  ├─→ routeAfterInspectional(state) → 'pre_search' (depth=2)
   │
-  ├─→ routeAfterInspectional(state) → 'continue' (depth=2)
+  ├─→ preSearchNode (S2-Pre)  [L3 状态机]
+  │     ├─ validateScopeNodeIds(['0003'])
+  │     ├─ RRF 多关键词检索（5 个 suggestedKeywords）
+  │     └─ 早停判断（加权打分）
+  │
+  ├─→ routeAfterPreSearch(state) → 'analytical' (无早停)
   │
   ├─→ analyticalNode (S2)  [L3 状态机 + ReAct 子图]
   │     ├─ buildAnalyticalSystemPrompt(scopeNodeIds)
@@ -184,7 +187,7 @@ cognitiveEngine.stream(input, { configurable, signal })
 
 **关键文件：**
 - `src/agent/graph/index.ts: cognitiveEngine` — StateGraph 编译
-- `src/agent/graph/nodes/router.ts` — S0
+- `src/agent/graph/nodes/inspectional.ts` — S1 (含原 S0)
 - `src/agent/graph/nodes/inspectional.ts` — S1
 - `src/agent/graph/nodes/analytical.ts` — S2（含 ReAct）
 - `src/agent/graph/nodes/formatter.ts` — S4

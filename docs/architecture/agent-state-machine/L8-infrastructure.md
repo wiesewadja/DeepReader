@@ -39,7 +39,7 @@ class LLMClientManager {
 
 **双模型分工**：
 - **main 客户端**：S2 Analytical + S4 Formatter（深度分析）—— `temperature: 0.3`、`streaming: true`
-- **fast 客户端**：S0 Router + S1 Inspectional（快速分类）—— `temperature: 0.1`、`streaming: false`
+- **fast 客户端**：S1 Inspectional（含原 S0 Router，快速分类）—— `temperature: 0.1`、`streaming: false`
 
 **构造规则**：
 - `mainConfig` 必填

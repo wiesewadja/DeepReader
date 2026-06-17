@@ -74,10 +74,13 @@ async runGraphEngine(userMessage, context, callbacks, chatHistory?) {
 
 ### 1.4 IntentRouter（路由预处理器）
 
-L1 内部有一个**正则预路由**的 `IntentRouter`，与 LangGraph 内部的 S0 Router 不同：
+L1 内部有一个**正则预路由**的 `IntentRouter`，与 LangGraph 内部的 Inspectional 节点不同：
 
 - **IntentRouter（L1）**：基于 `intent-rules.json` 的正则匹配，**裁剪 allowedTools** + 生成 `<system_note>` 注入
-- **S0 Router（LangGraph）**：用 fastModel 做深度分类 + 查询重写
+- **Inspectional（LangGraph，含原 S0 Router）**：用 fastModel 做深度分类 + 查询重写
+
+> **架构变更说明**：原先独立的 S0 Router 节点已合并到 Inspectional 节点。
+> 深度分类 + 查询重写现在由 inspectional 节点一次性完成。
 
 `IntentRouter.analyze()` 返回：
 ```typescript
@@ -89,7 +92,7 @@ interface IntentResult {
 }
 ```
 
-**关键设计**：`allowedTools` 是**裁剪**作用——S0 Router 在分类时不会越界选工具。这是"模型不听话"问题的工程级防御。
+**关键设计**：`allowedTools` 是**裁剪**作用——Inspectional 在分类时不会越界选工具。这是"模型不听话"问题的工程级防御。
 
 `intent-rules.json` 结构（src/agent/router/intent-rules.json）：
 ```json
@@ -205,18 +208,18 @@ private async executeWithStream(streamInput, callbacks, configurable, tracer, er
 
 ## 2. 已知问题
 
-### 2.1 IntentRouter 与 S0 Router 双调用造成歧义
+### 2.1 IntentRouter 与 Inspectional 内双调用造成歧义
 
 **现象**：
 - L1 调 `IntentRouter.analyze()` 一次（裁剪 tools）
-- L2 内部 S0 Router 节点**又**调 `IntentRouter.analyze()` 两次（rawQuery 一次，rewrittenQuery 一次）—— 见 `src/agent/graph/nodes/router.ts:60, 130`
+- L2 内部 Inspectional 节点（含原 S0 Router）**又**调 `IntentRouter.analyze()` 两次（rawQuery 一次，rewrittenQuery 一次）—— 见 `src/agent/graph/nodes/inspectional.ts:101, 212`
 
 **后果**：
-- 同样的输入可能匹配两次，行为难以预测
+- 同样的输入可能匹配多次，行为难以预测
 - `intent-rules.json` 的修改影响面大（L1 改 + L2 改）
-- S0 内部的 `inheritedTools` 机制（`prevTools`）让逻辑更复杂
+- Inspectional 内部的 `inheritedTools` 机制（`prevTools`）让逻辑更复杂
 
-**证据**：`router.ts:60-66, 130-145` 两处独立的 `intentRouter.analyze()` 调用。
+**证据**：`inspectional.ts` 两处独立的 `intentRouter.analyze()` 调用。
 
 ### 2.2 threadId 分配策略过细
 
@@ -274,15 +277,15 @@ await this.getCompiledEngine().stream(streamInput, {
 
 ### 3.1 IntentRouter 调用点统一
 
-**问题**：L1 调一次 + S0 Router 调两次，合计三次。
+**问题**：L1 调一次 + Inspectional 内调两次，合计三次。
 
 **方案 A**：把 IntentRouter 移到 LangGraph state 初始化阶段（buildConfigurable 时调一次），结果写入 `allowedTools` 字段。
 - ✅ 调用点统一
 - ❌ 失去"rewrittenQuery 后再分类"的能力
 
-**方案 B**：S0 Router 不再调 IntentRouter，只信任 L1 传入的 `allowedTools`，自己加一个 `rewrittenQuery` 后的"二次裁剪"逻辑。
+**方案 B**：Inspectional 内不再调 IntentRouter，只信任 L1 传入的 `allowedTools`，自己加一个 `rewrittenQuery` 后的"二次裁剪"逻辑。
 - ✅ 平衡：保持 LLM 二次裁剪的能力
-- ❌ S0 逻辑更复杂
+- ❌ Inspectional 逻辑更复杂
 
 **待定**：哪种方案更符合"工具裁剪是 L0 的事" vs "rewrittenQuery 后需要再判"的争论。
 

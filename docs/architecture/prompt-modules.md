@@ -86,8 +86,8 @@ export function buildAnalyticalSystemPrompt(ctx) {
 
 | 文件 | 节点 | 行数 | 核心职责 |
 |---|---|---|---|
-| `router-prompt.ts` | S0 Router | 108 | 意图分类 + depth 判断 + query 重写 |
-| `inspectional-prompt.ts` | S1 Inspectional | 214 | 加载结构 + 选 scope + betterQuestion |
+| `inspectional-prompt.ts` | S1 Inspectional (含原 S0 Router) | ~322 | 意图分类 + depth 判断 + query 重写 + 选 scope + betterQuestion |
+| `inspectional-prompt.ts`（同上） | — | — | 加载结构 + 选 scope + betterQuestion（已合并） |
 | `pre-search-prompt.ts` | S2-Pre | 31 | 早停直接出答案的 prompt |
 | `analytical-prompt.ts` | S2 Analytical | 231 | ReAct 工具循环主对话 prompt |
 | `syntopical-prompt.ts` | S3 Syntopical | 106 | 跨书对比融合 prompt |
@@ -95,27 +95,21 @@ export function buildAnalyticalSystemPrompt(ctx) {
 | `formatter-prompt.ts` | S4 Formatter | 154 | 答案格式化 + wiki 链接输出 |
 | `proactive-formatter-prompt.ts` | Proactive 注入 | 110 | Proactive 触发的引导消息 |
 
-### 1. router-prompt.ts (S0)
+### 1. inspectional-prompt.ts (S1，含原 S0 Router)
 
-**输入**：userMessage + tocSummary + recentHistory
-**输出**：JSON `{ depth, rewritten_query, allowed_tools, intent_type }`
+> 原先独立的 `router-prompt.ts`（意图分类 + depth 判断 + query 重写）已合并到此文件。
+
+**输入**：userMessage + tocSummary + recentHistory + bookId + currentNodeId
+**输出**：JSON `{ depth, rewritten_query, allowed_tools, intent_type, better_question, scope_node_ids, structural_analysis, suggested_keywords }`
 
 **关键设计**：
 - **强制 JSON 输出**（"必须且只能输出合法 JSON，不要包含任何 Markdown 代码块修饰符"）
 - **A-F 6 种 intent type**（闲聊/验证/概览/分析/长文本验证/跨书）
 - **深度决策树**：`拿不准 1 还是 2 时，一律判 2`（保守）
-
-### 2. inspectional-prompt.ts (S1)
-
-**输入**：tocSummary + bookId + currentNodeId
-**输出**：JSON `{ better_question, scope_node_ids, structural_analysis, suggested_keywords }`
-
-**关键设计**：
-- **5 个 JSON 字段**全部必填
 - **scope 锁定**根据 toc 摘要 + 当前章节选 N 个 nodeId
 - **betterQuestion** = "基于结构的提问重写"——核心创新
 
-### 3. pre-search-prompt.ts (S2-Pre 早停)
+### 2. pre-search-prompt.ts (S2-Pre 早停)
 
 **输入**：systemPrompt + blockLines + userQuery + betterQuestion + structuralAnalysis
 **输出**：直接给 LLM 的早停 prompt
@@ -124,7 +118,7 @@ export function buildAnalyticalSystemPrompt(ctx) {
 - **已知 bug**（详见 [早停决策原理与问题.md Bug 2](../architecture/早停决策原理与问题.md)）：**早停路径会丢失 betterQuestion + structuralAnalysis**——已在黄金测试集锁定
 - **修复**：`buildEarlyStopPrompt(ctx)` 接受 `betterQuestion` + `structuralAnalysis` 参数
 
-### 4. analytical-prompt.ts (S2 主对话)
+### 3. analytical-prompt.ts (S2 主对话)
 
 **输入**：AnalyticalPromptContext（11 字段）
 **输出**：user message（带历史 / 检索结果 / scope / 工具上下文）
@@ -137,7 +131,7 @@ export const PROMPT_S2_ANALYTICAL_TEMPLATE = buildAnalyticalPrompt({});
 
 **注意**：默认模板是**无 ctx 模板**——节点调用时用 `buildAnalyticalUserMessage(ctx)` 动态拼。
 
-### 5. syntopical-prompt.ts (S3)
+### 4. syntopical-prompt.ts (S3)
 
 **输入**：多本书的 topK 检索结果
 **输出**：跨书融合的总结
@@ -147,11 +141,11 @@ export const PROMPT_S2_ANALYTICAL_TEMPLATE = buildAnalyticalPrompt({});
 - **比较维度引导**（"作者立场 / 论据 / 结论" 三维）
 - **JSON 输出**
 
-### 6. socratic-prompt.ts（极简 14 行）
+### 5. socratic-prompt.ts（极简 14 行）
 
 **只**有一段提示词 + 工具调用列表——苏格拉底引导极简，不分块。
 
-### 7. formatter-prompt.ts (S4)
+### 6. formatter-prompt.ts (S4)
 
 **输入**：analysisResult + structural_analysis + bookName
 **输出**：用户最终看到的答案（带 wiki 链接）
@@ -168,7 +162,7 @@ export const PROMPT_S2_ANALYTICAL_TEMPLATE = buildAnalyticalPrompt({});
 9. 阅读引导（一两句话引出）
 10. **诚实拒答**（明确"未提及"时不绕开）
 
-### 8. proactive-formatter-prompt.ts
+### 7. proactive-formatter-prompt.ts
 
 **输入**：触发器类型 + 章节 + 高亮数
 **输出**：苏格拉底式提问消息（注入到聊天输入框）
@@ -202,17 +196,17 @@ export interface AnalyticalPromptContext {
 
 ### 哪些字段必填？
 
-| 字段 | Router | Inspectional | Pre-Search | Analytical | Syntopical | Formatter |
-|---|---|---|---|---|---|---|
-| `standaloneQuery` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `tocSummary` | ✓ | ✓ | - | ✓ | - | - |
-| `scopeNodeIds` | - | - | ✓ | ✓ | - | - |
-| `pdfName` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `userProfileSummary` | - | - | - | ✓ | - | ✓ |
-| `markdownFiles` | - | - | - | ✓ | - | - |
-| `betterQuestion` | - | - | ✓ | ✓ | - | - |
-| `recentHistorySummaries` | ✓ | - | - | ✓ | ✓ | ✓ |
-| `prevSearchedBlockIds` | - | - | - | ✓ | - | - |
+| 字段 | Inspectional (含 Router) | Pre-Search | Analytical | Syntopical | Formatter |
+|---|---|---|---|---|---|
+| `standaloneQuery` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `tocSummary` | ✓ | - | ✓ | - | - |
+| `scopeNodeIds` | - | ✓ | ✓ | - | - |
+| `pdfName` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `userProfileSummary` | - | - | ✓ | - | ✓ |
+| `markdownFiles` | - | - | ✓ | - | - |
+| `betterQuestion` | - | ✓ | ✓ | - | - |
+| `recentHistorySummaries` | ✓ | - | ✓ | ✓ | ✓ |
+| `prevSearchedBlockIds` | - | - | ✓ | - | - |
 
 **为什么 `pdfName` 几乎必填**——所有 wiki 链接需要书名作为前缀。
 
@@ -279,14 +273,14 @@ ${ctx.betterQuestion ? `<refined_query>${ctx.betterQuestion}</refined_query>` : 
 
 ### 2. 都用 [ANTI_HALLUCINATION] 前缀
 
-**位置**：`router-prompt.ts:25`
+**位置**：`inspectional-prompt.ts`（含原 S0 Router prompt）
 
 ```typescript
 B. 存在性验证 — "书中有没有提到X" → depth=0
    将 standalone_query 前缀加上 "[ANTI_HALLUCINATION]" 标记。
 ```
 
-**机制**：Router 检测到"是否提到 X" 类问题时，给 query 加前缀 → S2 注入 prompt 时看到该标记 → 触发 LLM 诚实的反幻觉响应。
+**机制**：S0 Router（现合并到 Inspectional）检测到"是否提到 X" 类问题时，给 query 加前缀 → S2 注入 prompt 时看到该标记 → 触发 LLM 诚实的反幻觉响应。
 
 ### 3. 都不直接说"你是 LLM"
 
@@ -306,8 +300,7 @@ B. 存在性验证 — "书中有没有提到X" → depth=0
 
 | 文件 | 职责 |
 |---|---|
-| `src/agent/graph/prompts/router-prompt.ts` | S0 Router prompt（108 行） |
-| `src/agent/graph/prompts/inspectional-prompt.ts` | S1 Inspectional prompt（214 行） |
+| `src/agent/graph/prompts/inspectional-prompt.ts` | S1 Inspectional prompt（含原 S0 Router，~322 行） |
 | `src/agent/graph/prompts/pre-search-prompt.ts` | S2-Pre 早停 prompt（31 行） |
 | `src/agent/graph/prompts/analytical-prompt.ts` | S2 Analytical prompt（231 行，含共享 context 接口） |
 | `src/agent/graph/prompts/syntopical-prompt.ts` | S3 Syntopical prompt（106 行） |
@@ -326,8 +319,7 @@ B. 存在性验证 — "书中有没有提到X" → depth=0
 | `src/agent/prompts/version.ts` | 版本管理器（changelog 追踪） |
 | `src/agent/prompts/index.ts` | 统一导出 + `registerAllPrompts()` 批量注册 |
 | `src/agent/prompts/i18n.ts` | 向后兼容 shim（委托给 registry） |
-| `src/agent/prompts/core/router.ts` | S0 Router 模块化定义 |
-| `src/agent/prompts/core/inspectional.ts` | S1 Inspectional 模块化定义 |
+| `src/agent/prompts/core/inspectional.ts` | S1 Inspectional 模块化定义（含原 S0 Router） |
 | `src/agent/prompts/core/pre-search.ts` | S2-Pre 早停模块化定义 |
 | `src/agent/prompts/core/analytical.ts` | S2 Analytical 模块化定义 |
 | `src/agent/prompts/core/syntopical.ts` | S3 Syntopical 模块化定义 |
@@ -419,9 +411,8 @@ src/agent/prompts/
 ├── version.ts                  # PromptVersionManager：版本追踪 + changelog
 ├── index.ts                    # 统一导出 + registerAllPrompts() 批量注册
 ├── i18n.ts                     # (deprecated) 向后兼容 shim，委托给 registry
-├── core/                       # 核心 8 个 Agent 提示词
-│   ├── router.ts               # S0 Router（id: router.s0）
-│   ├── inspectional.ts         # S1 Inspectional（id: inspectional.s1）
+├── core/                       # 核心 7 个 Agent 提示词
+│   ├── inspectional.ts         # S1 Inspectional（含原 S0 Router, id: inspectional.s1）
 │   ├── pre-search.ts           # S2-Pre（id: pre-search.s2-pre）
 │   ├── analytical.ts           # S2 Analytical（id: analytical.s2）
 │   ├── syntopical.ts           # S3 Syntopical（id: syntopical.s3）
@@ -451,7 +442,7 @@ src/agent/prompts/
 
 ```typescript
 interface PromptModule {
-  id: string;                    // 唯一标识，如 'router.s0'
+  id: string;                    // 唯一标识，如 'inspectional.s1'
   version: string;               // 语义化版本，如 '1.0.0'
   name: string;                  // 显示名称
   description?: string;          // 简短描述
@@ -493,13 +484,13 @@ import { registerAllPrompts, promptRegistry } from './prompts/index.js';
 registerAllPrompts();
 
 // 获取提示词
-const routerPrompt = promptRegistry.get('router.s0');
-routerPrompt.systemPrompt  // 当前 locale 的 systemPrompt
+const inspectionalPrompt = promptRegistry.get('inspectional.s1');
+inspectionalPrompt.systemPrompt  // 当前 locale 的 systemPrompt
 
 // i18n
 promptRegistry.setLocale('en');
-const englishPrompt = promptRegistry.get('router.s0');
-const zhPrompt = promptRegistry.get('router.s0', 'zh'); // 强制中文
+const englishPrompt = promptRegistry.get('inspectional.s1');
+const zhPrompt = promptRegistry.get('inspectional.s1', 'zh'); // 强制中文
 
 // 查询
 const coreModules = promptRegistry.list({ category: 'core' });
@@ -541,8 +532,8 @@ excalidraw-prompts.ts (shim)
 每个模块有语义化版本号。变更通过 `PromptVersionManager` 追踪：
 
 ```typescript
-promptVersionManager.getVersion('router.s0');    // → '1.0.0'
-promptVersionManager.getChangelog('router.s0');
+promptVersionManager.getVersion('inspectional.s1');    // → '1.0.0'
+promptVersionManager.getChangelog('inspectional.s1');
 // → [{ version: '1.0.0', date: '2026-06-16', changes: ['初始版本'] }]
 ```
 

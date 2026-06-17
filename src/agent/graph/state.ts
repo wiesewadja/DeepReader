@@ -74,7 +74,10 @@ export const CognitiveEngineAnnotation = Annotation.Root({
     default: () => [],
   }),
 
-  // === S0: Router output ===
+  // === S0+S1 unified: Router depth + Inspectional output ===
+  // depth, rewrittenQuery, and allowedTools are now set by the
+  // inspectional node (which merges S0 Router functionality).
+  // See src/agent/graph/nodes/inspectional.ts — "Unified Router & Inspectional"
   depth: Annotation<ReadingDepth>(),
   rewrittenQuery: Annotation<string>(),
   allowedTools: Annotation<string[]>(overwriteWithDefault([])),
@@ -118,7 +121,7 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   correctionDetected: Annotation<boolean>(overwriteWithDefault(false)),
 
   // === Visualizer 自主触发 ===
-  // 由 S0 Router 设置：LLM 判断本次回答是否适合配 Excalidraw 图表。
+  // 由 S1 Unified (inspectional) LLM 判断是否适合配 Excalidraw 图表。
   // 不依赖用户明说"画图"——只要概念/流程/框架/关系类问题，router 主动 visualize=true。
   // edges 用 (userHasDiagramIntent || shouldVisualize) 决定是否走 VISUALIZER 节点。
   shouldVisualize: Annotation<boolean>(overwriteWithDefault(false)),
