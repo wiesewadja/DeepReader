@@ -222,12 +222,15 @@ export class AIMessage extends Message {
 	private onQuote?: (metadata: QuoteMetadata) => void;
 	private onDelete?: () => void;
 	private onTTS?: (messageId: string, content: string) => void;
+	private onStreamingEndCallback?: (messageId: string, content: string) => void;
 		protected onStreamingEnd(): void {
 			if (!this.el) return;
 			const bubble = this.el.querySelector(".deeppdf-message-bubble");
 			if (bubble) {
 				this.actionsRenderer.render(bubble as HTMLElement);
 			}
+			// 通知消息列表流式结束
+			this.onStreamingEndCallback?.(this.data.id, this.data.content);
 		}
 
 	// 委托控制器
@@ -254,6 +257,7 @@ export class AIMessage extends Message {
 			onQuote?: (metadata: QuoteMetadata) => void;
 			onDelete?: () => void;
 			onTTS?: (messageId: string, content: string) => void;
+			onStreamingEnd?: (messageId: string, content: string) => void;
 			getAllMessages?: () => MessageData[];
 			getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
 			getBubbleTheme?: () => string;
@@ -268,6 +272,7 @@ export class AIMessage extends Message {
 		this.onQuote = options?.onQuote;
 		this.onDelete = options?.onDelete;
 		this.onTTS = options?.onTTS;
+		this.onStreamingEndCallback = options?.onStreamingEnd;
 		this.getAllMessages = options?.getAllMessages || null;
 		this.getCurrentBookInfo = options?.getCurrentBookInfo || null;
 		this.getBubbleTheme = options?.getBubbleTheme;
