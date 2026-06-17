@@ -2,7 +2,7 @@
 
 > DeepReader 的 42 个 UI 组件组织——统一基类 `Component` + 16 子目录 + 4 大类功能划分。
 >
-> 配套阅读：[系统鸟瞰.md 第 2 层 UI 层](../architecture/系统鸟瞰.md#layers)、
+> 配套阅读：[system-overview.md 第 2 层 UI 层](../architecture/system-overview.md#layers)、
 > [features/ui.md](../features/ui.md)（产品视角 F-22~F-25）、
 > [views/](../views/)（顶层视图 + sidebar/library/zlibrary）。
 

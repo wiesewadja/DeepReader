@@ -3,7 +3,7 @@
 > [!NOTE]
 > This document may not reflect the current implementation.
 > See the final report for up-to-date state:
-> [Final Report](../compose/reports/tts-preload-preview.md)
+> ⚠️ 本文件为历史实现记录，已归档。
 
 ## 概览
 

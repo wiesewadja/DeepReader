@@ -3,7 +3,7 @@
 > DeepReader Agent 调 LLM 的两个基础设施——**LLMClient**（流式 + 工具调用 + thinking 模式 +
 > xiaomi fallback） + **ContextBuilder/Loader**（4 层系统提示 + 运行时上下文注入）。
 >
-> 配套阅读：[配置系统详解.md](../architecture/配置系统详解.md)（AIProviderAccount 配置）、
+> 配套阅读：[config-system.md](../architecture/config-system.md)（AIProviderAccount 配置）、
 > [tools-execution-model.md](./tools-execution-model.md)（LLM 输出的工具调用）、
 > [prompt-modules.md](./prompt-modules.md)（共享 prompt 上下文）。
 

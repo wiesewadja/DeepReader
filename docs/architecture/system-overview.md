@@ -324,8 +324,8 @@ PRESETS (奚童预设)               PROVIDER_CONFIGS (7 服务商)
 2. **[agent-overview.md](./agent-overview.md)** — 旅程视角：从用户输入到 UI 输出的完整调用栈
 3. **[state-machine-flow.md](./state-machine-flow.md)** — 状态机流转图细节
 4. **书籍索引双子**：
-   - **[书籍索引系统.md](./书籍索引系统.md)** — 索引构建（PDF/EPUB 解析、tree/BM25/向量化）
-   - **[书籍搜索系统.md](./书籍搜索系统.md)** — 索引检索（8 阶段混合搜索、命题、跨书、claim 验证、resolver）
+   - **[book-indexing.md](./book-indexing.md)** — 索引构建（PDF/EPUB 解析、tree/BM25/向量化）
+   - **[book-search.md](./book-search.md)** — 索引检索（8 阶段混合搜索、命题、跨书、claim 验证、resolver）
    - 旧 [book-indexing.md](./book-indexing.md) 为 v1 历史参考
 5. **8 个 ADR**（`docs/decisions/ADR-*`）— 决策视角，理解"为什么"
 6. **看代码**：

@@ -4,10 +4,10 @@
 > S2 Analytical 工具结果中的 `^block_id` 锚点反向追溯，LLM 输出走 post-processing
 > hook 自动校验和纠正。
 >
-> 配套阅读：[书籍搜索系统.md](./书籍搜索系统.md)（matchedBlocks 三级块定位）、
-> [状态机状态字段.md](./状态机状态字段.md)——[系统鸟瞰.md 第 5 节](../architecture/系统鸟瞰.md#state)（`toolResultsSnapshot`）、
-> [早停决策原理与问题.md §Bug 5](../architecture/早停决策原理与问题.md)（幽灵引用警告）、
-> [测试策略/wiki-link-refactor.md](../test-strategies/wiki-link-refactor.md)。
+> 配套阅读：[book-search.md](./book-search.md)（matchedBlocks 三级块定位）、
+> [agent-state-machine/L2-langgraph-state-machine.md](./agent-state-machine/L2-langgraph-state-machine.md)（state 字段定义）——[system-overview.md 第 5 节](../architecture/system-overview.md#state)（`toolResultsSnapshot`）、
+> [early-stop-decision.md §Bug 5](../architecture/early-stop-decision.md)（幽灵引用警告）、
+> [testing/](../testing/) 目录。
 
 ---
 
@@ -226,7 +226,7 @@ LLM 产出 content
 **关键调用方**：
 - S2 Analytical 输出后
 - S4 Formatter 输出后
-- 早停路径的 LLM 输出（详见 [早停决策原理与问题.md §Bug 5](../architecture/早停决策原理与问题.md)）
+- 早停路径的 LLM 输出（详见 [early-stop-decision.md §Bug 5](../architecture/early-stop-decision.md)）
 
 ---
 
@@ -240,7 +240,7 @@ LLM 产出 content
 | `src/agent/graph/utils/parse.ts` | 通用 Markdown 解析（169 行，含 wiki link 解析辅助） |
 | `tests/unit/agent/utils/wiki-link-hook.test.ts` | 完整 hook 单测 |
 | `tests/unit/agent/utils/wiki-link-pair-validator.test.ts` | 链接对验证单测 |
-| `tests/test-strategies/wiki-link-refactor.md` | wiki link 重构策略 + 历史 |
+| `docs/testing/` | 测试策略与场景文档 |
 
 ---
 

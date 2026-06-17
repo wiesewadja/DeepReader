@@ -3,7 +3,7 @@
 > DeepReader 系统级基础设施——**Logger**（按模块分类的日志系统 + 性能计时器）
 > + **Error Handler**（自定义错误类 + 全局单例 + 5 类错误处理 + 包装工具）。
 >
-> 配套阅读：[系统鸟瞰.md 第 9 条设计巧思](../architecture/系统鸟瞰.md#tricks)、
+> 配套阅读：[system-overview.md 第 9 条设计巧思](../architecture/system-overview.md#tricks)、
 > [错误模型与降级链.md](./error-model-and-degradation.md)（Agent 节点级错误）、
 > [wiki-link-system.md](./wiki-link-system.md)（post-processing 调用 logger）。
 

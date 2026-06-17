@@ -5,7 +5,7 @@
 >
 > 配套阅读：[error-model-and-degradation.md](./error-model-and-degradation.md)（LangGraph Agent 节点降级）、
 > [logger-and-error-handler.md](./logger-and-error-handler.md)（ErrorHandler 单例 + 5 类处理）、
-> [书籍索引系统.md §解析质量兜底](./书籍索引系统.md)（PDF / EPUB 解析兜底）。
+> [book-indexing.md §解析质量兜底](./book-indexing.md)（PDF / EPUB 解析兜底）。
 
 ---
 
@@ -335,7 +335,7 @@ export function getErrorName(e: unknown): string {
 | `src/services/mineru-api.ts` | MinerU API + 失败重试 |
 | `src/utils/logger.ts` | `logError` 含完整对象 |
 | `src/agent/graph/utils/safe-node.ts` | LangGraph 节点 try-catch 包装（详见 error-model-and-degradation.md） |
-| `src/agent/tracing/langsmith.ts` | LangSmith safeWrap 静默错误（详见会话与记忆系统.md） |
+| `src/agent/tracing/langsmith.ts` | LangSmith safeWrap 静默错误（详见session-and-memory.md） |
 | `tests/unit/utils/safe-request.test.ts` | CORS 降级单测 |
 | `tests/unit/utils/error-message.test.ts` | error-message 工具单测 |
 | `tests/unit/pageindex/pageindex.test.ts` | 4 策略降级单测 |

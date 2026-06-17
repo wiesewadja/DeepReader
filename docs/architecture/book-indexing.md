@@ -4,7 +4,7 @@
 > 构建 BM25 / 向量 / 命题 三路索引（**构建时**的事），并把所有产出落到
 > Obsidian Vault 里供后续 **搜索**（查询时的事）使用。
 >
-> 本文档为 v2.1 版（2026-06）。**搜索**相关章节已拆到 [书籍搜索系统.md](./书籍搜索系统.md)，
+> 本文档为 v2.1 版（2026-06）。**搜索**相关章节已拆到 [book-search.md](./book-search.md)，
 > 本文只讲**索引构建**。早期版本参考 [book-indexing.md](./book-indexing.md)（历史参考）。
 
 
@@ -29,7 +29,7 @@
 17. [关键源文件索引 source-files](#source-files)
 18. [与 v1 文档的差异（book-indexing.md → 本文档）](#v1-book-indexingmd)
 
-> **注意**：本文档只讲**索引**（构建与持久化）。**搜索**（检索时发生的事）见 [书籍搜索系统.md](./书籍搜索系统.md)。
+> **注意**：本文档只讲**索引**（构建与持久化）。**搜索**（检索时发生的事）见 [book-search.md](./book-search.md)。
 
 ---
 
@@ -425,7 +425,7 @@ BM25Data {
 
 ### 检索侧使用
 
-详见 [书籍搜索系统.md](./书籍搜索系统.md#bm25-bm25)。
+详见 [book-search.md](./book-search.md#bm25-bm25)。
 
 ---
 
@@ -453,7 +453,7 @@ if (options.propositions?.enabled && options.propositions.apiKey) {
 
 - 每章提取 N 张原子事实卡（`{ id, type, context, answer, tags }`）
 - 存储：`propositions.json` + `prop-vectors.jsonl`
-- 检索侧使用见 [书籍搜索系统.md](./书籍搜索系统.md#proposition)
+- 检索侧使用见 [book-search.md](./book-search.md#proposition)
 
 ---
 
@@ -632,7 +632,7 @@ UI 入口在 `library-view.ts` 工具栏"归档"按钮。
 
 **位置**：`tests/unit/pageindex/`（共 19 个文件，~4362 行）
 
-> 本文档只列**索引**相关测试。**搜索**相关测试见 [书籍搜索系统.md](./书籍搜索系统.md#tests)。
+> 本文档只列**索引**相关测试。**搜索**相关测试见 [book-search.md](./book-search.md#tests)。
 
 | 测试文件 | 覆盖范围 | 行数 |
 |---|---|---|
@@ -687,9 +687,9 @@ UI 入口在 `library-view.ts` 工具栏"归档"按钮。
 | `src/pageindex/exporters/pdf-to-obsidian.ts` | PDF Markdown 导出 |
 | `src/pageindex/exporters/epub-to-obsidian.ts` | EPUB Markdown 导出 |
 | `src/pageindex/exporters/adapter.ts` | 大章节拆分适配器 |
-`src/pageindex/bm25.ts` | BM25 索引构建（搜索侧算法见 [书籍搜索系统.md](./书籍搜索系统.md)） |
+`src/pageindex/bm25.ts` | BM25 索引构建（搜索侧算法见 [book-search.md](./book-search.md)） |
 `src/pageindex/chunker.ts` | 段落分块器 |
-`src/pageindex/proposition-indexer.ts` | 命题卡片提取（已禁用，搜索侧用法见 [书籍搜索系统.md](./书籍搜索系统.md)） |
+`src/pageindex/proposition-indexer.ts` | 命题卡片提取（已禁用，搜索侧用法见 [book-search.md](./book-search.md)） |
 | `src/pageindex/vault/compiler.ts` | Vault 笔记编译入口 |
 | `src/pageindex/vault/compiler-{scan,llm,reorg,enhance,prompts,state,types,index}.ts` | 编译管线各阶段 |
 | `src/pageindex/vault/vectors.ts` | 向量存储与搜索（共享） |
@@ -703,10 +703,10 @@ UI 入口在 `library-view.ts` 工具栏"归档"按钮。
 
 ## 与 v1 文档的差异（`book-indexing.md` → 索引 / 搜索两份）
 
-本文档 + [书籍搜索系统.md](./书籍搜索系统.md) 合起来是 v2 体系。拆分原因：
+本文档 + [book-search.md](./book-search.md) 合起来是 v2 体系。拆分原因：
 **索引**是构建时的事，**搜索**是查询时的事，混在一起会让人搞不清状态。
 
-| 维度 | v1（book-indexing.md） | v2 索引（本文） | v2 搜索（书籍搜索系统.md） |
+| 维度 | v1（book-indexing.md） | v2 索引（本文） | v2 搜索（book-search.md） |
 |---|---|---|---|
 | 路径管理 | 缺 | 独立章节 | 引用 |
 | 迁移机制 | 缺 | 独立章节（path + bookId） | — |
@@ -728,4 +728,4 @@ UI 入口在 `library-view.ts` 工具栏"归档"按钮。
 ---
 
 | 2026-06-10 | v2 重写：补全路径管理/迁移/unified/archive/vault 编译/tracer/Stage 6 等子系统 |
-| 2026-06-10 | v2.1 拆分：将 8 阶段搜索 + 跨书籍搜索 + claim-verifier 拆到 [书籍搜索系统.md](./书籍搜索系统.md)，索引文档只讲构建 |
+| 2026-06-10 | v2.1 拆分：将 8 阶段搜索 + 跨书籍搜索 + claim-verifier 拆到 [book-search.md](./book-search.md)，索引文档只讲构建 |

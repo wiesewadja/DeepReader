@@ -3,8 +3,8 @@
 > 阅读体验核心交互——**Highlight**（用户高亮 + 块 ID 关联 + 5 色主题）
 > + **Excerpt**（AI 回答导出为 Obsidian 笔记 + 目标文件路径生成）。
 >
-> 配套阅读：[系统鸟瞰.md 第 2 层 UI 层"ReadingMode Service"](../architecture/系统鸟瞰.md#layers)、
-> [书籍索引系统.md §Markdown 导出](./书籍索引系统.md)（书籍被阅读时）、
+> 配套阅读：[system-overview.md 第 2 层 UI 层"ReadingMode Service"](../architecture/system-overview.md#layers)、
+> [book-indexing.md §Markdown 导出](./book-indexing.md)（书籍被阅读时）、
 > [features/reading.md F-17~F-21](../features/reading.md)（产品视角）。
 
 ---

@@ -2,10 +2,10 @@
 
 > DeepReader 8 个核心 LLM 提示词的组合方式——**XML 标签结构 + 分层上下文注入 + 共享 `AnalyticalPromptContext` 接口**。
 >
-> 配套阅读：[系统鸟瞰.md 第 3 节 状态机](../architecture/系统鸟瞰.md#state-machine)、
-> [意图路由系统.md](../architecture/意图路由系统.md)（dynamic allowedTools）、
-> [书籍搜索系统.md](../architecture/书籍搜索系统.md)（检索结果注入 prompt）、
-> [早停决策原理与问题.md](../architecture/早停决策原理与问题.md)（早停 prompt 缺失 betterQuestion）。
+> 配套阅读：[system-overview.md 第 3 节 状态机](../architecture/system-overview.md#state-machine)、
+> [intent-router.md](../architecture/intent-router.md)（dynamic allowedTools）、
+> [book-search.md](../architecture/book-search.md)（检索结果注入 prompt）、
+> [early-stop-decision.md](../architecture/early-stop-decision.md)（早停 prompt 缺失 betterQuestion）。
 
 ---
 
@@ -115,7 +115,7 @@ export function buildAnalyticalSystemPrompt(ctx) {
 **输出**：直接给 LLM 的早停 prompt
 
 **关键设计**：
-- **已知 bug**（详见 [早停决策原理与问题.md Bug 2](../architecture/早停决策原理与问题.md)）：**早停路径会丢失 betterQuestion + structuralAnalysis**——已在黄金测试集锁定
+- **已知 bug**（详见 [early-stop-decision.md Bug 2](../architecture/early-stop-decision.md)）：**早停路径会丢失 betterQuestion + structuralAnalysis**——已在黄金测试集锁定
 - **修复**：`buildEarlyStopPrompt(ctx)` 接受 `betterQuestion` + `structuralAnalysis` 参数
 
 ### 3. analytical-prompt.ts (S2 主对话)

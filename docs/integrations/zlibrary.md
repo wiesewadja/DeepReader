@@ -2,7 +2,7 @@
 
 > 搜书 / 下载电子书到 DeepReader Library。
 >
-> 配套阅读：[features/integrations.md F-29](../features/integrations.md#f-29-z-library-搜索--下载)（产品视角 + 验收标准）、[系统鸟瞰.md 第 8 节 集成边界](../architecture/系统鸟瞰.md#integrations)、[ARCHITECTURE/product-manual §1.2](../product-manual.md)（用户操作手册）。
+> 配套阅读：[features/integrations.md F-29](../features/integrations.md#f-29-z-library-搜索--下载)（产品视角 + 验收标准）、[system-overview.md 第 8 节 集成边界](../architecture/system-overview.md#integrations)、[ARCHITECTURE/product-manual §1.2](../product-manual.md)（用户操作手册）。
 
 ---
 

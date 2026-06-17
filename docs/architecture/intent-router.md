@@ -3,8 +3,8 @@
 > DeepReader **IntentRouter 预分类器**——基于正则匹配，**0 LLM 调用**快速判断用户意图，
 > 动态限制 LLM 可用工具集 + 注入 `<system_note>` + 设置迭代上限。
 >
-> 配套阅读：[系统鸟瞰.md 第 3 节 状态机](../architecture/系统鸟瞰.md#state-machine)、
-> [配置系统详解.md](../architecture/配置系统详解.md)（router 角色的 fastModel 选型）、
+> 配套阅读：[system-overview.md 第 3 节 状态机](../architecture/system-overview.md#state-machine)、
+> [config-system.md](../architecture/config-system.md)（router 角色的 fastModel 选型）、
 > [agent-state-machine/L4-nodes.md](../architecture/agent-state-machine/L4-nodes.md)。
 
 ---

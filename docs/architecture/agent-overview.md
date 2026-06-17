@@ -295,7 +295,7 @@ UI 阅读视图
 
 **其他相关文档：**
 - `docs/architecture/agent-state-machine/README.md` — L0-L8 文档索引
-- `docs/architecture/书籍索引系统.md` — PageIndex 索引管线
+- `docs/architecture/book-indexing.md` — PageIndex 索引管线
 - `docs/features/ai-dialogue.md` — AI 对话 UI 行为
 - `docs/features/agent-tools.md` — 工具系统用户视角
 - `docs/features/memory-observability.md` — 记忆与可观测性

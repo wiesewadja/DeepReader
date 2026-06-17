@@ -3,7 +3,7 @@
 > DeepReader 的检索子系统：Agent 在 LLM 调用前用搜索从书籍索引中捞回相关段落，
 > 把结果注入到 prompt，让 LLM 在"看得到原文"的前提下回答。
 >
-> 本文档与 [书籍索引系统.md](./书籍索引系统.md) 是一对——**索引**讲构建（构建时发生的事），
+> 本文档与 [book-indexing.md](./book-indexing.md) 是一对——**索引**讲构建（构建时发生的事），
 > **搜索**讲查询（查询时发生的事）。
 
 ---
@@ -532,7 +532,7 @@ return sha256Hex(`${basePath}/${bookFile.path}`).slice(0, 8);
 - `src/agent/tools/local/search-text.ts`（`search_markdown_text` 工具）
 - `src/agent/tools/local/utils.ts`（其他本地工具）
 
-> 详见 [书籍索引系统.md](./书籍索引系统.md)（构建侧的 bookId 定义）。
+> 详见 [book-indexing.md](./book-indexing.md)（构建侧的 bookId 定义）。
 
 ---
 
@@ -698,11 +698,11 @@ Promise<BookSearchResultV2[]>;
 - **`asyncVectorSearch` 的 L2 → L1 回退** [INFERENCE]：当 chunks 没建 L2 但有 L1 时静默回退，UI 无法告知用户"这次搜索质量可能下降"。
 - **`searchWithPropositions` 跨书融合无单测** [INFERENCE]：权重、聚合逻辑全靠人工验证。
 - **`claim-verifier` 无单测** [INFERENCE]：是 Agent 输出正确性的最后一道门，逻辑复杂（解析 claim / 搜原段落 / 比对文本）。
-- **`hasDiagramIntent` 永远返回 `false`** [INFERENCE]：见 [系统鸟瞰.md](./系统鸟瞰.md) 风险章节，与搜索无关但同源。
+- **`hasDiagramIntent` 永远返回 `false`** [INFERENCE]：见 [system-overview.md](./system-overview.md) 风险章节，与搜索无关但同源。
 - **跨设备 resolver 移动端 title 匹配可能撞车** [INFERENCE]：如果用户有两本名字相近的书，移动端 `book-meta.json.title.includes(bookTitle)` 会误匹配第一个。
 
 ---
 
 | 日期 | 变更 |
 |---|---|
-| 2026-06-10 | v1 新建：作为 [书籍索引系统.md](./书籍索引系统.md) 的姊妹篇，从原文档抽出 8 阶段搜索 + 命题检索 + 跨书籍搜索 + claim 验证 + 跨设备 resolver + 性能缓存，组成完整的检索子系统视图 |
+| 2026-06-10 | v1 新建：作为 [book-indexing.md](./book-indexing.md) 的姊妹篇，从原文档抽出 8 阶段搜索 + 命题检索 + 跨书籍搜索 + claim 验证 + 跨设备 resolver + 性能缓存，组成完整的检索子系统视图 |

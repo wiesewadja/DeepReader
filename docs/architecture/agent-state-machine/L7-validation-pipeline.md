@@ -457,4 +457,4 @@ class WikiLinkPostProcessor {
 - L8 基础设施层 — ToolContext 来源
 - ADR-003 LangGraph 状态机 — 状态机架构选型
 - `tasks/wiki-link-refactor-todo.md` — T0-T4 的 14 个任务完成记录
-- `docs/test-strategies/wiki-link-refactor.md` — 5 阶段 × 4 层覆盖矩阵
+- `docs/testing/wiki-link-refactor.md` — wiki link 重构策略

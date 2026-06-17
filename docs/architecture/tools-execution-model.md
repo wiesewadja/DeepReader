@@ -2,10 +2,10 @@
 > DeepReader Agent 的"工具调用 + 循环控制 + 结果压缩"机制——LangGraph ReAct 子图与
 > Plan-Execute-Replan 子图共享 `tool-execution.ts` 工具调用基础设施。
 >
-> 配套阅读：[系统鸟瞰.md 第 4 节 工具集](../architecture/系统鸟瞰.md#tools)、
-> [意图路由系统.md](../architecture/意图路由系统.md)（动态 allowedTools 限制）、
-> [书籍搜索系统.md](../architecture/书籍搜索系统.md)（工具的检索实现）、
-> [早停决策原理与问题.md](../architecture/早停决策原理与问题.md)（plan-execute 与早停的关系）。
+> 配套阅读：[system-overview.md 第 4 节 工具集](../architecture/system-overview.md#tools)、
+> [intent-router.md](../architecture/intent-router.md)（动态 allowedTools 限制）、
+> [book-search.md](../architecture/book-search.md)（工具的检索实现）、
+> [early-stop-decision.md](../architecture/early-stop-decision.md)（plan-execute 与早停的关系）。
 ---
 ## 目录
 1. [设计意图：让 LLM "以受控方式调工具"](#why)

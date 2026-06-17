@@ -3,7 +3,7 @@
 > 文本转语音（Text-to-Speech）和语音转文本（Automatic Speech Recognition）—— DeepReader 的
 > "眼睛 + 耳朵" 双向接口。
 >
-> 配套阅读：[系统鸟瞰.md 第 8 节 集成边界](../architecture/系统鸟瞰.md#integrations)、[配置系统详解.md 角色表 tts](../architecture/配置系统详解.md#roles)、[features/ui.md F-22~F-25](../features/ui.md)。
+> 配套阅读：[system-overview.md 第 8 节 集成边界](../architecture/system-overview.md#integrations)、[config-system.md 角色表 tts](../architecture/config-system.md#roles)、[features/ui.md F-22~F-25](../features/ui.md)。
 
 ---
 
@@ -46,7 +46,7 @@ DeepReader 主要是**视觉交互**——用户看 / 听 AI 的回答。但有�
 }
 ```
 
-**位置**：[配置系统详解 § 8 角色](../architecture/配置系统详解.md#roles)。奚童预设默认配置 `tts: mimo-v2.5-tts-voicedesign`。
+**位置**：[配置系统详解 § 8 角色](../architecture/config-system.md#roles)。奚童预设默认配置 `tts: mimo-v2.5-tts-voicedesign`。
 
 ### 关键能力
 

@@ -4,9 +4,9 @@
 > 一旦触发就让 LLM 跳过 ReAct 工具循环直接出答案。
 >
 > 本文档是**故障地图**（**不修复代码**），配套阅读：
-> - [书籍搜索系统.md](./书籍搜索系统.md)（8 阶段混合搜索 + 命题检索 + 跨书籍）
-> - [书籍索引系统.md](./书籍索引系统.md)（索引构建）
-> - [系统鸟瞰.md](./系统鸟瞰.md) 中的"LangGraph 状态机"节
+> - [book-search.md](./book-search.md)（8 阶段混合搜索 + 命题检索 + 跨书籍）
+> - [book-indexing.md](./book-indexing.md)（索引构建）
+> - [system-overview.md](./system-overview.md) 中的"LangGraph 状态机"节
 
 1. [S2-Pre 在状态机中的位置（position）](#s2-pre-position)
 2. [核心问题：S2-Pre 解决什么（why）](#s2-pre-why)

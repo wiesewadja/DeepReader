@@ -2,7 +2,7 @@
 
 > DeepReader 配置系统的完整技术参考——**两层架构 + 7 服务商 + 8 角色 + 奚童双 Provider 预设**。
 >
-> 配套阅读：[系统鸟瞰.md](./系统鸟瞰.md) 第 7 节（鸟瞰图）、[state-machine-flow.md](./state-machine-flow.md)（角色如何被消费）、ADR-006（双模型路由决策）。
+> 配套阅读：[system-overview.md](./system-overview.md) 第 7 节（鸟瞰图）、[state-machine-flow.md](./state-machine-flow.md)（角色如何被消费）、ADR-006（双模型路由决策）。
 
 ---
 
@@ -223,13 +223,13 @@ interface AIRoles {
 
 ### Q3: "为什么我配了 7 个服务商还是不能加命题卡片？"
 
-**原因**：`proposition` 角色**默认 null**——**命题卡片当前已禁用**（`docs/architecture/书籍索引系统.md` 有说明）。
+**原因**：`proposition` 角色**默认 null**——**命题卡片当前已禁用**（`docs/architecture/book-indexing.md` 有说明）。
 
 **修复**：填一个 chat 角色模型到 `proposition`，**+ 改 `library-view.ts` 的 `PROPOSITION_ENABLED = true` + 改 `book-indexer.ts` 的启用条件**。
 
 ### Q4: "我配了 `imagegen` 但 visualizer 还是不工作"
 
-**原因**：`hasDiagramIntent()` 路由判断（`docs/architecture/系统鸟瞰.md` 风险章节提到）**永远返回 false**——图表生成已迁到 Hermes MCP，`imagegen` 角色不再消费。
+**原因**：`hasDiagramIntent()` 路由判断（`docs/architecture/system-overview.md` 风险章节提到）**永远返回 false**——图表生成已迁到 Hermes MCP，`imagegen` 角色不再消费。
 
 **修复**：清理死分支（这是技术债，暂未做）。
 

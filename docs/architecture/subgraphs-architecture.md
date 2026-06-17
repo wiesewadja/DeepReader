@@ -4,7 +4,7 @@
 > S2 Analytical 节点是 **父图**——把控制权委托给**子图**执行 ReAct / Plan-Execute。
 >
 > 配套阅读：[tools-execution-model.md](./tools-execution-model.md)（ReAct / Plan-Execute 执行算法）、
-> [系统鸟瞰.md 第 3 节状态机](../architecture/系统鸟瞰.md#state-machine)（S2 Analytical 节点）、
+> [system-overview.md 第 3 节状态机](../architecture/system-overview.md#state-machine)（S2 Analytical 节点）、
 > [agent-state-machine/L5-subgraphs.md](../architecture/agent-state-machine/L5-subgraphs.md)（分层视角）。
 
 ---

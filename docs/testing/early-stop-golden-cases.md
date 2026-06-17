@@ -1,7 +1,7 @@
 # 早停决策黄金测试集
 
 > 制定日期：2026-06-10 | 状态：**草案**（6 个 case，未跑过）
-> 配套阅读：[早停决策原理与问题.md](../architecture/早停决策原理与问题.md)（6 个 bug 的故障地图）
+> 配套阅读：[early-stop-decision.md](../architecture/early-stop-decision.md)（6 个 bug 的故障地图）
 > 用途：给后续接手者一份"理想行为"清单——**改源码前，先让这 6 个 case 都能跑通**。
 
 ---
@@ -281,7 +281,7 @@ cases:
 
 ## 6. 与其他文档的关系
 
-- [早停决策原理与问题.md](../architecture/早停决策原理与问题.md) —— 6 个 bug 的"故障地图"（设计层）
+- [early-stop-decision.md](../architecture/early-stop-decision.md) —— 6 个 bug 的"故障地图"（设计层）
 - [llm-bug-e2e-pattern.md](./llm-bug-e2e-pattern.md) —— LLM 类 bug 调查的通用 5 阶段流程
 - [5-layer-defense-E2E.md](./5-layer-defense-E2E.md) —— L5 负向声明复核（旁支 1）的同类先例
 - [reading-progress-anti-regression.md](./reading-progress-anti-regression.md) —— 单一回归点的同类先例

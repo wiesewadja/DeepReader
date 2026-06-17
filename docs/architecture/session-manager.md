@@ -4,8 +4,8 @@
 > `MemoryStore`（记忆）、`ContextManager`（上下文）三大基础服务，向 SidebarView 提供
 > "新建 / 恢复 / 切模式 / 跨书 / 闲聊"等高级操作。
 >
-> 配套阅读：[会话与记忆系统.md §SessionStore](./会话与记忆系统.md)（JSONL + LRU 底层）、
-> [系统鸟瞰.md 第 2 层 UI 层"ReadingMode Service"](../architecture/系统鸟瞰.md#layers)、
+> 配套阅读：[session-and-memory.md §SessionStore](./session-and-memory.md)（JSONL + LRU 底层）、
+> [system-overview.md 第 2 层 UI 层"ReadingMode Service"](../architecture/system-overview.md#layers)、
 > [features/ai-dialogue.md F-07~F-11](../features/ai-dialogue.md)（产品视角）、
 > [context-manager.md](./context-manager.md)（上下文层）。
 
@@ -295,7 +295,7 @@ class SessionManager {
 
 ### 整合算法
 
-**详见** [会话与记忆系统.md §MemoryStore](./会话与记忆系统.md)
+**详见** [session-and-memory.md §MemoryStore](./session-and-memory.md)
 
 **简述**：
 1. 读 MEMORY.md 当前内容

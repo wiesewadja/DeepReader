@@ -3,7 +3,7 @@
 > DeepReader 的"用户上下文"层——Session 负责**当前对话的持久化与续跑**，
 > Memory 负责**长期用户画像**。LangSmith Tracer 负责**观测**所有 LangGraph 执行。
 >
-> 配套阅读：[系统鸟瞰.md 第 9 节 设计巧思"记忆双层"](../architecture/系统鸟瞰.md#tricks)、
+> 配套阅读：[system-overview.md 第 9 节 设计巧思"记忆双层"](../architecture/system-overview.md#tricks)、
 > [Profile 集成](../integrations/profile.md)（用户画像的"近期事实层"——本文的 MemoryStore 是"长期"层）、
 > ADR-007（记忆与会话架构决策）、[features/memory-observability.md](../features/memory-observability.md)。
 

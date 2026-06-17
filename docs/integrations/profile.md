@@ -2,7 +2,7 @@
 
 > 增量构建用户画像——多轮对话 + 长期阅读积累，作为 Agent 上下文的"个性化层"。
 >
-> 配套阅读：[系统鸟瞰.md 第 7 节 设计巧思](../architecture/系统鸟瞰.md#tricks)（"记忆双层" 部分）、ADR-007（记忆与会话架构）、[features/memory-observability.md](../features/memory-observability.md)。
+> 配套阅读：[system-overview.md 第 7 节 设计巧思](../architecture/system-overview.md#tricks)（"记忆双层" 部分）、ADR-007（记忆与会话架构）、[features/memory-observability.md](../features/memory-observability.md)。
 
 ---
 

@@ -3,9 +3,9 @@
 > DeepReader LangGraph 状态机的"单节点崩溃 = 不影响主图" 兜底机制——
 > `safeNode()` 包装 + `NodeError` 统一错误模型 + `fallbackAction` 三选一。
 >
-> 配套阅读：[系统鸟瞰.md 第 9 条设计巧思"5 层 fallback"](../architecture/系统鸟瞰.md#tricks)、
+> 配套阅读：[system-overview.md 第 9 条设计巧思"5 层 fallback"](../architecture/system-overview.md#tricks)、
 > [state-machine-flow.md](../architecture/state-machine-flow.md)、
-> [早停决策原理与问题.md §5 风险章节](../architecture/早停决策原理与问题.md)。
+> [early-stop-decision.md §5 风险章节](../architecture/early-stop-decision.md)。
 
 ---
 
@@ -218,7 +218,7 @@ const finalOutput = analysisResult + errorHints;
 
 ## 与早停决策的关系
 
-**位置**：[早停决策原理与问题.md §3 关键设计](../architecture/早停决策原理与问题.md)
+**位置**：[early-stop-decision.md §3 关键设计](../architecture/early-stop-decision.md)
 
 - 早停走 S4 formatter **不走 S2 Analytical**——如果 S2 已经写入 `nodeErrors`，早停路径也会通过 formatter 看到
 - **L5 负向声明核验** 失败时 `routeAfterPreSearch` 强制 S2 重跑（不走早停）——独立机制，跟 `safeNode` 错误无关

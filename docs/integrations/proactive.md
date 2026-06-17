@@ -2,7 +2,7 @@
 
 > 用户阅读时**主动**触发苏格拉底引导——基于"高亮数 + 章节切换 + 冷却"三条件。
 >
-> 配套阅读：[system-overview.md 第 7 节 设计巧思](../architecture/系统鸟瞰.md#tricks)、[state-machine-flow.md](../architecture/state-machine-flow.md)、ADR-008（proactive 引擎设计）、[features/memory-observability.md](../features/memory-observability.md)。
+> 配套阅读：[system-overview.md 第 7 节 设计巧思](../architecture/system-overview.md#tricks)、[state-machine-flow.md](../architecture/state-machine-flow.md)、ADR-008（proactive 引擎设计）、[features/memory-observability.md](../features/memory-observability.md)。
 
 ---
 
