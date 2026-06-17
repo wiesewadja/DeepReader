@@ -51,7 +51,8 @@ function computeMaxTheoryBM25(keywords: string[], bm25Index: any): number {
   for (const token of queryTokens) {
     const docFreq = df[token] || 0;
     if (docFreq === 0) continue;
-    const idf = Math.max(0, Math.log((totalDocs - docFreq + 0.5) / (docFreq + 0.5)));
+    const effectiveDf = Math.min(docFreq, totalDocs);
+    const idf = Math.max(0, Math.log((totalDocs - effectiveDf + 0.5) / (effectiveDf + 0.5)));
     const maxTokenScore = idf * (k1 + 1);
     maxTheoryScore += maxTokenScore;
   }
@@ -382,7 +383,7 @@ export async function preSearchNode(
         };
 
         if (queryVector) {
-          (hybridOpts as any).precomputedEmbedding = queryVector;
+          hybridOpts.precomputedEmbedding = queryVector;
         }
 
         const hybridResults = await runSearchAndFusion(hybridOpts);

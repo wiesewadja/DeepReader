@@ -177,7 +177,9 @@ export async function searchBookV2(
 
   // ── Pre-compute query embedding (避免重复调用) ──────────────────────
   let precomputedEmbedding: number[] | null = null;
-  if (options.embedding && options.embedding.provider !== 'local') {
+  if (options.precomputedEmbedding) {
+    precomputedEmbedding = options.precomputedEmbedding;
+  } else if (options.embedding && options.embedding.provider !== 'local') {
     try {
       precomputedEmbedding = await getOrGenerateEmbedding(options.query, options.embedding);
     } catch (error) {

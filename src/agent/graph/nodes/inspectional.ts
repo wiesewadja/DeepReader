@@ -57,17 +57,13 @@ export async function inspectionalNode(
 
   const rawQuery = extractLastHumanMessage(messages);
 
-  // 1. IntentRouter analysis
-  const rawIntent = intentRouter.analyze(rawQuery);
-  log(`[S1 Unified] IntentRouter(raw): intents=${rawIntent.detectedIntents.join(',')}, tools=${rawIntent.allowedTools.join(',')}`);
-
-  // 2. Correction detection
+  // 1. Correction detection
   const isCorrection = detectCorrection(rawQuery);
   if (isCorrection) {
     log(`[S1 Unified] 纠错信号检测: 强制 depth=2 (ANALYTICAL)`);
   }
 
-  // 3. Continuity check
+  // 2. Continuity check
   const continuity = inheritDepthOnContinuity(ReadingDepth.CASUAL, rawQuery, chatHistory);
   let initialDepth: ReadingDepth = ReadingDepth.CASUAL;
   if (continuity.didUpgrade) {
@@ -75,26 +71,22 @@ export async function inspectionalNode(
     initialDepth = ReadingDepth.ANALYTICAL;
   }
 
-  // 4. Correction override
+  // 3. Correction override
   if (isCorrection && initialDepth < ReadingDepth.ANALYTICAL) {
     initialDepth = ReadingDepth.ANALYTICAL;
   }
 
-  // 5. Inherit tools follow-up rule
-  const hasNewIntent = rawIntent.detectedIntents.length > 0
-    && !rawIntent.detectedIntents.every(i => i === 'general_qa' || i === '闲聊');
-  const inheritedTools = (prevTools.length > 0 && !hasNewIntent) ? prevTools : [];
+  // 4. Short-circuit: Casual chat — check before heavy IntentRouter analysis
+  const trimmedQuery = rawQuery.trim();
+  const isCasualGreeting = /^(你好|hi|hello|谢谢|thank you|早上好|中午好|下午好|晚上好|再见|bye)\s*[。！？?!]*$/i.test(trimmedQuery);
+  const isPossibleShortCasual = trimmedQuery.length <= 5 && !continuity.didUpgrade && !isCorrection;
 
-  // 6. Short-circuit: Casual chat (pure TS rules)
-  const isCasualGreeting = /^(你好|hi|hello|谢谢|thank you|早上好|中午好|下午好|晚上好|再见|bye)\s*[。！？?!]*$/i.test(rawQuery.trim());
-  const isShortCasual = rawQuery.trim().length <= 5 && !continuity.didUpgrade && !isCorrection && rawIntent.detectedIntents.includes('闲聊');
-
-  if (isCasualGreeting || isShortCasual) {
-    log(`[S1 Unified] 触发纯 TS 短路返回: isCasualGreeting=${isCasualGreeting}, isShortCasual=${isShortCasual}`);
+  if (isCasualGreeting || isPossibleShortCasual) {
+    log(`[S1 Unified] 触发纯 TS 短路返回: isCasualGreeting=${isCasualGreeting}, isShortCasual=${isPossibleShortCasual}`);
     return {
       depth: ReadingDepth.CASUAL,
       rewrittenQuery: rawQuery,
-      allowedTools: mergeTools(rawIntent.allowedTools, inheritedTools),
+      allowedTools: [],
       correctionDetected: isCorrection,
       scopeNodeIds: [],
       tocSummary: '闲聊/常规问答',
@@ -104,6 +96,15 @@ export async function inspectionalNode(
       shouldVisualize: false,
     };
   }
+
+  // 5. IntentRouter analysis (after short-circuit, only for non-trivial messages)
+  const rawIntent = intentRouter.analyze(rawQuery);
+  log(`[S1 Unified] IntentRouter(raw): intents=${rawIntent.detectedIntents.join(',')}, tools=${rawIntent.allowedTools.join(',')}`);
+
+  // 6. Inherit tools follow-up rule
+  const hasNewIntent = rawIntent.detectedIntents.length > 0
+    && !rawIntent.detectedIntents.every(i => i === 'general_qa' || i === '闲聊');
+  const inheritedTools = (prevTools.length > 0 && !hasNewIntent) ? prevTools : [];
 
   // Default return when config is incomplete (e.g. testing)
   if (!fastModel || !toolContext) {
