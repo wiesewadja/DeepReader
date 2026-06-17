@@ -5,6 +5,7 @@
 
 import { ItemView, type WorkspaceLeaf, Notice } from "obsidian";
 import { type FrontendAgent } from "../../agent/index.js";
+import { MemoryStore } from "../../agent/memory/store.js";
 import { ProactiveEngine } from "../../agent/proactive/engine.js";
 import { SessionStore } from "../../agent/session/index.js";
 import type { DeepReaderPluginInterface } from "../../agent/tools/context/vault.js";
@@ -964,6 +965,9 @@ export class SidebarView extends ItemView {
 					// 喇叭按钮始终直接朗读原文，不走摘要模式
 					this.ttsCtrl.handleTTS(messageId, content, { rawText: true });
 				},
+				onStreamingEnd: (messageId: string, content: string) => {
+					this.preloadTTSPreview(messageId, content);
+				},
 				getCurrentBookInfo: () => ({
 					coverUrl: this.bookMgr.currentBookCoverUrl,
 					author: this.bookMgr.currentBookAuthor,
@@ -1184,6 +1188,28 @@ export class SidebarView extends ItemView {
 	private showError(message: string): void {
 		new Notice(message);
 		logError("[DeepPDF]", message);
+	}
+
+	/**
+	 * 预加载 TTS 预览：AI 回复流式结束后，预生成前 250 字语音
+	 */
+	private async preloadTTSPreview(messageId: string, content: string): Promise<void> {
+		if (!this.ttsService) return;
+
+		try {
+			log(`[TTS] Preload preview started for message ${messageId}`);
+			const context = {
+				bookId: this.bookMgr.currentIndexId || undefined,
+				bookTitle: this.getDisplayName(this.bookMgr.currentPdfName || '') || undefined,
+				bookAuthor: this.bookMgr.currentBookAuthor || undefined,
+				memoryContent: await new MemoryStore(this.app).readLongTermMemory() || undefined,
+			};
+
+			await this.ttsService.preloadPreview(messageId, content, context);
+			log(`[TTS] Preload preview completed for message ${messageId}`);
+		} catch (err) {
+			log(`[TTS] Preload preview failed for message ${messageId}:`, err);
+		}
 	}
 
 	async onClose() {

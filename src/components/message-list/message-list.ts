@@ -134,6 +134,8 @@ export interface MessageCallbacks {
 	onDelete?: (messageId: string) => void;
 	/** TTS 朗读 */
 	onTTS?: (messageId: string, content: string) => void;
+	/** AI 回复流式结束 */
+	onStreamingEnd?: (messageId: string, content: string) => void;
 	/** 错误状态下点击重试按钮的回调 */
 	onRetry?: () => void;
 	/** 获取当前书籍信息（封面、作者、书名） */
@@ -361,6 +363,9 @@ export class MessageList extends Component {
 			onTTS: (messageId: string, content: string) => {
 				this.callbacks.onTTS?.(messageId, content);
 			},
+			onStreamingEnd: (messageId: string, content: string) => {
+				this.callbacks.onStreamingEnd?.(messageId, content);
+			},
 			getAllMessages: () => this.getMessagesData(),
 			getCurrentBookInfo: this.callbacks.getCurrentBookInfo,
 			getBubbleTheme: this.callbacks.getBubbleTheme,
@@ -516,6 +521,13 @@ export class MessageList extends Component {
 		if (msg?.setTTSState) {
 			msg.setTTSState(state);
 		}
+	}
+
+	/**
+	 * 通知 AI 回复流式结束
+	 */
+	notifyStreamingEnd(messageId: string, content: string): void {
+		this.callbacks.onStreamingEnd?.(messageId, content);
 	}
 
 	/**
