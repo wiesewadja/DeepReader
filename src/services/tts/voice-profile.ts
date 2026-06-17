@@ -87,43 +87,38 @@ function resolveMoodHint(mood: string): string {
 }
 
 const XIAOMI_DEFAULT_VOICE = '冰糖';
-const MINIMAX_DEFAULT_VOICE_ID = 'female-tianmei';
 
 /**
  * 根据书籍类型生成最佳音色配置
  *
- * V2.5 策略：固定使用 冰糖（中文年轻女声），通过音频标签和导演模式控制风格
- * MiniMax 策略：使用系统音色 female-shensi-ziran，后续可通过 Voice Design API 设计专属音色
+ * 固定使用 mimo v2.5 TTS（小米 MIMO），预置音色 冰糖（中文年轻女声），
+ * 通过音频标签和导演模式控制风格。
  *
  * 风格控制：
- *   - 音频标签 (audioTag)：放在 assistant content 前面，控制音色/情感/节奏（仅 Xiaomi）
+ *   - 音频标签 (audioTag)：放在 assistant content 前面，控制音色/情感/节奏
  *   - 导演模式 (styleText)：放在 user message，定义角色/场景/指导
  */
-export function resolveVoiceProfile(genre: BookGenre, provider?: string, isVoiceDesign?: boolean): VoiceProfile {
+export function resolveVoiceProfile(genre: BookGenre, _provider?: string, isVoiceDesign?: boolean): VoiceProfile {
   const mood = genre.mood || 'neutral';
-  const isMinimax = provider === 'minimax';
   const base = {
-    audioTag: isMinimax ? '' : resolveAudioTag(mood),
+    audioTag: resolveAudioTag(mood),
     speedHint: resolveSpeedHint(mood),
     moodHint: resolveMoodHint(mood),
-    provider,
   };
-  if (isVoiceDesign && !isMinimax) {
+  if (isVoiceDesign) {
     return { ...base, voice: '', voiceDesignPrompt: DEFAULT_VOICE_DESIGN_PROMPT };
   }
-  return { ...base, voice: isMinimax ? MINIMAX_DEFAULT_VOICE_ID : XIAOMI_DEFAULT_VOICE };
+  return { ...base, voice: XIAOMI_DEFAULT_VOICE };
 }
 
-export function getDefaultVoiceProfile(provider?: string, isVoiceDesign?: boolean): VoiceProfile {
-  const isMinimax = provider === 'minimax';
+export function getDefaultVoiceProfile(_provider?: string, isVoiceDesign?: boolean): VoiceProfile {
   const base = {
-    audioTag: isMinimax ? '' : '(清亮 活泼 书卷气)',
+    audioTag: '(清亮 活泼 书卷气)',
     speedHint: '语速中等偏快，清晰自然。',
     moodHint: '整体语调自然平和，不疾不徐。',
-    provider,
   };
-  if (isVoiceDesign && !isMinimax) {
+  if (isVoiceDesign) {
     return { ...base, voice: '', voiceDesignPrompt: DEFAULT_VOICE_DESIGN_PROMPT };
   }
-  return { ...base, voice: isMinimax ? MINIMAX_DEFAULT_VOICE_ID : XIAOMI_DEFAULT_VOICE };
+  return { ...base, voice: XIAOMI_DEFAULT_VOICE };
 }

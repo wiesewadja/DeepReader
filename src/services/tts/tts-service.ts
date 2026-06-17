@@ -7,7 +7,6 @@ import { safeRequest } from '../../utils/safe-request.js';
 import { BookGenreDetector } from './book-genre-detector.js';
 import type { BookGenre } from './book-genre-detector.js';
 import { ExpressivePreprocessor } from './expressive-preprocessor.js';
-import { MiniMaxTTSClient } from './minimax-tts-client.js';
 import { PCMStreamPlayer } from './pcm-stream-player.js';
 import { TTSClient, type ITTSSynthesizer, type TTSVoiceOptions, type TTSOptions } from './tts-client.js';
 import { TTSSummarizer, type TTSContext } from './tts-summarizer.js';
@@ -118,17 +117,11 @@ export class TTSService {
     private isVoiceDesign: boolean;
 
     constructor(config: TTSServiceConfig) {
-        this.client = config.ttsProvider === 'minimax'
-            ? new MiniMaxTTSClient({
-                apiKey: config.ttsApiKey,
-                baseUrl: config.ttsBaseUrl,
-                model: config.ttsModel,
-            })
-            : new TTSClient({
-                apiKey: config.ttsApiKey,
-                baseUrl: config.ttsBaseUrl,
-                model: config.ttsModel,
-            });
+        this.client = new TTSClient({
+            apiKey: config.ttsApiKey,
+            baseUrl: config.ttsBaseUrl,
+            model: config.ttsModel,
+        });
         this.ttsProvider = config.ttsProvider;
         this.isVoiceDesign = config.ttsModel?.includes('voicedesign') ?? false;
         this.summarizer = new TTSSummarizer({

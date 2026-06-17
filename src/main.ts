@@ -449,6 +449,13 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                 // 阅读模式停用时不改变任何右边栏状态
                 // 顶栏书名始终跟随用户通过书库选中的书籍
             },
+            onStopReadingTTS: () => {
+                const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                if (sidebarLeaves.length > 0) {
+                    const view = sidebarLeaves[0].view as SidebarView;
+                    view.stopReadingTTS();
+                }
+            },
         };
         this.readingModeService = new ReadingModeService(this.app, readingModeCallbacks, this.manifest.id);
 
@@ -583,6 +590,18 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                     new Notice(`匹配完成：${result.matched} 本已关联，${result.unmatched} 本未关联`);
                 } catch (e: unknown) {
                     new Notice(`匹配失败：${(e instanceof Error ? e.message : String(e))}`);
+                }
+            },
+        });
+
+        this.addCommand({
+            id: "tts-reading-toggle",
+            name: "朗读原文：开始/停止",
+            callback: () => {
+                const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                if (sidebarLeaves.length > 0) {
+                    const view = sidebarLeaves[0].view as SidebarView;
+                    view.toggleReadingTTS();
                 }
             },
         });

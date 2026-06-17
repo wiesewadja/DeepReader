@@ -9,7 +9,7 @@
 import { safeRequest } from '../utils/safe-request.js';
 import type { AIProviderAccount } from './ai-roles';
 import type { ProviderType } from './providers';
-import { PROVIDER_CONFIGS, normalizeBaseUrl, MINIMAX_TTS_MODELS, XIAOMI_TTS_MODELS } from './providers';
+import { PROVIDER_CONFIGS, normalizeBaseUrl, XIAOMI_TTS_MODELS } from './providers';
 
 export interface FetchModelsResult {
 	success: boolean;
@@ -37,13 +37,8 @@ export async function fetchModels(
 	account: AIProviderAccount,
 	capability?: string,
 ): Promise<FetchModelsResult> {
-	// MiniMax TTS 模型列表：/v1/models 不返回非文本模型
-	if (provider === 'minimax' && capability === 'tts') {
-		return { success: true, models: [...MINIMAX_TTS_MODELS] };
-	}
-
-	// Xiaomi TTS 模型列表：预设音色 + VoiceDesign
-	if (provider === 'xiaomi' && capability === 'tts') {
+	// TTS 模型列表：仅支持小米 MIMO v2.5 系列
+	if (capability === 'tts') {
 		return { success: true, models: [...XIAOMI_TTS_MODELS] };
 	}
 

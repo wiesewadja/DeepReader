@@ -146,6 +146,80 @@ export class SidebarView extends ItemView {
 		await this.bookMgr.refreshIndexes();
 	}
 
+	/** 停止原文朗读（翻页/切章/关闭阅读模式时调用） */
+	stopReadingTTS(): void {
+		this.ttsCtrl.stopReading();
+		this.readingTopbar?.setReadingTTSState('idle');
+		this.plugin.readingModeService?.clearHighlight();
+	}
+
+	/** 高亮朗读文本 */
+	private highlightReadingText(text: string): void {
+		this.plugin.readingModeService?.highlightText(text);
+	}
+
+	/** 清除朗读高亮 */
+	private clearReadingHighlight(): void {
+		this.plugin.readingModeService?.clearHighlight();
+	}
+
+	/** 获取当前页文本 */
+	private getCurrentPageText(): string {
+		return this.plugin.readingModeService?.getCurrentPageText?.() || '';
+	}
+
+	/** 翻到下一页 */
+	private goToNextPage(): boolean {
+		// 通过 PagePaginator 翻页
+		const service = this.plugin.readingModeService;
+		if (!service) return false;
+
+		// 获取 paginator 并调用 nextPage
+		const paginator = (service as any).paginator;
+		if (paginator?.nextPage) {
+			return paginator.nextPage();
+		}
+		return false;
+	}
+
+	/** 切换原文朗读（按钮点击 / Hotkey） */
+	async toggleReadingTTS(): Promise<void> {
+		console.log('[TTS-DEBUG] toggleReadingTTS called');
+		// 如果正在朗读，停止
+		if (this.readingTopbar?.getReadingTTSState() !== 'idle') {
+			console.log('[TTS-DEBUG] stopping TTS');
+			this.stopReadingTTS();
+			return;
+		}
+
+		// 获取朗读文本：优先选区 > 当前页
+		let text = '';
+		const selection = window.getSelection()?.toString()?.trim();
+		if (selection) {
+			text = selection;
+		} else {
+			const service = this.plugin.readingModeService;
+			text = service?.getCurrentPageText?.() || '';
+		}
+
+		console.log('[TTS-DEBUG] text length:', text.length);
+		if (!text) {
+			new Notice('当前没有可朗读的文本');
+			return;
+		}
+
+		this.readingTopbar?.setReadingTTSState('loading');
+		try {
+			console.log('[TTS-DEBUG] calling handleReadingTTS');
+			await this.ttsCtrl.handleReadingTTS(text);
+			console.log('[TTS-DEBUG] handleReadingTTS completed');
+			this.readingTopbar?.setReadingTTSState('playing');
+		} catch (e) {
+			console.log('[TTS-DEBUG] handleReadingTTS error:', e);
+			this.readingTopbar?.setReadingTTSState('idle');
+		}
+	}
+
 	/**
 	 * 处理系统文件上传（已弃用 - Page Index 不需要上传）
 	 */
@@ -195,6 +269,19 @@ export class SidebarView extends ItemView {
 			setTtsService(service) {
 				self.ttsService = service;
 			},
+			onReadingTTSStateChange: (state) => {
+				if (state === 'idle') {
+					self.readingTopbar?.setReadingTTSState('idle');
+				} else if (state === 'tts_loading') {
+					self.readingTopbar?.setReadingTTSState('loading');
+				} else if (state === 'playing') {
+					self.readingTopbar?.setReadingTTSState('playing');
+				}
+			},
+			highlightText: (text) => self.highlightReadingText(text),
+			clearHighlight: () => self.clearReadingHighlight(),
+			getCurrentPageText: () => self.getCurrentPageText(),
+			goToNextPage: () => self.goToNextPage(),
 		});
 		this.sessionMgr = new SessionManager({
 			get app() {
@@ -654,6 +741,7 @@ export class SidebarView extends ItemView {
 			onBooklistRename: (newName: string) => {
 				this.bookMgr.renameBooklist(newName);
 			},
+			onToggleReadingTTS: () => this.toggleReadingTTS(),
 		});
 
 		const el = this.readingTopbar.getElement();

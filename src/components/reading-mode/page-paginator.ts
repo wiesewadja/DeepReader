@@ -85,6 +85,94 @@ export class PagePaginator {
 		return this.scrollView.scrollLeft <= 1;
 	}
 
+	/**
+	 * 获取当前页的纯文本内容
+	 * 使用 simplified 方法：获取所有段落文本，按页码估算当前页内容
+	 */
+	getCurrentPageText(): string {
+		if (!this._isActive || !this.scrollView) return '';
+
+		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
+		if (!sizer) return '';
+
+		// 获取所有段落文本
+		const paragraphs = Array.from(sizer.querySelectorAll<HTMLElement>('p, h1, h2, h3, h4, h5, h6, li'));
+		const allTexts = paragraphs
+			.map(p => p.textContent?.trim())
+			.filter(t => t && t.length > 0);
+
+		if (allTexts.length === 0) return '';
+
+		// 简单估算：按页码比例截取文本
+		const totalParagraphs = allTexts.length;
+		const currentPage = this._currentPage;
+		const totalPages = this._totalPages;
+
+		if (totalPages <= 1) {
+			// 只有一页，返回所有文本
+			return allTexts.join('\n\n');
+		}
+
+		// 按页码比例计算当前页的段落范围
+		const startIdx = Math.floor((currentPage - 1) * totalParagraphs / totalPages);
+		const endIdx = Math.floor(currentPage * totalParagraphs / totalPages);
+
+		return allTexts.slice(startIdx, endIdx).join('\n\n');
+	}
+
+	/**
+	 * 高亮指定文本在页面中的位置
+	 * @param text 要高亮的文本片段
+	 */
+	highlightText(text: string): void {
+		if (!this._isActive || !this.scrollView) return;
+
+		// 先清除旧的高亮
+		this.clearHighlight();
+
+		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
+		if (!sizer) return;
+
+		// 查找包含目标文本的元素
+		const walker = document.createTreeWalker(sizer, NodeFilter.SHOW_TEXT);
+		let node: Text | null;
+		while ((node = walker.nextNode() as Text | null)) {
+			const idx = node.textContent?.indexOf(text) ?? -1;
+			if (idx >= 0) {
+				// 找到文本节点，创建高亮范围
+				const range = document.createRange();
+				range.setStart(node, idx);
+				range.setEnd(node, idx + text.length);
+
+				const highlight = document.createElement('mark');
+				highlight.className = 'deeppdf-tts-highlight';
+				range.surroundContents(highlight);
+
+				// 滚动到高亮位置
+				highlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+				return;
+			}
+		}
+	}
+
+	/**
+	 * 清除所有 TTS 高亮
+	 */
+	clearHighlight(): void {
+		if (!this.scrollView) return;
+
+		const highlights = this.scrollView.querySelectorAll('.deeppdf-tts-highlight');
+		highlights.forEach(el => {
+			const parent = el.parentNode;
+			if (parent) {
+				while (el.firstChild) {
+					parent.insertBefore(el.firstChild, el);
+				}
+				parent.removeChild(el);
+			}
+		});
+	}
+
 	/** 外部设置当前页码（用于 blockId 跳转后同步状态） */
 	setCurrentPage(page: number): void {
 		// 布局未稳定（_totalPages=0 或 _totalPages < page）时延后应用
