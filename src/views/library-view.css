@@ -137,6 +137,10 @@
     flex-shrink: 0;
     border-radius: 8px 8px 0 0;
 }
+.deeppdf-library-view .deeppdf-lib-cover-content {
+    width: 100%;
+    height: 100%;
+}
 
 .deeppdf-library-view .deeppdf-lib-cover-img {
     width: 100%;

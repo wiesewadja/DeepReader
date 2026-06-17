@@ -76,13 +76,35 @@ export function createBookCard(
 	const coverName = ctx.getDisplayName(bookName);
 
 	const coverEl = card.createDiv({ cls: 'deeppdf-lib-book-cover' });
-
 	if (statusClass === 'processing') {
-		coverEl.innerHTML = `<div class="deeppdf-lib-cover-loading">${Icons.loading}</div>`;
+		const coverContentEl = coverEl.createDiv({ cls: 'deeppdf-lib-cover-content' });
+		const cachedCover = ctx.coverManager.getCache().get(index.id);
+		if (cachedCover) {
+			const imgEl = coverContentEl.createEl('img', { cls: 'deeppdf-lib-cover-img', attr: { style: 'filter: brightness(0.5);' } });
+			imgEl.src = cachedCover;
+			imgEl.alt = bookName;
+			imgEl.addEventListener('error', () => {
+				ctx.coverManager.getCache().delete(index.id);
+				if (!ctx.coverManager.getLoadingCovers().has(index.id)) {
+					ctx.coverManager.getLoadingCovers().add(index.id);
+					ctx.coverManager.loadCoverAndDisplay(index.id, coverName, coverEl);
+				}
+			});
+		} else {
+			coverContentEl.innerHTML = ctx.coverManager.createCoverPlaceholder(coverName);
+			if (!ctx.coverManager.getLoadingCovers().has(index.id)) {
+				ctx.coverManager.getLoadingCovers().add(index.id);
+				ctx.coverManager.loadCoverAndDisplay(index.id, coverName, coverEl);
+			}
+		}
+
+		// Loading spinner overlay
+		const spinnerEl = coverEl.createDiv({ cls: 'deeppdf-lib-cover-loading', attr: { style: 'position: absolute; top: 0; left: 0; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: #fff; z-index: 2;' } });
+		spinnerEl.innerHTML = Icons.loading;
 
 		const progress = index.progress_percent || 0;
 		const message = index.message || '';
-		const progressEl = coverEl.createDiv({ cls: 'deeppdf-lib-progress-overlay' });
+		const progressEl = coverEl.createDiv({ cls: 'deeppdf-lib-progress-overlay', attr: { style: 'z-index: 2;' } });
 		progressEl.createDiv({ cls: 'deeppdf-lib-progress-bar', attr: { style: `width: ${progress}%` } });
 
 		const progressInfo = progressEl.createDiv({ cls: 'deeppdf-lib-progress-info' });

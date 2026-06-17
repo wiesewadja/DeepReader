@@ -123,14 +123,26 @@ export class CoverManager {
 	async loadCoverAndDisplay(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
 		try {
 			const localCoverUrl = await this.findCoverUrl(indexId, bookName);
+			let contentEl = coverEl.querySelector('.deeppdf-lib-cover-content') as HTMLElement | null;
+			const hasContentEl = !!contentEl;
+			if (!contentEl) {
+				contentEl = coverEl;
+			}
 
 			if (localCoverUrl) {
 				this.coverCache.set(indexId, localCoverUrl);
 
 				const checkMark = coverEl.querySelector('.deeppdf-lib-cover-check');
 
-				coverEl.innerHTML = '';
-				const imgEl = coverEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
+				if (!hasContentEl) {
+					coverEl.innerHTML = '';
+				} else {
+					contentEl.innerHTML = '';
+				}
+				const imgEl = contentEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
+				if (hasContentEl) {
+					imgEl.style.filter = 'brightness(0.5)';
+				}
 				imgEl.src = localCoverUrl;
 				imgEl.alt = bookName;
 
@@ -139,7 +151,7 @@ export class CoverManager {
 					this.retryCoverDownload(indexId, bookName, coverEl);
 				});
 
-				if (checkMark) coverEl.appendChild(checkMark);
+				if (!hasContentEl && checkMark) coverEl.appendChild(checkMark);
 				this.callbacks.addCoverActions(coverEl, indexId);
 			} else {
 				this.retryCoverDownload(indexId, bookName, coverEl);
@@ -158,9 +170,16 @@ export class CoverManager {
 	async retryCoverDownload(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
 		const displayName = this.callbacks.getDisplayName(bookName);
 		const checkMark = coverEl.querySelector('.deeppdf-lib-cover-check');
+		let contentEl = coverEl.querySelector('.deeppdf-lib-cover-content') as HTMLElement | null;
+		const hasContentEl = !!contentEl;
+		if (!contentEl) {
+			contentEl = coverEl;
+		}
 
 		// 显示加载中占位符
-		coverEl.innerHTML = `<div class="deeppdf-lib-cover-loading"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg></div>`;
+		if (!hasContentEl) {
+			coverEl.innerHTML = `<div class="deeppdf-lib-cover-loading"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg></div>`;
+		}
 
 		const adapter = this.getAdapter();
 		if (adapter) {
@@ -177,11 +196,18 @@ export class CoverManager {
 							const url = this.app.vault.getResourcePath(file);
 							this.coverCache.set(indexId, url);
 
-							coverEl.innerHTML = '';
-							const imgEl = coverEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
+							if (!hasContentEl) {
+								coverEl.innerHTML = '';
+							} else {
+								contentEl.innerHTML = '';
+							}
+							const imgEl = contentEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
+							if (hasContentEl) {
+								imgEl.style.filter = 'brightness(0.5)';
+							}
 							imgEl.src = url;
 							imgEl.alt = bookName;
-							if (checkMark) coverEl.appendChild(checkMark);
+							if (!hasContentEl && checkMark) coverEl.appendChild(checkMark);
 							this.callbacks.addCoverActions(coverEl, indexId);
 							return;
 						}
@@ -191,8 +217,12 @@ export class CoverManager {
 		}
 
 		// 重新下载失败，显示占位符
-		coverEl.innerHTML = this.createCoverPlaceholder(displayName);
-		if (checkMark) coverEl.appendChild(checkMark);
+		if (!hasContentEl) {
+			coverEl.innerHTML = this.createCoverPlaceholder(displayName);
+		} else {
+			contentEl.innerHTML = this.createCoverPlaceholder(displayName);
+		}
+		if (!hasContentEl && checkMark) coverEl.appendChild(checkMark);
 		this.callbacks.addCoverActions(coverEl, indexId);
 	}
 

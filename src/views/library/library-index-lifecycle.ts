@@ -250,27 +250,9 @@ export class IndexLifecycle {
 					},
 				});
 
-				await this.refreshIndexes();
-
-				const currentIndexes = this.callbacks.getIndexes();
-				const doneIdx = currentIndexes.find(idx => idx.id === bookId);
-				if (doneIdx) {
-					doneIdx.status = 'ready';
-					doneIdx.progress_percent = 100;
-					const card = this.callbacks.getCardElements().get(bookId);
-					if (card) {
-						const newCard = this.callbacks.onCreateBookCard(doneIdx);
-						card.replaceWith(newCard);
-						this.callbacks.getCardElements().set(bookId, newCard);
-					}
-				} else {
-					// Fallback: 索引完成但 refreshIndexes 没找到它，强制重新加载
-					console.warn('[IndexLifecycle] indexBook succeeded but doneIdx not found, forcing full reload');
-					await this.callbacks.onRefreshIndexes();
-					this.callbacks.onRenderGrid();
-				}
-
 				this.activelyIndexingBookId = null;
+				await this.refreshIndexes();
+				this.callbacks.onRenderGrid();
 				new Notice(`索引成功！章节: ${result.chaptersCount}`, 3000);
 			} catch (error: unknown) {
 				this.activelyIndexingBookId = null;
@@ -483,19 +465,18 @@ export class IndexLifecycle {
 			}
 		}
 
-		// 对正在进行中且进度 >= 50 的索引，也加载封面
+		// 对正在进行中的索引，尽早加载封面
 		for (const idx of changedIndexes) {
-			const progress = idx.progress_percent || 0;
 			const isProcessing = PROCESSING_STATUSES.has((idx.status || '').toLowerCase());
 
-			if (isProcessing && progress >= 50 && !coverManager.getCache().has(idx.id) && !coverManager.getLoadingCovers().has(idx.id)) {
+			if (isProcessing && !coverManager.getCache().has(idx.id) && !coverManager.getLoadingCovers().has(idx.id)) {
 				coverManager.getLoadingCovers().add(idx.id);
 				const card = this.callbacks.getCardElements().get(idx.id);
 				if (card) {
 					const coverEl = card.querySelector('.deeppdf-lib-book-cover');
 					if (coverEl) {
 						const bookName = this.callbacks.getDisplayName(idx.pdf_name);
-						await coverManager.loadCoverAndDisplay(idx.id, bookName, coverEl as HTMLElement);
+						coverManager.loadCoverAndDisplay(idx.id, bookName, coverEl as HTMLElement);
 					}
 				}
 			}
