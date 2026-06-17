@@ -134,6 +134,8 @@ export interface MessageCallbacks {
 	onDelete?: (messageId: string) => void;
 	/** TTS 朗读 */
 	onTTS?: (messageId: string, content: string) => void;
+	/** AI 回复流式结束 */
+	onStreamingEnd?: (messageId: string, content: string) => void;
 	/** 错误状态下点击重试按钮的回调 */
 	onRetry?: () => void;
 	/** 获取当前书籍信息（封面、作者、书名） */
