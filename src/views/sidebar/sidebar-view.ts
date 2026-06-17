@@ -150,17 +150,17 @@ export class SidebarView extends ItemView {
 	stopReadingTTS(): void {
 		this.ttsCtrl.stopReading();
 		this.readingTopbar?.setReadingTTSState('idle');
-		this.plugin.readingModeService?.clearHighlight();
+		this.setPageHighlight(false);
 	}
 
-	/** 高亮朗读文本 */
-	private highlightReadingText(text: string): void {
-		this.plugin.readingModeService?.highlightText(text);
-	}
-
-	/** 清除朗读高亮 */
-	private clearReadingHighlight(): void {
-		this.plugin.readingModeService?.clearHighlight();
+	/** 朗读时标记当前页高亮 */
+	private setPageHighlight(active: boolean): void {
+		const service = this.plugin.readingModeService;
+		if (!service) return;
+		const container = (service as any).activeContainerEl as HTMLElement | null;
+		if (container) {
+			container.classList.toggle('deeppdf-tts-reading-active', active);
+		}
 	}
 
 	/** 获取当前页文本 */
@@ -170,11 +170,9 @@ export class SidebarView extends ItemView {
 
 	/** 翻到下一页 */
 	private goToNextPage(): boolean {
-		// 通过 PagePaginator 翻页
 		const service = this.plugin.readingModeService;
 		if (!service) return false;
 
-		// 获取 paginator 并调用 nextPage
 		const paginator = (service as any).paginator;
 		if (paginator?.nextPage) {
 			return paginator.nextPage();
@@ -184,10 +182,8 @@ export class SidebarView extends ItemView {
 
 	/** 切换原文朗读（按钮点击 / Hotkey） */
 	async toggleReadingTTS(): Promise<void> {
-		console.log('[TTS-DEBUG] toggleReadingTTS called');
 		// 如果正在朗读，停止
 		if (this.readingTopbar?.getReadingTTSState() !== 'idle') {
-			console.log('[TTS-DEBUG] stopping TTS');
 			this.stopReadingTTS();
 			return;
 		}
@@ -202,7 +198,6 @@ export class SidebarView extends ItemView {
 			text = service?.getCurrentPageText?.() || '';
 		}
 
-		console.log('[TTS-DEBUG] text length:', text.length);
 		if (!text) {
 			new Notice('当前没有可朗读的文本');
 			return;
@@ -210,12 +205,11 @@ export class SidebarView extends ItemView {
 
 		this.readingTopbar?.setReadingTTSState('loading');
 		try {
-			console.log('[TTS-DEBUG] calling handleReadingTTS');
 			await this.ttsCtrl.handleReadingTTS(text);
-			console.log('[TTS-DEBUG] handleReadingTTS completed');
-			this.readingTopbar?.setReadingTTSState('playing');
+			this.readingTopbar?.setReadingTTSState(
+				this.ttsCtrl.getCurrentSource() === 'reading' ? 'playing' : 'idle',
+			);
 		} catch (e) {
-			console.log('[TTS-DEBUG] handleReadingTTS error:', e);
 			this.readingTopbar?.setReadingTTSState('idle');
 		}
 	}
@@ -278,8 +272,7 @@ export class SidebarView extends ItemView {
 					self.readingTopbar?.setReadingTTSState('playing');
 				}
 			},
-			highlightText: (text) => self.highlightReadingText(text),
-			clearHighlight: () => self.clearReadingHighlight(),
+			setPageHighlight: (active) => self.setPageHighlight(active),
 			getCurrentPageText: () => self.getCurrentPageText(),
 			goToNextPage: () => self.goToNextPage(),
 		});

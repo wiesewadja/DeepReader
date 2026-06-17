@@ -176,6 +176,11 @@ export class TTSService {
         return this.currentMessageId;
     }
 
+    /** 返回底层 ITTSSynthesizer 客户端（用于原文朗读流式播放） */
+    getClient(): ITTSSynthesizer {
+        return this.client;
+    }
+
     async play(messageId: string, content: string, userQuestion?: string, context?: TTSContext, options?: { rawText?: boolean }): Promise<void> {
         // 同一消息：loading 时停止，playing/paused 时切换
         if (this.state !== 'idle' && this.currentMessageId === messageId) {
