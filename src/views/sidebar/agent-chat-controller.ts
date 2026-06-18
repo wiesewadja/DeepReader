@@ -58,6 +58,7 @@ export interface AgentChatControllerHost {
 	parseAndLoadReferences(message: string): Promise<void>;
 	copyToClipboard(text: string): void;
 	getBookshelfSummary(): string | undefined;
+	preloadTTS?(messageId: string, content: string): Promise<void>;
 }
 
 export class AgentChatController {
@@ -450,6 +451,11 @@ export class AgentChatController {
 						if (displayReasoning.trim()) {
 							currentStatus = `💭 ${displayReasoning}`;
 						}
+					}
+
+					// 当生成的内容达到 100 字符时，提前触发 TTS 预加载（异步后台执行，不阻塞）
+					if (fullContent.length >= 100) {
+						self.host.preloadTTS?.(aiMessageId, fullContent);
 					}
 
 					if (!firstContentLogged && fullContent.trim().length > 0) {

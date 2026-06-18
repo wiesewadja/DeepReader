@@ -433,6 +433,9 @@ export class SidebarView extends ItemView {
 			getBookshelfSummary() {
 				return self.bookMgr.buildBookshelfSummary() || undefined;
 			},
+			preloadTTS(messageId: string, content: string) {
+				return self.preloadTTSPreview(messageId, content);
+			},
 		});
 		this.bookMgr = new BookManager({
 			get app() {

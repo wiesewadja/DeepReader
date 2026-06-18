@@ -209,12 +209,15 @@ export class TTSController {
 		this.readingClient = this.initReadingClient();
 		this.host.onReadingTTSStateChange?.('tts_loading');
 
+		const player = new PCMStreamPlayer();
+		this.readingPlayer = player;
+
 		try {
 			if (customText) {
 				// 选区朗读：将自定义文本作为单一段落
-				await this.readCustomText(customText);
+				await this.readCustomText(customText, player);
 			} else {
-				await this.readCurrentPage();
+				await this.readCurrentPage(player);
 			}
 		} catch (err) {
 			if ((err as Error)?.name === 'AbortError') return;
@@ -226,13 +229,15 @@ export class TTSController {
 				this.host.onReadingTTSStateChange?.('idle');
 				this.host.clearHighlight?.();
 			}
+			player.stop();
+			this.readingPlayer = null;
 		}
 	}
 
 	/**
 	 * 朗读自定义文本（选区朗读），不分段不翻页
 	 */
-	private async readCustomText(text: string): Promise<void> {
+	private async readCustomText(text: string, player: PCMStreamPlayer): Promise<void> {
 		const cleanText = preprocessForTTS(text);
 		if (!cleanText.trim()) {
 			this.stopReading();
@@ -246,8 +251,6 @@ export class TTSController {
 		}
 
 		this.host.onReadingTTSStateChange?.('playing');
-		const player = new PCMStreamPlayer();
-		this.readingPlayer = player;
 
 		try {
 			const stream = this.readingClient.synthesizeStream(
@@ -260,23 +263,28 @@ export class TTSController {
 			}
 			player.seal();
 			await player.waitForEnd();
-		} finally {
-			this.readingPlayer = null;
+		} catch (err) {
+			throw err;
 		}
 	}
 
 	/** 朗读当前页：逐段流式合成入同一个 PCMStreamPlayer，所有段播完后 seal */
-	private async readCurrentPage(): Promise<void> {
+	private async readCurrentPage(player: PCMStreamPlayer): Promise<void> {
 		if (this.currentSource !== 'reading') return;
 
 		const paragraphs = this.host.getPageParagraphs?.() || [];
 		if (paragraphs.length === 0) {
-			if (this.host.goToNextPage?.()) {
-				await sleep(500);
-				await this.readCurrentPage();
-			} else {
-				this.stopReading();
-				new Notice('朗读完毕');
+			this.isAutoPageTurn = true;
+			try {
+				if (this.host.goToNextPage?.()) {
+					await sleep(500);
+					await this.readCurrentPage(player);
+				} else {
+					this.stopReading();
+					new Notice('朗读完毕');
+				}
+			} finally {
+				this.isAutoPageTurn = false;
 			}
 			return;
 		}
@@ -288,10 +296,6 @@ export class TTSController {
 		}
 
 		this.host.onReadingTTSStateChange?.('playing');
-
-		// 一个 player 服务当前页所有段落：无缝衔接，无 AudioContext 爆炸
-		const player = new PCMStreamPlayer();
-		this.readingPlayer = player;
 
 		try {
 			// 预处理所有段落文本（一次遍历，避免多次 preprocessForTTS）
@@ -322,10 +326,13 @@ export class TTSController {
 				if (this.currentSource !== 'reading') return;
 				if (!texts[i]) continue;
 
-				// 高亮当前段落
-				this.host.highlightElement?.(paragraphs[i].element);
+				// 1. 记录本段音频的计划开始时间 (当前已调度的 endTime)
+				const paragraphStartTime = player.endTime;
 
-				// 播放当前段的 stream（已预取或即时启动）
+				// 2. 异步在后台等待到计划开始时间再触发高亮，不阻塞流式排队
+				this.scheduleHighlight(paragraphs[i].element, paragraphStartTime, player);
+
+				// 3. 播放当前段的 stream（已预取或即时启动）并完全排入 player
 				const stream = currentStream!;
 				for await (const chunk of stream) {
 					player.enqueue(chunk);
@@ -350,28 +357,44 @@ export class TTSController {
 				}
 			}
 
-			// 所有段落已入队，等待播放完毕
-			player.seal();
-			await player.waitForEnd();
-		} finally {
-			this.readingPlayer = null;
+			// 等待当前页的所有音频段落播放完毕，再触发翻页
+			const pageEndTime = player.endTime;
+			while (this.currentSource === 'reading' && player.currentTime < pageEndTime) {
+				await sleep(100);
+			}
+		} catch (err) {
+			throw err;
 		}
 
 		// 所有段朗读完毕，翻页继续
 		if (this.currentSource === 'reading') {
 			this.host.clearHighlight?.();
-			if (this.host.goToNextPage?.()) {
-				this.isAutoPageTurn = true;
-				try {
+			this.isAutoPageTurn = true;
+			try {
+				if (this.host.goToNextPage?.()) {
 					await sleep(300);
-					await this.readCurrentPage();
-				} finally {
-					this.isAutoPageTurn = false;
+					await this.readCurrentPage(player);
+				} else {
+					this.stopReading();
+					new Notice('朗读完毕');
 				}
-			} else {
-				this.stopReading();
-				new Notice('朗读完毕');
+			} finally {
+				this.isAutoPageTurn = false;
 			}
+		}
+	}
+
+	/** 异步高亮任务，等待音频计划播放时间到达后再改变高亮状态 */
+	private async scheduleHighlight(
+		element: HTMLElement,
+		startTime: number,
+		player: PCMStreamPlayer
+	): Promise<void> {
+		while (this.currentSource === 'reading' && player.currentTime < startTime) {
+			await sleep(50);
+		}
+		if (this.currentSource === 'reading') {
+			this.host.highlightElement?.(element);
 		}
 	}
 

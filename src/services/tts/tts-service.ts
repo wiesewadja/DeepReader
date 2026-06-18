@@ -115,6 +115,8 @@ export class TTSService {
     private ttsProvider: string;
     /** 是否使用 VoiceDesign 模式（模型名包含 voicedesign） */
     private isVoiceDesign: boolean;
+    /** 正在进行的预加载任务集合，防止并发重复请求 */
+    private activePreloads = new Set<string>();
 
     constructor(config: TTSServiceConfig) {
         this.client = new TTSClient({
@@ -300,42 +302,47 @@ export class TTSService {
             // 2. 解析音色配置
             const voiceProfile = genre ? resolveVoiceProfile(genre, this.ttsProvider, this.isVoiceDesign) : getDefaultVoiceProfile(this.ttsProvider, this.isVoiceDesign);
 
-            // 3. 检查缓存是否已存在
+            // 3. 检查缓存是否已存在或正在进行预加载
             const cacheKey = this.buildCacheKey(messageId, voiceProfile);
-            if (this.cache.has(cacheKey)) {
+            if (this.cache.has(cacheKey) || this.activePreloads.has(cacheKey)) {
                 return;
             }
+            this.activePreloads.add(cacheKey);
 
-            // 4. 截取前 250 字符
-            const cleanContent = stripWikiLinksForTTS(content);
-            const previewText = cleanContent.slice(0, 250);
-
-            // 5. Markdown 清洗 + 数字归一化（不做 LLM 口语化改写，
-            //    音色设计由 VoiceDesign user message 控制）
-            let textToRead = previewText;
             try {
-                textToRead = await this.expressivePreprocessor.preprocess(textToRead, {
-                    enableMarks: false,
-                });
-            } catch { }
+                // 4. 截取前 250 字符
+                const cleanContent = stripWikiLinksForTTS(content);
+                const previewText = cleanContent.slice(0, 250);
 
-            // 6. 构建 TTS 选项 + 合成语音
-            const ttsOptions = this.buildTTSOptions(voiceProfile);
-            const audioBuffer = await this.client.synthesize(textToRead, ttsOptions);
+                // 5. Markdown 清洗 + 数字归一化（不做 LLM 口语化改写，
+                //    音色设计由 VoiceDesign user message 控制）
+                let textToRead = previewText;
+                try {
+                    textToRead = await this.expressivePreprocessor.preprocess(textToRead, {
+                        enableMarks: false,
+                    });
+                } catch { }
 
-            // 7. 缓存
-            const blob = new Blob([audioBuffer], { type: 'audio/wav' });
-            const blobUrl = URL.createObjectURL(blob);
-            const audio = new Audio(blobUrl);
-            this.setCache(cacheKey, { blobUrl, audio });
-            this.previewBuffers.set(cacheKey, audioBuffer);
+                // 6. 构建 TTS 选项 + 合成语音
+                const ttsOptions = this.buildTTSOptions(voiceProfile);
+                const audioBuffer = await this.client.synthesize(textToRead, ttsOptions);
 
-            serviceLog.info(`[TTS] Preloaded preview for message ${messageId} (${previewText.length} chars)`);
+                // 7. 缓存
+                const blob = new Blob([audioBuffer], { type: 'audio/wav' });
+                const blobUrl = URL.createObjectURL(blob);
+                const audio = new Audio(blobUrl);
+                this.setCache(cacheKey, { blobUrl, audio });
+                this.previewBuffers.set(cacheKey, audioBuffer);
 
-            // 8. 后台全量音频生成（利用用户阅读的 3-10 秒空白）
-            // 注意：不做口语化改写，直接用原文 + VoiceDesign 风格
-            if (cleanContent.length > 250) {
-                this.startFullGenerate(messageId, cleanContent, voiceProfile, cacheKey);
+                serviceLog.info(`[TTS] Preloaded preview for message ${messageId} (${previewText.length} chars)`);
+
+                // 8. 后台全量音频生成（利用用户阅读的 3-10 秒空白）
+                // 注意：不做口语化改写，直接用原文 + VoiceDesign 风格
+                if (cleanContent.length > 250) {
+                    this.startFullGenerate(messageId, cleanContent, voiceProfile, cacheKey);
+                }
+            } finally {
+                this.activePreloads.delete(cacheKey);
             }
         } catch (err) {
             serviceLog.warn('[TTS] Preload preview failed:', err);
