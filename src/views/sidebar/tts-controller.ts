@@ -244,23 +244,59 @@ export class TTSController {
 		this.readingPlayer = player;
 
 		try {
+			// 预处理所有段落文本（一次遍历，避免多次 preprocessForTTS）
+			const texts: string[] = [];
 			for (let i = 0; i < paragraphs.length; i++) {
-				if (this.currentSource !== 'reading') return;
+				const t = preprocessForTTS(paragraphs[i].text).trim();
+				texts.push(t);
+			}
 
-				const cleanText = preprocessForTTS(paragraphs[i].text);
-				if (!cleanText.trim()) continue;
+			// 启动第一段的 stream
+			let currentStream: AsyncGenerator<ArrayBuffer> | null = texts[0] ? this.readingClient.synthesizeStream(
+				texts[0],
+				{ voiceProfile: { voice: '冰糖' } },
+				this.readingAbort?.signal,
+			) : null;
 
-				// 高亮当前段落（直接操作 DOM 元素，精确无偏移）
-				this.host.highlightElement?.(paragraphs[i].element);
-
-				const stream = this.readingClient.synthesizeStream(
-					cleanText,
+			// 预取第二段的 stream（如果存在）
+			let nextStreamPromise: Promise<AsyncGenerator<ArrayBuffer>> | null = null;
+			if (texts.length > 1 && texts[1]) {
+				nextStreamPromise = Promise.resolve(this.readingClient.synthesizeStream(
+					texts[1],
 					{ voiceProfile: { voice: '冰糖' } },
 					this.readingAbort?.signal,
-				);
+				));
+			}
 
+			for (let i = 0; i < paragraphs.length; i++) {
+				if (this.currentSource !== 'reading') return;
+				if (!texts[i]) continue;
+
+				// 高亮当前段落
+				this.host.highlightElement?.(paragraphs[i].element);
+
+				// 播放当前段的 stream（已预取或即时启动）
+				const stream = currentStream!;
 				for await (const chunk of stream) {
 					player.enqueue(chunk);
+				}
+
+				// 当前段播完，把预取的下一段升为 current
+				if (nextStreamPromise) {
+					currentStream = await nextStreamPromise;
+					nextStreamPromise = null;
+
+					// 预取下下段
+					const nextIdx = i + 2;
+					if (nextIdx < texts.length && texts[nextIdx]) {
+						nextStreamPromise = Promise.resolve(this.readingClient.synthesizeStream(
+							texts[nextIdx],
+							{ voiceProfile: { voice: '冰糖' } },
+							this.readingAbort?.signal,
+						));
+					}
+				} else {
+					currentStream = null;
 				}
 			}
 
