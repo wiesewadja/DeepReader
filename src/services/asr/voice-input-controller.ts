@@ -123,20 +123,61 @@ export class VoiceInputController {
 			await new Promise(r => setTimeout(r, 100));
 		}
 
-		// 停止录音（释放麦克风）
-		if (this.recorder.getState() === 'recording') {
-			this.recorder.cancel();
+		if (this.recorder.getState() !== 'recording') {
+			this.chatInput.setVoiceState('idle');
+			return;
 		}
 
-		if (this.hasIncrementalResult && this.lastIncrementalText) {
-			// 已有递增结果，直接使用
-			serviceLog.info(`[VoiceInput] 停止录音，使用递增结果: "${this.lastIncrementalText}"`);
-			this.chatInput.completeVoiceInput();
-		} else {
-			// 录音太短，没有递增结果
-			serviceLog.warn('[VoiceInput] 录音时间过短，无识别结果');
-			this.chatInput.setVoiceState('idle');
-			new Notice('录音时间过短，请重试');
+		// 切换到正在识别状态，提示用户
+		this.chatInput.setVoiceState('recognizing');
+
+		try {
+			// 停止录音并获取完整音频
+			const { audioBase64, duration } = await this.recorder.stop();
+
+			if (duration < 500) {
+				serviceLog.warn('[VoiceInput] 录音时间过短，无识别结果');
+				this.chatInput.setVoiceState('idle');
+				new Notice('录音时间过短，请重试');
+				return;
+			}
+
+			let text = '';
+			for await (const chunk of this.asrClient.transcribeStream(audioBase64, 'audio/wav', {
+				language: this.language,
+			})) {
+				text += chunk;
+			}
+
+			if (text.trim()) {
+				serviceLog.info(`[VoiceInput] 停止录音，最终识别结果: "${text}"`);
+				this.chatInput.replaceVoiceText(text);
+				this.chatInput.completeVoiceInput();
+			} else {
+				// 如果最终没有识别出文字，但之前有递增识别出来的文字，则保留已有的
+				if (this.lastIncrementalText) {
+					serviceLog.info(`[VoiceInput] 最终未识别出新内容，使用之前的递增结果: "${this.lastIncrementalText}"`);
+					this.chatInput.replaceVoiceText(this.lastIncrementalText);
+					this.chatInput.completeVoiceInput();
+				} else {
+					serviceLog.warn('[VoiceInput] 无识别结果');
+					this.chatInput.setVoiceState('idle');
+					new Notice('未检测到有效语音，请重试');
+				}
+			}
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			serviceLog.error('[VoiceInput] 最终识别失败:', msg);
+
+			// 降级使用最后的递增结果
+			if (this.lastIncrementalText) {
+				new Notice('识别未完全完成，已恢复之前识别的部分');
+				this.chatInput.replaceVoiceText(this.lastIncrementalText);
+				this.chatInput.completeVoiceInput();
+			} else {
+				this.chatInput.setVoiceState('idle');
+				new Notice(`语音识别失败: ${msg}`);
+			}
 		}
 	}
 
