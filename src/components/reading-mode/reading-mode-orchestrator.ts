@@ -136,14 +136,14 @@ export class ReadingModeService implements ScrollPatchService {
 	}
 
 	/**
-	 * 高亮第 N 个段落
+	 * 高亮指定文本
 	 */
-	highlightParagraph(index: number): void {
-		this.paginator?.highlightParagraph(index);
+	highlightText(text: string): void {
+		this.paginator?.highlightText(text);
 	}
 
 	/**
-	 * 清除段落高亮
+	 * 清除所有高亮
 	 */
 	clearHighlight(): void {
 		this.paginator?.clearHighlight();

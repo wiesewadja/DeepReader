@@ -150,16 +150,17 @@ export class SidebarView extends ItemView {
 	stopReadingTTS(): void {
 		this.ttsCtrl.stopReading();
 		this.readingTopbar?.setReadingTTSState('idle');
-		this.clearHighlight();
+		this.clearReadingHighlight();
 	}
 
-	/** 朗读时标记当前页高亮 */
-	private highlightParagraph(index: number): void {
-		this.plugin.readingModeService?.highlightParagraph(index);
-	}
-
-	private clearHighlight(): void {
+	/** 清除朗读高亮 */
+	private clearReadingHighlight(): void {
 		this.plugin.readingModeService?.clearHighlight();
+	}
+
+	/** 高亮朗读文本 */
+	private highlightReadingText(text: string): void {
+		this.plugin.readingModeService?.highlightText(text);
 	}
 
 	/** 获取当前页文本 */
@@ -272,12 +273,9 @@ export class SidebarView extends ItemView {
 					self.readingTopbar?.setReadingTTSState('playing');
 				}
 			},
-			highlightParagraph: (index) => self.highlightParagraph(index),
-			clearHighlight: () => self.clearHighlight(),
-			getPageParagraphs: () => {
-				const service = self.plugin.readingModeService;
-				return service?.getPageParagraphs?.() || [];
-			},
+			highlightText: (text) => self.highlightReadingText(text),
+			clearHighlight: () => self.clearReadingHighlight(),
+			getCurrentPageText: () => self.getCurrentPageText(),
 			goToNextPage: () => self.goToNextPage(),
 		});
 		this.sessionMgr = new SessionManager({

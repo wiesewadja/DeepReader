@@ -318,7 +318,7 @@ export class ReadingTopbar extends Component {
 
         switch (state) {
             case 'idle':
-                this.ttsBtn.innerHTML = Icons.volumeX;
+                this.ttsBtn.innerHTML = Icons.volume2;
                 this.ttsBtn.title = '朗读原文';
                 break;
             case 'loading':

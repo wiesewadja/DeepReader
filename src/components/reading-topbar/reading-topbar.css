@@ -280,11 +280,7 @@
 /* ── TTS 朗读段落高亮 ── */
 
 .deeppdf-tts-paragraph-active {
-    background-color: var(--interactive-accent);
-    opacity: 0.92;
-    color: var(--text-on-accent);
-    border-radius: 4px;
-    padding: 2px 4px;
-    margin: 0 -4px;
-    transition: background-color 0.2s ease;
+    background: transparent;
+    border-bottom: 2px solid var(--text-accent);
+    padding-bottom: 1px;
 }

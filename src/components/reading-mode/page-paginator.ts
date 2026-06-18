@@ -170,6 +170,27 @@ export class PagePaginator {
 		paragraphs[index].scrollIntoView({ behavior: 'smooth', block: 'center' });
 	}
 
+	/**
+	 * 高亮包含指定文本的段落（TTS 朗读时使用）
+	 */
+	highlightText(text: string): void {
+		this.clearHighlight();
+		if (!this._isActive || !this.scrollView) return;
+
+		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
+		if (!sizer) return;
+
+		const paragraphs = sizer.querySelectorAll<HTMLElement>('p, h1, h2, h3, h4, h5, h6, li');
+		for (const p of paragraphs) {
+			const domText = (p.textContent || '').replace(/\s+/g, ' ');
+			if (domText.includes(text)) {
+				p.classList.add('deeppdf-tts-paragraph-active');
+				p.scrollIntoView({ behavior: 'smooth', block: 'center' });
+				return;
+			}
+		}
+	}
+
 	/** 清除段落高亮 */
 	clearHighlight(): void {
 		if (!this.scrollView) return;
