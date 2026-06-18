@@ -1280,7 +1280,12 @@ export class SidebarView extends ItemView {
 	 * 预加载 TTS 预览：AI 回复流式结束后，预生成前 250 字语音
 	 */
 	private async preloadTTSPreview(messageId: string, content: string): Promise<void> {
-		if (!this.ttsService) return;
+		if (!this.ttsService) {
+			// 首次流式结束即初始化 TTS，为预加载做准备
+			this.ttsCtrl.ensureService();
+			this.ttsService = this.ttsCtrl.getTtsService();
+			if (!this.ttsService) return;
+		}
 
 		try {
 			log(`[TTS] Preload preview started for message ${messageId}`);

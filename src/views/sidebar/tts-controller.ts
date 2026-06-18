@@ -57,6 +57,14 @@ export class TTSController {
 		return this.ttsService;
 	}
 
+	/** 确保 TTS 服务已初始化（供预加载使用，在用户点击 button 前提前初始化） */
+	ensureService(): void {
+		if (!this.ttsService) {
+			this.ttsService = this.initTTSService();
+			this.host.setTtsService(this.ttsService);
+		}
+	}
+
 	/** 获取当前朗读来源 */
 	getCurrentSource(): TTSSource {
 		return this.currentSource;
