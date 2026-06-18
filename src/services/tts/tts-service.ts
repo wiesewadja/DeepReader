@@ -304,14 +304,22 @@ export class TTSService {
 
             // 3. 检查缓存是否已存在或正在进行预加载
             const cacheKey = this.buildCacheKey(messageId, voiceProfile);
-            if (this.cache.has(cacheKey) || this.activePreloads.has(cacheKey)) {
+            const cleanContent = stripWikiLinksForTTS(content);
+            const cached = this.cache.get(cacheKey);
+            if (cached) {
+                if (cached.isFull || cleanContent.length <= 250) {
+                    return;
+                }
+                this.startFullGenerate(messageId, cleanContent, voiceProfile, cacheKey);
+                return;
+            }
+            if (this.activePreloads.has(cacheKey)) {
                 return;
             }
             this.activePreloads.add(cacheKey);
 
             try {
                 // 4. 截取前 250 字符
-                const cleanContent = stripWikiLinksForTTS(content);
                 const previewText = cleanContent.slice(0, 250);
 
                 // 5. Markdown 清洗 + 数字归一化（不做 LLM 口语化改写，
@@ -410,6 +418,7 @@ export class TTSService {
         let playedChars = 0;
         if (cached) {
             this.setState('playing');
+            cached.audio.currentTime = 0;
             const previewChars = Math.min(250, totalChars);
             const previewRatio = previewChars / totalChars;
             this.startMappedProgressTracking(messageId, cached.audio, {

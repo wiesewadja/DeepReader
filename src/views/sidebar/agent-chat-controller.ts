@@ -453,8 +453,8 @@ export class AgentChatController {
 						}
 					}
 
-					// 当生成的内容达到 100 字符时，提前触发 TTS 预加载（异步后台执行，不阻塞）
-					if (fullContent.length >= 100) {
+					// 当生成的内容达到 250 字符时，提前触发 TTS 预加载（异步后台执行，不阻塞）
+					if (fullContent.length >= 250) {
 						self.host.preloadTTS?.(aiMessageId, fullContent);
 					}
 
