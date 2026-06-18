@@ -13,10 +13,10 @@ import { MemoryStore } from '../../agent/memory/store.js';
 import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
 import { resolveRoleConfig } from '../../config/providers.js';
 import { PCMStreamPlayer } from '../../services/tts/pcm-stream-player.js';
+import { TTSClient } from '../../services/tts/tts-client.js';
 import { TTSService } from '../../services/tts/tts-service.js';
 import type { TTSPlayState } from '../../services/tts/tts-service.js';
 import { preprocessForTTS } from '../../services/tts/tts-text-preprocessor.js';
-import { getDefaultVoiceProfile } from '../../services/tts/voice-profile.js';
 import { serviceLog } from '../../utils/logger.js';
 
 export type TTSSource = 'message' | 'reading';
@@ -47,6 +47,8 @@ export class TTSController {
 	private readingAbort: AbortController | null = null;
 	private readingPlayer: PCMStreamPlayer | null = null;
 
+	private readingClient: TTSClient | null = null;
+
 	constructor(host: TTSControllerHost) {
 		this.host = host;
 	}
@@ -75,6 +77,19 @@ export class TTSController {
 		this.currentSource = 'message';
 		this.host.onReadingTTSStateChange?.('idle');
 		this.host.clearHighlight?.();
+	}
+
+	/** 初始化原文朗读专用的 TTS 客户端（固定使用 mimo-v2.5-tts 流式） */
+	private initReadingClient(): TTSClient | null {
+		const settings = this.host.plugin.settings;
+		const ttsConfig = resolveRoleConfig('tts', settings);
+		if (!ttsConfig?.apiKey) return null;
+
+		return new TTSClient({
+			apiKey: ttsConfig.apiKey,
+			baseUrl: ttsConfig.baseUrl,
+			model: 'mimo-v2.5-tts', // 固定使用预置音色模型，voicedesign 流式未上线
+		});
 	}
 
 	private initTTSService(): TTSService | null {
@@ -181,6 +196,7 @@ export class TTSController {
 
 		this.currentSource = 'reading';
 		this.readingAbort = new AbortController();
+		this.readingClient = this.initReadingClient();
 		this.host.onReadingTTSStateChange?.('tts_loading');
 
 		try {
@@ -223,9 +239,8 @@ export class TTSController {
 		}
 
 		this.host.onReadingTTSStateChange?.('playing');
-		const profile = getDefaultVoiceProfile();
 
-		// 逐段朗读
+		// 逐段朗读（固定使用预置音色 冰糖，mimo-v2.5-tts 流式）
 		for (let i = 0; i < paragraphs.length; i++) {
 			if (this.currentSource !== 'reading') return;
 
@@ -235,14 +250,20 @@ export class TTSController {
 			// 高亮当前段
 			this.host.highlightParagraph?.(i);
 
-			// 流式合成 + 播放
+			// 流式合成 + 播放（使用 dedicated reading client，固定 mimo-v2.5-tts）
 			const player = new PCMStreamPlayer();
 			this.readingPlayer = player;
 
+			if (!this.readingClient) {
+				this.stopReading();
+				new Notice('朗读失败：TTS 客户端未初始化');
+				return;
+			}
+
 			try {
-				const stream = this.ttsService!.getClient().synthesizeStream(
+				const stream = this.readingClient.synthesizeStream(
 					cleanText,
-					{ voiceProfile: { voice: profile.voice } },
+					{ voiceProfile: { voice: '冰糖' } },
 					this.readingAbort?.signal,
 				);
 
