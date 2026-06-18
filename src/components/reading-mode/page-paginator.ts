@@ -120,9 +120,6 @@ export class PagePaginator {
 		return allTexts.slice(startIdx, endIdx).join('\n\n');
 	}
 
-	/**
-	 * 获取当前页的段落列表（元素 + 文本），供逐段 TTS 朗读 + 高亮
-	 */
 	getPageParagraphs(): { element: HTMLElement; text: string }[] {
 		if (!this._isActive || !this.scrollView) return [];
 
@@ -133,23 +130,27 @@ export class PagePaginator {
 			sizer.querySelectorAll<HTMLElement>('p, h1, h2, h3, h4, h5, h6, li'),
 		);
 
-		// 按当前页筛选段落范围
-		const totalParagraphs = allParagraphs.length;
+		const viewWidth = this.scrollView.clientWidth;
+		if (viewWidth === 0) return [];
+
+		const containerRect = this.scrollView.getBoundingClientRect();
+		const scrollLeft = this.scrollView.scrollLeft;
 		const currentPage = this._currentPage;
-		const totalPages = this._totalPages;
-
-		let startIdx = 0;
-		let endIdx = totalParagraphs;
-
-		if (totalPages > 1) {
-			startIdx = Math.floor((currentPage - 1) * totalParagraphs / totalPages);
-			endIdx = Math.floor(currentPage * totalParagraphs / totalPages);
-		}
 
 		return allParagraphs
-			.slice(startIdx, endIdx)
-			.map(el => ({ element: el, text: el.textContent?.trim() || '' }))
-			.filter(p => p.text.length > 0);
+			.map(el => {
+				const rect = el.getBoundingClientRect();
+				if (rect.width === 0 && rect.height === 0) {
+					return { element: el, text: '', page: -1 };
+				}
+				// 元素在可滚动内容中的绝对水平位置
+				const absoluteLeft = rect.left - containerRect.left + scrollLeft;
+				// 计算它所在的页码 (1-based)，加 5px 容差防止边缘浮点误差
+				const page = Math.floor((absoluteLeft + 5) / viewWidth) + 1;
+				return { element: el, text: el.textContent?.trim() || '', page };
+			})
+			.filter(p => p.page === currentPage && p.text.length > 0)
+			.map(p => ({ element: p.element, text: p.text }));
 	}
 
 	/**
@@ -159,7 +160,6 @@ export class PagePaginator {
 	highlightElement(el: HTMLElement): void {
 		this.clearHighlight();
 		el.classList.add('deeppdf-tts-reading-paragraph');
-		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 	}
 
 	/** 清除段落高亮 */

@@ -37,7 +37,7 @@ describe('VoiceProfile — VoiceDesign 模式', () => {
 	it('DEFAULT_VOICE_DESIGN_PROMPT 包含关键音色描述', () => {
 		expect(DEFAULT_VOICE_DESIGN_PROMPT).toContain('年轻女性');
 		expect(DEFAULT_VOICE_DESIGN_PROMPT).toContain('清亮柔和');
-		expect(DEFAULT_VOICE_DESIGN_PROMPT).toContain('伴读书童');
+		expect(DEFAULT_VOICE_DESIGN_PROMPT).toContain('温柔治愈');
 	});
 
 	it('VoiceDesign profile 的 audioTag 根据书籍 mood 变化', () => {
