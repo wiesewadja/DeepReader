@@ -148,6 +148,9 @@ export class SidebarView extends ItemView {
 
 	/** 停止原文朗读（翻页/切章/关闭阅读模式时调用） */
 	stopReadingTTS(): void {
+		if (this.ttsCtrl.isAutoPageTurning()) {
+			return; // 程序翻页，朗读已在 readCurrentPage 内自然结束
+		}
 		this.ttsCtrl.stopReading();
 		this.readingTopbar?.setReadingTTSState('idle');
 		this.clearReadingHighlight();

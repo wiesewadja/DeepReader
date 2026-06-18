@@ -48,6 +48,8 @@ export class TTSController {
 	private currentSource: TTSSource = 'message';
 	private readingAbort: AbortController | null = null;
 	private readingPlayer: PCMStreamPlayer | null = null;
+	/** 程序化翻页（非用户操作），抑制 onStopReadingTTS 误触发 */
+	private isAutoPageTurn = false;
 
 	constructor(host: TTSControllerHost) {
 		this.host = host;
@@ -68,6 +70,11 @@ export class TTSController {
 	/** 获取当前朗读来源 */
 	getCurrentSource(): TTSSource {
 		return this.currentSource;
+	}
+
+	/** 是否正在进行程序化翻页（抑制 onStopReadingTTS 误触发） */
+	isAutoPageTurning(): boolean {
+		return this.isAutoPageTurn;
 	}
 
 	/** 停止原文朗读（按钮点击 / 翻页 / 切章 / 关闭阅读模式） */
@@ -311,8 +318,10 @@ export class TTSController {
 		if (this.currentSource === 'reading') {
 			this.host.clearHighlight?.();
 			if (this.host.goToNextPage?.()) {
+				this.isAutoPageTurn = true;
 				await sleep(300);
 				await this.readCurrentPage();
+				this.isAutoPageTurn = false;
 			} else {
 				this.stopReading();
 				new Notice('朗读完毕');
