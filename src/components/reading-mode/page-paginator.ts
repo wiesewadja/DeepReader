@@ -166,7 +166,7 @@ export class PagePaginator {
 		const paragraphs = sizer.querySelectorAll<HTMLElement>('p, h1, h2, h3, h4, h5, h6, li');
 		if (index < 0 || index >= paragraphs.length) return;
 
-		paragraphs[index].classList.add('deeppdf-tts-paragraph-active');
+		paragraphs[index].classList.add('deeppdf-tts-reading-paragraph');
 		paragraphs[index].scrollIntoView({ behavior: 'smooth', block: 'center' });
 	}
 
@@ -184,7 +184,7 @@ export class PagePaginator {
 		for (const p of paragraphs) {
 			const domText = (p.textContent || '').replace(/\s+/g, ' ');
 			if (domText.includes(text)) {
-				p.classList.add('deeppdf-tts-paragraph-active');
+				p.classList.add('deeppdf-tts-reading-paragraph');
 				p.scrollIntoView({ behavior: 'smooth', block: 'center' });
 				return;
 			}
@@ -195,8 +195,8 @@ export class PagePaginator {
 	clearHighlight(): void {
 		if (!this.scrollView) return;
 		this.scrollView
-			.querySelectorAll('.deeppdf-tts-paragraph-active')
-			.forEach(el => el.classList.remove('deeppdf-tts-paragraph-active'));
+			.querySelectorAll('.deeppdf-tts-reading-paragraph')
+			.forEach(el => el.classList.remove('deeppdf-tts-reading-paragraph'));
 	}
 
 	/** 外部设置当前页码（用于 blockId 跳转后同步状态） */

@@ -277,10 +277,3 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-/* ── TTS 朗读段落高亮 ── */
-
-.deeppdf-tts-paragraph-active {
-    background: transparent;
-    border-bottom: 2px solid var(--text-accent);
-    padding-bottom: 1px;
-}
