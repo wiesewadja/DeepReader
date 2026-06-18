@@ -207,7 +207,7 @@ export class TTSController {
 		}
 	}
 
-	/** 朗读当前页：逐段高亮 → 流式合成 → PCM 播放 */
+	/** 朗读当前页：逐段流式合成入同一个 PCMStreamPlayer，所有段播完后 seal */
 	private async readCurrentPage(): Promise<void> {
 		if (this.currentSource !== 'reading') return;
 
@@ -231,20 +231,20 @@ export class TTSController {
 
 		this.host.onReadingTTSStateChange?.('playing');
 
-		for (let i = 0; i < paragraphs.length; i++) {
-			if (this.currentSource !== 'reading') return;
+		// 一个 player 服务当前页所有段落：无缝衔接，无 AudioContext 爆炸
+		const player = new PCMStreamPlayer();
+		this.readingPlayer = player;
 
-			const cleanText = preprocessForTTS(paragraphs[i].text);
-			if (!cleanText.trim()) continue;
+		try {
+			for (let i = 0; i < paragraphs.length; i++) {
+				if (this.currentSource !== 'reading') return;
 
-			// 高亮当前段落（直接操作 DOM 元素，精确无偏移）
-			this.host.highlightElement?.(paragraphs[i].element);
+				const cleanText = preprocessForTTS(paragraphs[i].text);
+				if (!cleanText.trim()) continue;
 
-			// 流式合成 + 实时播放
-			const player = new PCMStreamPlayer();
-			this.readingPlayer = player;
+				// 高亮当前段落（直接操作 DOM 元素，精确无偏移）
+				this.host.highlightElement?.(paragraphs[i].element);
 
-			try {
 				const stream = this.readingClient.synthesizeStream(
 					cleanText,
 					{ voiceProfile: { voice: '冰糖' } },
@@ -254,11 +254,13 @@ export class TTSController {
 				for await (const chunk of stream) {
 					player.enqueue(chunk);
 				}
-				player.seal();
-				await player.waitForEnd();
-			} finally {
-				this.readingPlayer = null;
 			}
+
+			// 所有段落已入队，等待播放完毕
+			player.seal();
+			await player.waitForEnd();
+		} finally {
+			this.readingPlayer = null;
 		}
 
 		// 所有段朗读完毕，翻页继续

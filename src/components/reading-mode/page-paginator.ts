@@ -259,6 +259,10 @@ export class PagePaginator {
 
 		const pageWidth = this.scrollView.clientWidth;
 		this.scrollView.scrollBy({ left: pageWidth, behavior: 'smooth' });
+		// 同步更新 _currentPage，确保 getPageParagraphs 等依赖它的方法
+		// 在 scroll 事件触发前也能读到正确的页码
+		this._currentPage = Math.min(this._currentPage + 1, this._totalPages);
+		this.options.onPageChange?.(this._currentPage, this._totalPages);
 		this.forceRerender();
 		return true;
 	}
