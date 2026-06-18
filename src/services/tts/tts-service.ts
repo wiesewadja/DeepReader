@@ -310,37 +310,32 @@ export class TTSService {
             const cleanContent = stripWikiLinksForTTS(content);
             const previewText = cleanContent.slice(0, 250);
 
-            // 5. 口语化改写（LLM 把书面语转成奚童口吻）
+            // 5. Markdown 清洗 + 数字归一化（不做 LLM 口语化改写，
+            //    音色设计由 VoiceDesign user message 控制）
             let textToRead = previewText;
-            try {
-                textToRead = await this.summarizer.oralRewrite(previewText);
-            } catch (err) {
-                serviceLog.warn('[TTS] Oral rewrite failed, using original text:', err);
-            }
-
-            // 6. Markdown 清洗 + 数字归一化
             try {
                 textToRead = await this.expressivePreprocessor.preprocess(textToRead, {
                     enableMarks: false,
                 });
             } catch { }
 
-            // 7. 构建 TTS 选项 + 合成语音
+            // 6. 构建 TTS 选项 + 合成语音
             const ttsOptions = this.buildTTSOptions(voiceProfile);
             const audioBuffer = await this.client.synthesize(textToRead, ttsOptions);
 
-            // 8. 缓存
+            // 7. 缓存
             const blob = new Blob([audioBuffer], { type: 'audio/wav' });
             const blobUrl = URL.createObjectURL(blob);
             const audio = new Audio(blobUrl);
             this.setCache(cacheKey, { blobUrl, audio });
             this.previewBuffers.set(cacheKey, audioBuffer);
 
-            serviceLog.info(`[TTS] Preloaded oral preview for message ${messageId} (${previewText.length} chars)`);
+            serviceLog.info(`[TTS] Preloaded preview for message ${messageId} (${previewText.length} chars)`);
 
-            // 9. 后台启动全量改写（利用用户阅读的 3-10 秒空白）
-            if (cleanContent.length > 250 && !this.rewrittenCache.has(messageId) && !this.pendingRewrites.has(messageId)) {
-                this.startFullRewrite(messageId, cleanContent);
+            // 8. 后台全量音频生成（利用用户阅读的 3-10 秒空白）
+            // 注意：不做口语化改写，直接用原文 + VoiceDesign 风格
+            if (cleanContent.length > 250) {
+                this.startFullGenerate(messageId, cleanContent, voiceProfile, cacheKey);
             }
         } catch (err) {
             serviceLog.warn('[TTS] Preload preview failed:', err);
@@ -348,23 +343,28 @@ export class TTSService {
     }
 
     /**
-     * 后台全量口语化改写，结果存入 rewrittenCache
+     * 后台生成剩余音频（利用用户阅读的 3-10 秒空白）
+     * 不做口语化改写，原文直接合成 + VoiceDesign 风格控制
      */
-    private startFullRewrite(messageId: string, content: string): void {
-        const promise = this.summarizer.oralRewrite(content)
-            .then(rewritten => {
-                this.rewrittenCache.set(messageId, rewritten);
-                this.pendingRewrites.delete(messageId);
-                serviceLog.info(`[TTS] Full oral rewrite completed for ${messageId} (${content.length} → ${rewritten.length} chars)`);
-                return rewritten;
+    private startFullGenerate(messageId: string, fullContent: string, voiceProfile: VoiceProfile, cacheKey: string): void {
+        const remaining = fullContent.slice(250);
+        if (!remaining.trim()) return;
+
+        // 合成剩余文本，存入完整缓存
+        const ttsOptions = this.buildTTSOptions(voiceProfile);
+        this.client.synthesize(remaining, ttsOptions)
+            .then(audioBuffer => {
+                if (this.currentMessageId === messageId) {
+                    const blob = new Blob([audioBuffer], { type: 'audio/wav' });
+                    const blobUrl = URL.createObjectURL(blob);
+                    const audio = new Audio(blobUrl);
+                    this.setCache(cacheKey, { blobUrl, audio, isFull: true });
+                    serviceLog.info(`[TTS] Full audio generated for ${messageId}`);
+                }
             })
             .catch(err => {
-                serviceLog.warn('[TTS] Full oral rewrite failed:', err);
-                this.pendingRewrites.delete(messageId);
-                return '';
+                serviceLog.warn('[TTS] Full audio generation failed:', err);
             });
-
-        this.pendingRewrites.set(messageId, promise);
     }
 
     /**
