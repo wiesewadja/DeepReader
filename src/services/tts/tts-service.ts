@@ -343,24 +343,21 @@ export class TTSService {
     }
 
     /**
-     * 后台生成剩余音频（利用用户阅读的 3-10 秒空白）
+     * 后台生成完整音频（利用用户阅读的 3-10 秒空白）
      * 不做口语化改写，原文直接合成 + VoiceDesign 风格控制
      */
     private startFullGenerate(messageId: string, fullContent: string, voiceProfile: VoiceProfile, cacheKey: string): void {
-        const remaining = fullContent.slice(250);
-        if (!remaining.trim()) return;
+        if (!fullContent.trim()) return;
 
-        // 合成剩余文本，存入完整缓存
+        // 合成完整文本（含前 250 字），替换预览缓存
         const ttsOptions = this.buildTTSOptions(voiceProfile);
-        this.client.synthesize(remaining, ttsOptions)
+        this.client.synthesize(fullContent, ttsOptions)
             .then(audioBuffer => {
-                if (this.currentMessageId === messageId) {
-                    const blob = new Blob([audioBuffer], { type: 'audio/wav' });
-                    const blobUrl = URL.createObjectURL(blob);
-                    const audio = new Audio(blobUrl);
-                    this.setCache(cacheKey, { blobUrl, audio, isFull: true });
-                    serviceLog.info(`[TTS] Full audio generated for ${messageId}`);
-                }
+                const blob = new Blob([audioBuffer], { type: 'audio/wav' });
+                const blobUrl = URL.createObjectURL(blob);
+                const audio = new Audio(blobUrl);
+                this.setCache(cacheKey, { blobUrl, audio, isFull: true });
+                serviceLog.info(`[TTS] Full audio generated for ${messageId} (${fullContent.length} chars)`);
             })
             .catch(err => {
                 serviceLog.warn('[TTS] Full audio generation failed:', err);
