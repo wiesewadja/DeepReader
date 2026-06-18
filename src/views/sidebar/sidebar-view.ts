@@ -167,20 +167,10 @@ export class SidebarView extends ItemView {
 	}
 
 	/** 获取当前页文本 */
-	private getCurrentPageText(): string {
-		return this.plugin.readingModeService?.getCurrentPageText?.() || '';
-	}
-
 	/** 翻到下一页 */
 	private goToNextPage(): boolean {
 		const service = this.plugin.readingModeService;
-		if (!service) return false;
-
-		const paginator = (service as any).paginator;
-		if (paginator?.nextPage) {
-			return paginator.nextPage();
-		}
-		return false;
+		return service?.nextPage?.() ?? false;
 	}
 
 	/** 切换原文朗读（按钮点击 / Hotkey） */
@@ -191,25 +181,32 @@ export class SidebarView extends ItemView {
 			return;
 		}
 
-		// 获取朗读文本：优先选区 > 当前页
-		let text = '';
+		// 获取朗读文本：优先选区
 		const selection = window.getSelection()?.toString()?.trim();
 		if (selection) {
-			text = selection;
-		} else {
-			const service = this.plugin.readingModeService;
-			const paragraphs = service?.getPageParagraphs?.() || [];
-			text = paragraphs.map(p => p.text).join('\n\n');
+			this.readingTopbar?.setReadingTTSState('loading');
+			try {
+				await this.ttsCtrl.handleReadingTTS(selection);
+				this.readingTopbar?.setReadingTTSState(
+					this.ttsCtrl.getCurrentSource() === 'reading' ? 'playing' : 'idle',
+				);
+			} catch (e) {
+				this.readingTopbar?.setReadingTTSState('idle');
+			}
+			return;
 		}
 
-		if (!text) {
+		// 无选区时检查当前页是否有内容
+		const service = this.plugin.readingModeService;
+		const paragraphs = service?.getPageParagraphs?.() || [];
+		if (paragraphs.length === 0) {
 			new Notice('当前没有可朗读的文本');
 			return;
 		}
 
 		this.readingTopbar?.setReadingTTSState('loading');
 		try {
-			await this.ttsCtrl.handleReadingTTS(text);
+			await this.ttsCtrl.handleReadingTTS(); // 无参数走页面朗读
 			this.readingTopbar?.setReadingTTSState(
 				this.ttsCtrl.getCurrentSource() === 'reading' ? 'playing' : 'idle',
 			);

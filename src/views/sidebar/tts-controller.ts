@@ -189,8 +189,10 @@ export class TTSController {
 	 *   2. 流式合成语音（mimo-v2.5-tts）
 	 *   3. PCM 实时播放
 	 * 读完所有段后自动翻页继续。
+	 *
+	 * @param customText 可选：用户选区文本，非空时朗读此文本而非当前页
 	 */
-	async handleReadingTTS(_text?: string): Promise<void> {
+	async handleReadingTTS(customText?: string): Promise<void> {
 		// 如果正在朗读，停止
 		if (this.currentSource === 'reading') {
 			this.stopReading();
@@ -208,7 +210,12 @@ export class TTSController {
 		this.host.onReadingTTSStateChange?.('tts_loading');
 
 		try {
-			await this.readCurrentPage();
+			if (customText) {
+				// 选区朗读：将自定义文本作为单一段落
+				await this.readCustomText(customText);
+			} else {
+				await this.readCurrentPage();
+			}
 		} catch (err) {
 			if ((err as Error)?.name === 'AbortError') return;
 			serviceLog.error('[TTS] Reading TTS failed:', err);
@@ -219,6 +226,42 @@ export class TTSController {
 				this.host.onReadingTTSStateChange?.('idle');
 				this.host.clearHighlight?.();
 			}
+		}
+	}
+
+	/**
+	 * 朗读自定义文本（选区朗读），不分段不翻页
+	 */
+	private async readCustomText(text: string): Promise<void> {
+		const cleanText = preprocessForTTS(text);
+		if (!cleanText.trim()) {
+			this.stopReading();
+			return;
+		}
+
+		if (!this.readingClient) {
+			this.stopReading();
+			new Notice('朗读失败：TTS 客户端未初始化');
+			return;
+		}
+
+		this.host.onReadingTTSStateChange?.('playing');
+		const player = new PCMStreamPlayer();
+		this.readingPlayer = player;
+
+		try {
+			const stream = this.readingClient.synthesizeStream(
+				cleanText,
+				{ voiceProfile: { voice: '冰糖' } },
+				this.readingAbort?.signal,
+			);
+			for await (const chunk of stream) {
+				player.enqueue(chunk);
+			}
+			player.seal();
+			await player.waitForEnd();
+		} finally {
+			this.readingPlayer = null;
 		}
 	}
 
@@ -319,9 +362,12 @@ export class TTSController {
 			this.host.clearHighlight?.();
 			if (this.host.goToNextPage?.()) {
 				this.isAutoPageTurn = true;
-				await sleep(300);
-				await this.readCurrentPage();
-				this.isAutoPageTurn = false;
+				try {
+					await sleep(300);
+					await this.readCurrentPage();
+				} finally {
+					this.isAutoPageTurn = false;
+				}
 			} else {
 				this.stopReading();
 				new Notice('朗读完毕');

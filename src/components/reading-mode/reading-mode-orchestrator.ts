@@ -150,6 +150,13 @@ export class ReadingModeService implements ScrollPatchService {
 	}
 
 	/**
+	 * 翻到下一页（供原文朗读 TTS 自动翻页使用）
+	 */
+	nextPage(): boolean {
+		return this.paginator?.nextPage() ?? false;
+	}
+
+	/**
 	 * 获取自动启用状态
 	 */
 	getAutoEnable(): boolean {
