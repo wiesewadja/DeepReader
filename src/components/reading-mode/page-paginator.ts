@@ -85,6 +85,91 @@ export class PagePaginator {
 		return this.scrollView.scrollLeft <= 1;
 	}
 
+	/**
+	 * 获取当前页的纯文本内容
+	 * 使用 simplified 方法：获取所有段落文本，按页码估算当前页内容
+	 */
+	getCurrentPageText(): string {
+		if (!this._isActive || !this.scrollView) return '';
+
+		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
+		if (!sizer) return '';
+
+		// 获取所有段落文本
+		const paragraphs = Array.from(sizer.querySelectorAll<HTMLElement>('p, h1, h2, h3, h4, h5, h6, li'));
+		const allTexts = paragraphs
+			.map(p => p.textContent?.trim())
+			.filter(t => t && t.length > 0);
+
+		if (allTexts.length === 0) return '';
+
+		// 简单估算：按页码比例截取文本
+		const totalParagraphs = allTexts.length;
+		const currentPage = this._currentPage;
+		const totalPages = this._totalPages;
+
+		if (totalPages <= 1) {
+			// 只有一页，返回所有文本
+			return allTexts.join('\n\n');
+		}
+
+		// 按页码比例计算当前页的段落范围
+		const startIdx = Math.floor((currentPage - 1) * totalParagraphs / totalPages);
+		const endIdx = Math.floor(currentPage * totalParagraphs / totalPages);
+
+		return allTexts.slice(startIdx, endIdx).join('\n\n');
+	}
+
+	getPageParagraphs(): { element: HTMLElement; text: string }[] {
+		if (!this._isActive || !this.scrollView) return [];
+
+		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
+		if (!sizer) return [];
+
+		const allParagraphs = Array.from(
+			sizer.querySelectorAll<HTMLElement>('p, h1, h2, h3, h4, h5, h6, li'),
+		);
+
+		const viewWidth = this.scrollView.clientWidth;
+		if (viewWidth === 0) return [];
+
+		const containerRect = this.scrollView.getBoundingClientRect();
+		const scrollLeft = this.scrollView.scrollLeft;
+		const currentPage = this._currentPage;
+
+		return allParagraphs
+			.map(el => {
+				const rect = el.getBoundingClientRect();
+				if (rect.width === 0 && rect.height === 0) {
+					return { element: el, text: '', page: -1 };
+				}
+				// 元素在可滚动内容中的绝对水平位置
+				const absoluteLeft = rect.left - containerRect.left + scrollLeft;
+				// 计算它所在的页码 (1-based)，加 5px 容差防止边缘浮点误差
+				const page = Math.floor((absoluteLeft + 5) / viewWidth) + 1;
+				return { element: el, text: el.textContent?.trim() || '', page };
+			})
+			.filter(p => p.page === currentPage && p.text.length > 0)
+			.map(p => ({ element: p.element, text: p.text }));
+	}
+
+	/**
+	 * 高亮指定的段落元素（TTS 朗读时使用）
+	 * @param el 要高亮的 DOM 元素
+	 */
+	highlightElement(el: HTMLElement): void {
+		this.clearHighlight();
+		el.classList.add('deeppdf-tts-reading-paragraph');
+	}
+
+	/** 清除段落高亮 */
+	clearHighlight(): void {
+		if (!this.scrollView) return;
+		this.scrollView
+			.querySelectorAll('.deeppdf-tts-reading-paragraph')
+			.forEach(el => el.classList.remove('deeppdf-tts-reading-paragraph'));
+	}
+
 	/** 外部设置当前页码（用于 blockId 跳转后同步状态） */
 	setCurrentPage(page: number): void {
 		// 布局未稳定（_totalPages=0 或 _totalPages < page）时延后应用
@@ -174,6 +259,10 @@ export class PagePaginator {
 
 		const pageWidth = this.scrollView.clientWidth;
 		this.scrollView.scrollBy({ left: pageWidth, behavior: 'smooth' });
+		// 同步更新 _currentPage，确保 getPageParagraphs 等依赖它的方法
+		// 在 scroll 事件触发前也能读到正确的页码
+		this._currentPage = Math.min(this._currentPage + 1, this._totalPages);
+		this.options.onPageChange?.(this._currentPage, this._totalPages);
 		this.forceRerender();
 		return true;
 	}

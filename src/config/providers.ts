@@ -143,9 +143,7 @@ export function resolveRoleConfig(
 	const needsNormalize = !builtInConfig || (!!baseUrlOverride || !!(account as { baseUrl?: string }).baseUrl);
 	const baseUrl = (needsNormalize && rawBaseUrl) ? normalizeBaseUrl(rawBaseUrl) : rawBaseUrl;
 
-	const defaultModel = role === 'tts' && provider === 'minimax'
-		? (MINIMAX_TTS_MODELS[0] || builtInConfig?.defaultModel || '')
-		: (builtInConfig?.defaultModel || '');
+	const defaultModel = builtInConfig?.defaultModel || '';
 	const resolvedModel = model || defaultModel;
 
 	// Xiaomi fallback：Token Plan 失败时使用 MIMO API
@@ -270,11 +268,6 @@ export function applyPreset(
 // ═══════════════════════════════════════════════════════════════
 // MiniMax TTS 模型列表（/v1/models 不返回非文本模型，故硬编码）
 // ═══════════════════════════════════════════════════════════════
-export const MINIMAX_TTS_MODELS = [
-  'speech-2.8-hd',
-  'speech-2.8-turbo',
-];
-
 export const XIAOMI_TTS_MODELS = [
   'mimo-v2.5-tts',
   'mimo-v2.5-tts-voicedesign',

@@ -12,6 +12,7 @@ export class PCMStreamPlayer {
     private completePromise: Promise<void> | null = null;
     private stopped = false;
     private firstStartTime: number | null = null;
+    private leftover: Uint8Array | null = null;
 
     constructor(sampleRate = DEFAULT_SAMPLE_RATE) {
         this.sampleRate = sampleRate;
@@ -44,7 +45,32 @@ export class PCMStreamPlayer {
             this.ctx.resume();
         }
 
-        const int16 = new Int16Array(pcm16);
+        // 拼接前一次未处理的残留字节
+        let dataToProcess = new Uint8Array(pcm16);
+        if (this.leftover && this.leftover.length > 0) {
+            const combined = new Uint8Array(this.leftover.length + dataToProcess.length);
+            combined.set(this.leftover, 0);
+            combined.set(dataToProcess, this.leftover.length);
+            dataToProcess = combined;
+            this.leftover = null;
+        }
+
+        // pcm16 是 16位 (2字节) 采样的音频，需要 2 字节对齐
+        const sampleCount = Math.floor(dataToProcess.length / 2);
+        const alignedByteLength = sampleCount * 2;
+
+        if (alignedByteLength < dataToProcess.length) {
+            this.leftover = dataToProcess.slice(alignedByteLength);
+        }
+
+        if (sampleCount === 0) return;
+
+        // 提取对齐后的 PCM16 数据
+        const alignedBuffer = dataToProcess.buffer.slice(
+            dataToProcess.byteOffset,
+            dataToProcess.byteOffset + alignedByteLength
+        );
+        const int16 = new Int16Array(alignedBuffer);
         const float32 = new Float32Array(int16.length);
         for (let i = 0; i < int16.length; i++) {
             float32[i] = int16[i] / 32768;
@@ -60,8 +86,8 @@ export class PCMStreamPlayer {
 
         const now = this.ctx.currentTime;
         if (this.nextStartTime < now) {
-            // 首个 chunk 或间隔过大时，增加缓冲时间确保 AudioContext 完全就绪
-            this.nextStartTime = now + 0.05;
+            // 首个 chunk 或间隔过大时，增加缓冲时间 (0.25s 抖动缓冲区) 确保 AudioContext 完全就绪且网络抖动不引起断续
+            this.nextStartTime = now + 0.25;
         }
         // 记录第一个 chunk 的实际播放开始时间
         if (this.firstStartTime === null) {

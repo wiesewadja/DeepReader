@@ -9,12 +9,15 @@ import { uiLog as log } from '../../utils/logger.js';
 import { Component } from '../component.js';
 import { MascotFace, type MascotExpression } from './mascot-face.js';
 
+export type ReadingTTSState = 'idle' | 'loading' | 'playing';
+
 export interface ReadingTopbarOptions {
     onOpenLibrary?: () => void;
     onOpenSettings?: () => void;
     onCoverClick?: () => void;
     onExitBooklist?: () => void;
     onBooklistRename?: (newName: string) => void;
+    onToggleReadingTTS?: () => void;
 }
 
 export class ReadingTopbar extends Component {
@@ -23,6 +26,8 @@ export class ReadingTopbar extends Component {
     private bookTitleEl: HTMLElement | null = null;
     private bookAuthorEl: HTMLElement | null = null;
     private mascotFace: MascotFace | null = null;
+    private ttsBtn: HTMLElement | null = null;
+    private ttsState: ReadingTTSState = 'idle';
     private coverRotateTimer: ReturnType<typeof setInterval> | null = null;
     private coverFrontIndex = 0;
     private isEditingTitle = false;
@@ -97,6 +102,16 @@ export class ReadingTopbar extends Component {
             this.options.onOpenSettings?.();
         });
         rightSection.appendChild(settingsBtn);
+
+        this.ttsBtn = document.createElement('button');
+        this.ttsBtn.className = 'deeppdf-topbar-action-btn deeppdf-tts-reading-btn';
+        this.ttsBtn.title = '朗读原文';
+        this.ttsBtn.innerHTML = Icons.volumeX;
+        this.ttsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.options.onToggleReadingTTS?.();
+        });
+        rightSection.appendChild(this.ttsBtn);
 
         container.appendChild(rightSection);
 
@@ -291,6 +306,39 @@ export class ReadingTopbar extends Component {
         log(`[ReadingTopbar] setIndexes called with ${indexes.length} indexes`);
     }
 
+    /**
+     * 设置朗读按钮状态
+     */
+    public setReadingTTSState(state: ReadingTTSState): void {
+        this.ttsState = state;
+        if (!this.ttsBtn) return;
+
+        this.ttsBtn.classList.remove('idle', 'loading', 'playing');
+        this.ttsBtn.classList.add(state);
+
+        switch (state) {
+            case 'idle':
+                this.ttsBtn.innerHTML = Icons.volume2;
+                this.ttsBtn.title = '朗读原文';
+                break;
+            case 'loading':
+                this.ttsBtn.innerHTML = Icons.spinner;
+                this.ttsBtn.title = '正在加载...';
+                break;
+            case 'playing':
+                this.ttsBtn.innerHTML = Icons.audioWave;
+                this.ttsBtn.title = '停止朗读';
+                break;
+        }
+    }
+
+    /**
+     * 获取当前朗读按钮状态
+     */
+    public getReadingTTSState(): ReadingTTSState {
+        return this.ttsState;
+    }
+
     public setMascotExpression(expr: MascotExpression): void {
         this.mascotFace?.setExpression(expr);
     }
@@ -345,6 +393,7 @@ export class ReadingTopbar extends Component {
         this.stopCoverRotation();
         this.mascotFace?.destroy();
         this.mascotFace = null;
+        this.ttsBtn = null;
         this.bookCoverEl = null;
         this.bookTitleEl = null;
         this.bookAuthorEl = null;

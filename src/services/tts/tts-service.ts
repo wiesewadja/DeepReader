@@ -7,7 +7,6 @@ import { safeRequest } from '../../utils/safe-request.js';
 import { BookGenreDetector } from './book-genre-detector.js';
 import type { BookGenre } from './book-genre-detector.js';
 import { ExpressivePreprocessor } from './expressive-preprocessor.js';
-import { MiniMaxTTSClient } from './minimax-tts-client.js';
 import { PCMStreamPlayer } from './pcm-stream-player.js';
 import { TTSClient, type ITTSSynthesizer, type TTSVoiceOptions, type TTSOptions } from './tts-client.js';
 import { TTSSummarizer, type TTSContext } from './tts-summarizer.js';
@@ -116,19 +115,15 @@ export class TTSService {
     private ttsProvider: string;
     /** 是否使用 VoiceDesign 模式（模型名包含 voicedesign） */
     private isVoiceDesign: boolean;
+    /** 正在进行的预加载任务集合，防止并发重复请求 */
+    private activePreloads = new Set<string>();
 
     constructor(config: TTSServiceConfig) {
-        this.client = config.ttsProvider === 'minimax'
-            ? new MiniMaxTTSClient({
-                apiKey: config.ttsApiKey,
-                baseUrl: config.ttsBaseUrl,
-                model: config.ttsModel,
-            })
-            : new TTSClient({
-                apiKey: config.ttsApiKey,
-                baseUrl: config.ttsBaseUrl,
-                model: config.ttsModel,
-            });
+        this.client = new TTSClient({
+            apiKey: config.ttsApiKey,
+            baseUrl: config.ttsBaseUrl,
+            model: config.ttsModel,
+        });
         this.ttsProvider = config.ttsProvider;
         this.isVoiceDesign = config.ttsModel?.includes('voicedesign') ?? false;
         this.summarizer = new TTSSummarizer({
@@ -181,6 +176,11 @@ export class TTSService {
 
     getCurrentMessageId(): string | null {
         return this.currentMessageId;
+    }
+
+    /** 返回底层 ITTSSynthesizer 客户端（用于原文朗读流式播放） */
+    getClient(): ITTSSynthesizer {
+        return this.client;
     }
 
     async play(messageId: string, content: string, userQuestion?: string, context?: TTSContext, options?: { rawText?: boolean }): Promise<void> {
@@ -302,47 +302,55 @@ export class TTSService {
             // 2. 解析音色配置
             const voiceProfile = genre ? resolveVoiceProfile(genre, this.ttsProvider, this.isVoiceDesign) : getDefaultVoiceProfile(this.ttsProvider, this.isVoiceDesign);
 
-            // 3. 检查缓存是否已存在
+            // 3. 检查缓存是否已存在或正在进行预加载
             const cacheKey = this.buildCacheKey(messageId, voiceProfile);
-            if (this.cache.has(cacheKey)) {
+            const cleanContent = stripWikiLinksForTTS(content);
+            const cached = this.cache.get(cacheKey);
+            if (cached) {
+                if (cached.isFull || cleanContent.length <= 250) {
+                    return;
+                }
+                this.startFullGenerate(messageId, cleanContent, voiceProfile, cacheKey);
                 return;
             }
-
-            // 4. 截取前 250 字符
-            const cleanContent = stripWikiLinksForTTS(content);
-            const previewText = cleanContent.slice(0, 250);
-
-            // 5. 口语化改写（LLM 把书面语转成奚童口吻）
-            let textToRead = previewText;
-            try {
-                textToRead = await this.summarizer.oralRewrite(previewText);
-            } catch (err) {
-                serviceLog.warn('[TTS] Oral rewrite failed, using original text:', err);
+            if (this.activePreloads.has(cacheKey)) {
+                return;
             }
+            this.activePreloads.add(cacheKey);
 
-            // 6. Markdown 清洗 + 数字归一化
             try {
-                textToRead = await this.expressivePreprocessor.preprocess(textToRead, {
-                    enableMarks: false,
-                });
-            } catch { }
+                // 4. 截取前 250 字符
+                const previewText = cleanContent.slice(0, 250);
 
-            // 7. 构建 TTS 选项 + 合成语音
-            const ttsOptions = this.buildTTSOptions(voiceProfile);
-            const audioBuffer = await this.client.synthesize(textToRead, ttsOptions);
+                // 5. Markdown 清洗 + 数字归一化（不做 LLM 口语化改写，
+                //    音色设计由 VoiceDesign user message 控制）
+                let textToRead = previewText;
+                try {
+                    textToRead = await this.expressivePreprocessor.preprocess(textToRead, {
+                        enableMarks: false,
+                    });
+                } catch { }
 
-            // 8. 缓存
-            const blob = new Blob([audioBuffer], { type: 'audio/wav' });
-            const blobUrl = URL.createObjectURL(blob);
-            const audio = new Audio(blobUrl);
-            this.setCache(cacheKey, { blobUrl, audio });
-            this.previewBuffers.set(cacheKey, audioBuffer);
+                // 6. 构建 TTS 选项 + 合成语音
+                const ttsOptions = this.buildTTSOptions(voiceProfile);
+                const audioBuffer = await this.client.synthesize(textToRead, ttsOptions);
 
-            serviceLog.info(`[TTS] Preloaded oral preview for message ${messageId} (${previewText.length} chars)`);
+                // 7. 缓存
+                const blob = new Blob([audioBuffer], { type: 'audio/wav' });
+                const blobUrl = URL.createObjectURL(blob);
+                const audio = new Audio(blobUrl);
+                this.setCache(cacheKey, { blobUrl, audio });
+                this.previewBuffers.set(cacheKey, audioBuffer);
 
-            // 9. 后台启动全量改写（利用用户阅读的 3-10 秒空白）
-            if (cleanContent.length > 250 && !this.rewrittenCache.has(messageId) && !this.pendingRewrites.has(messageId)) {
-                this.startFullRewrite(messageId, cleanContent);
+                serviceLog.info(`[TTS] Preloaded preview for message ${messageId} (${previewText.length} chars)`);
+
+                // 8. 后台全量音频生成（利用用户阅读的 3-10 秒空白）
+                // 注意：不做口语化改写，直接用原文 + VoiceDesign 风格
+                if (cleanContent.length > 250) {
+                    this.startFullGenerate(messageId, cleanContent, voiceProfile, cacheKey);
+                }
+            } finally {
+                this.activePreloads.delete(cacheKey);
             }
         } catch (err) {
             serviceLog.warn('[TTS] Preload preview failed:', err);
@@ -350,23 +358,25 @@ export class TTSService {
     }
 
     /**
-     * 后台全量口语化改写，结果存入 rewrittenCache
+     * 后台生成完整音频（利用用户阅读的 3-10 秒空白）
+     * 不做口语化改写，原文直接合成 + VoiceDesign 风格控制
      */
-    private startFullRewrite(messageId: string, content: string): void {
-        const promise = this.summarizer.oralRewrite(content)
-            .then(rewritten => {
-                this.rewrittenCache.set(messageId, rewritten);
-                this.pendingRewrites.delete(messageId);
-                serviceLog.info(`[TTS] Full oral rewrite completed for ${messageId} (${content.length} → ${rewritten.length} chars)`);
-                return rewritten;
+    private startFullGenerate(messageId: string, fullContent: string, voiceProfile: VoiceProfile, cacheKey: string): void {
+        if (!fullContent.trim()) return;
+
+        // 合成完整文本（含前 250 字），替换预览缓存
+        const ttsOptions = this.buildTTSOptions(voiceProfile);
+        this.client.synthesize(fullContent, ttsOptions)
+            .then(audioBuffer => {
+                const blob = new Blob([audioBuffer], { type: 'audio/wav' });
+                const blobUrl = URL.createObjectURL(blob);
+                const audio = new Audio(blobUrl);
+                this.setCache(cacheKey, { blobUrl, audio, isFull: true });
+                serviceLog.info(`[TTS] Full audio generated for ${messageId} (${fullContent.length} chars)`);
             })
             .catch(err => {
-                serviceLog.warn('[TTS] Full oral rewrite failed:', err);
-                this.pendingRewrites.delete(messageId);
-                return '';
+                serviceLog.warn('[TTS] Full audio generation failed:', err);
             });
-
-        this.pendingRewrites.set(messageId, promise);
     }
 
     /**
@@ -408,6 +418,7 @@ export class TTSService {
         let playedChars = 0;
         if (cached) {
             this.setState('playing');
+            cached.audio.currentTime = 0;
             const previewChars = Math.min(250, totalChars);
             const previewRatio = previewChars / totalChars;
             this.startMappedProgressTracking(messageId, cached.audio, {

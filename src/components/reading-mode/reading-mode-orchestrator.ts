@@ -37,6 +37,7 @@ export interface ReadingModeCallbacks {
 	onRemoveHighlight?: (text: string) => Promise<void>;
 	onBookDetected?: (indexId: string, bookName: string) => void; // 检测到书籍章节时回调
 	onDeactivate?: () => void; // 阅读模式停用时回调
+	onStopReadingTTS?: () => void; // 翻页/切章/关闭时停止原文朗读
 }
 
 export interface ChapterNavigation {
@@ -118,6 +119,41 @@ export class ReadingModeService implements ScrollPatchService {
 	 */
 	getActiveContainerEl(): HTMLElement | null {
 		return this.activeContainerEl;
+	}
+
+	/**
+	 * 获取当前页的纯文本内容（委托给 PagePaginator）
+	 */
+	getCurrentPageText(): string {
+		return this.paginator?.getCurrentPageText() || '';
+	}
+
+	/**
+	 * 获取当前页的段落列表（元素 + 文本），供逐段 TTS 朗读
+	 */
+	getPageParagraphs(): { element: HTMLElement; text: string }[] {
+		return this.paginator?.getPageParagraphs() || [];
+	}
+
+	/**
+	 * 高亮指定的段落元素
+	 */
+	highlightElement(el: HTMLElement): void {
+		this.paginator?.highlightElement(el);
+	}
+
+	/**
+	 * 清除所有高亮
+	 */
+	clearHighlight(): void {
+		this.paginator?.clearHighlight();
+	}
+
+	/**
+	 * 翻到下一页（供原文朗读 TTS 自动翻页使用）
+	 */
+	nextPage(): boolean {
+		return this.paginator?.nextPage() ?? false;
 	}
 
 	/**
@@ -257,8 +293,13 @@ export class ReadingModeService implements ScrollPatchService {
 
 		serviceLog("[DeepPDF] ReadingMode activating for:", file.path);
 
-		// 检查视图是否可用，不可用则延迟重试（插件重载时视图可能还在重建）
-		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		// 查找包含目标文件的 markdown view（不依赖 activeLeaf）
+		const markdownLeaves = this.app.workspace.getLeavesOfType("markdown");
+		const targetLeaf = markdownLeaves.find(
+			(l) => (l.view as MarkdownView)?.file?.path === file.path,
+		);
+		const view = targetLeaf?.view as MarkdownView | undefined;
+
 		if (!view) {
 			if (retryCount >= 10) {
 				serviceLog(
@@ -412,6 +453,8 @@ export class ReadingModeService implements ScrollPatchService {
 	 */
 	deactivate(): void {
 		if (!this.isActive) return;
+
+		this.callbacks?.onStopReadingTTS?.();
 
 		// 保存当前页码到记忆（含 lastReadAt 标记，触发持久化）
 		if (this.currentFile && this.paginator) {
@@ -586,6 +629,7 @@ export class ReadingModeService implements ScrollPatchService {
 						if (this.currentFile) {
 							this.recordPage(this.currentFile.path, page);
 						}
+						this.callbacks?.onStopReadingTTS?.();
 					},
 					chapterName,
 					bookName: this.currentBookName,
@@ -915,6 +959,7 @@ export class ReadingModeService implements ScrollPatchService {
 	async navigateToPrev(): Promise<boolean> {
 		const nav = this.getChapterNavigation();
 		if (nav?.prev) {
+			this.callbacks?.onStopReadingTTS?.();
 			this._jumpToLastPage = true;
 			await this.openFile(nav.prev);
 			return true;
@@ -928,6 +973,7 @@ export class ReadingModeService implements ScrollPatchService {
 	async navigateToNext(): Promise<boolean> {
 		const nav = this.getChapterNavigation();
 		if (nav?.next) {
+			this.callbacks?.onStopReadingTTS?.();
 			await this.openFile(nav.next);
 			return true;
 		}

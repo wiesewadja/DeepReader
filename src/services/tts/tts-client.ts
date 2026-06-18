@@ -20,7 +20,7 @@ export interface TTSOptions {
 
 export interface ITTSSynthesizer {
     synthesize(text: string, options: TTSOptions): Promise<ArrayBuffer>;
-    synthesizeStream(text: string, options: TTSOptions): AsyncGenerator<ArrayBuffer>;
+    synthesizeStream(text: string, options: TTSOptions, signal?: AbortSignal): AsyncGenerator<ArrayBuffer>;
 }
 
 export class TTSClient implements ITTSSynthesizer {
@@ -84,7 +84,7 @@ export class TTSClient implements ITTSSynthesizer {
         return base64ToArrayBuffer(audioB64);
     }
 
-    async *synthesizeStream(text: string, options: TTSOptions): AsyncGenerator<ArrayBuffer> {
+    async *synthesizeStream(text: string, options: TTSOptions, signal?: AbortSignal): AsyncGenerator<ArrayBuffer> {
         const url = `${this.baseUrl}/chat/completions`;
 
         const isVoiceDesign = this.model.includes('voicedesign');
@@ -110,6 +110,7 @@ export class TTSClient implements ITTSSynthesizer {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(body),
+            signal,
         });
 
         if (!response.ok) {

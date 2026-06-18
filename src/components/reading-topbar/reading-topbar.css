@@ -201,6 +201,31 @@
     background: var(--background-modifier-hover);
 }
 
+/* ── 朗读原文按钮状态 ── */
+
+.deeppdf-tts-reading-btn.loading svg {
+    animation: deeppdf-tts-spin 1s linear infinite;
+}
+
+.deeppdf-tts-reading-btn.playing {
+    color: var(--interactive-accent);
+    background: var(--background-modifier-hover);
+}
+
+.deeppdf-tts-reading-btn.playing svg {
+    animation: deeppdf-tts-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes deeppdf-tts-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes deeppdf-tts-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.1); }
+}
+
 /* ── 书单模式（主题阅读） ── */
 
 .deeppdf-topbar-exit-btn svg {
@@ -251,3 +276,4 @@
     opacity: 1;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
+
