@@ -158,9 +158,9 @@ export class SidebarView extends ItemView {
 		this.plugin.readingModeService?.clearHighlight();
 	}
 
-	/** 高亮朗读文本 */
-	private highlightReadingText(text: string): void {
-		this.plugin.readingModeService?.highlightText(text);
+	/** 高亮朗读段落元素 */
+	private highlightReadingElement(el: HTMLElement): void {
+		this.plugin.readingModeService?.highlightElement(el);
 	}
 
 	/** 获取当前页文本 */
@@ -273,9 +273,12 @@ export class SidebarView extends ItemView {
 					self.readingTopbar?.setReadingTTSState('playing');
 				}
 			},
-			highlightText: (text) => self.highlightReadingText(text),
+			highlightElement: (el) => self.highlightReadingElement(el),
 			clearHighlight: () => self.clearReadingHighlight(),
-			getCurrentPageText: () => self.getCurrentPageText(),
+			getPageParagraphs: () => {
+				const service = self.plugin.readingModeService;
+				return service?.getPageParagraphs?.() || [];
+			},
 			goToNextPage: () => self.goToNextPage(),
 		});
 		this.sessionMgr = new SessionManager({

@@ -136,10 +136,10 @@ export class ReadingModeService implements ScrollPatchService {
 	}
 
 	/**
-	 * 高亮指定文本
+	 * 高亮指定的段落元素
 	 */
-	highlightText(text: string): void {
-		this.paginator?.highlightText(text);
+	highlightElement(el: HTMLElement): void {
+		this.paginator?.highlightElement(el);
 	}
 
 	/**
