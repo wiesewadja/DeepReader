@@ -50,6 +50,8 @@ export class TTSController {
 	private readingPlayer: PCMStreamPlayer | null = null;
 	/** 程序化翻页（非用户操作），抑制 onStopReadingTTS 误触发 */
 	private isAutoPageTurn = false;
+	/** 上次朗读的段落索引（供暂停后恢复使用） */
+	private lastReadParagraphIndex = 0;
 
 	constructor(host: TTSControllerHost) {
 		this.host = host;
@@ -78,7 +80,7 @@ export class TTSController {
 	}
 
 	/** 停止原文朗读（按钮点击 / 翻页 / 切章 / 关闭阅读模式） */
-	stopReading(): void {
+	stopReading(resetIndex = true): void {
 		if (this.currentSource !== 'reading') return;
 
 		// 1. 中断 fetch 流
@@ -92,6 +94,10 @@ export class TTSController {
 		this.currentSource = 'message';
 		this.host.onReadingTTSStateChange?.('idle');
 		this.host.clearHighlight?.();
+
+		if (resetIndex) {
+			this.lastReadParagraphIndex = 0;
+		}
 	}
 
 	private initTTSService(): TTSService | null {
@@ -283,6 +289,7 @@ export class TTSController {
 				await this.readCurrentPage(player);
 			} else {
 				this.isAutoPageTurn = false;
+				this.lastReadParagraphIndex = 0;
 				this.stopReading();
 				new Notice('朗读完毕');
 			}
@@ -305,26 +312,29 @@ export class TTSController {
 				texts.push(t);
 			}
 
-			// 启动第一段的 stream
-			let currentStream: AsyncGenerator<ArrayBuffer> | null = texts[0] ? this.readingClient.synthesizeStream(
-				texts[0],
+			// 启动当前段（从 lastReadParagraphIndex 开始）的 stream
+			let currentStream: AsyncGenerator<ArrayBuffer> | null = (this.lastReadParagraphIndex < texts.length && texts[this.lastReadParagraphIndex]) ? this.readingClient.synthesizeStream(
+				texts[this.lastReadParagraphIndex],
 				{ voiceProfile: { voice: '冰糖' } },
 				this.readingAbort?.signal,
 			) : null;
 
-			// 预取第二段的 stream（如果存在）
+			// 预取下一段的 stream（如果存在）
 			let nextStreamPromise: Promise<AsyncGenerator<ArrayBuffer>> | null = null;
-			if (texts.length > 1 && texts[1]) {
+			if (this.lastReadParagraphIndex + 1 < texts.length && texts[this.lastReadParagraphIndex + 1]) {
 				nextStreamPromise = Promise.resolve(this.readingClient.synthesizeStream(
-					texts[1],
+					texts[this.lastReadParagraphIndex + 1],
 					{ voiceProfile: { voice: '冰糖' } },
 					this.readingAbort?.signal,
 				));
 			}
 
-			for (let i = 0; i < paragraphs.length; i++) {
-				if (this.currentSource !== 'reading') return;
-				if (!texts[i]) continue;
+			for (let i = this.lastReadParagraphIndex; i < paragraphs.length; i++) {
+				if (this.currentSource !== 'reading') {
+					this.lastReadParagraphIndex = i;
+					return;
+				}
+				this.lastReadParagraphIndex = i; // 记录当前正在读的段落索引，供暂停后恢复
 
 				// 1. 记录本段音频的计划开始时间 (当前已调度的 endTime)
 				const paragraphStartTime = player.endTime;
@@ -368,6 +378,7 @@ export class TTSController {
 
 		// 所有段朗读完毕，翻页继续
 		if (this.currentSource === 'reading') {
+			this.lastReadParagraphIndex = 0; // 重置为新页面的第0段
 			this.host.clearHighlight?.();
 			this.isAutoPageTurn = true;
 			const hasNext = this.host.goToNextPage?.() ?? false;
