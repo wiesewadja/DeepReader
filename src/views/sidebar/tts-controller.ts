@@ -270,22 +270,19 @@ export class TTSController {
 
 	/** 朗读当前页：逐段流式合成入同一个 PCMStreamPlayer，所有段播完后 seal */
 	private async readCurrentPage(player: PCMStreamPlayer): Promise<void> {
+		this.isAutoPageTurn = false;
 		if (this.currentSource !== 'reading') return;
 
 		const paragraphs = this.host.getPageParagraphs?.() || [];
 		if (paragraphs.length === 0) {
-			let hasNext = false;
 			this.isAutoPageTurn = true;
-			try {
-				hasNext = this.host.goToNextPage?.() ?? false;
-			} finally {
-				this.isAutoPageTurn = false;
-			}
+			const hasNext = this.host.goToNextPage?.() ?? false;
 
 			if (hasNext) {
 				await sleep(500);
 				await this.readCurrentPage(player);
 			} else {
+				this.isAutoPageTurn = false;
 				this.stopReading();
 				new Notice('朗读完毕');
 			}
@@ -372,18 +369,14 @@ export class TTSController {
 		// 所有段朗读完毕，翻页继续
 		if (this.currentSource === 'reading') {
 			this.host.clearHighlight?.();
-			let hasNext = false;
 			this.isAutoPageTurn = true;
-			try {
-				hasNext = this.host.goToNextPage?.() ?? false;
-			} finally {
-				this.isAutoPageTurn = false;
-			}
+			const hasNext = this.host.goToNextPage?.() ?? false;
 
 			if (hasNext) {
 				await sleep(300);
 				await this.readCurrentPage(player);
 			} else {
+				this.isAutoPageTurn = false;
 				this.stopReading();
 				new Notice('朗读完毕');
 			}
