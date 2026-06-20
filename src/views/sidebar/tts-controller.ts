@@ -274,17 +274,20 @@ export class TTSController {
 
 		const paragraphs = this.host.getPageParagraphs?.() || [];
 		if (paragraphs.length === 0) {
+			let hasNext = false;
 			this.isAutoPageTurn = true;
 			try {
-				if (this.host.goToNextPage?.()) {
-					await sleep(500);
-					await this.readCurrentPage(player);
-				} else {
-					this.stopReading();
-					new Notice('朗读完毕');
-				}
+				hasNext = this.host.goToNextPage?.() ?? false;
 			} finally {
 				this.isAutoPageTurn = false;
+			}
+
+			if (hasNext) {
+				await sleep(500);
+				await this.readCurrentPage(player);
+			} else {
+				this.stopReading();
+				new Notice('朗读完毕');
 			}
 			return;
 		}
@@ -369,17 +372,20 @@ export class TTSController {
 		// 所有段朗读完毕，翻页继续
 		if (this.currentSource === 'reading') {
 			this.host.clearHighlight?.();
+			let hasNext = false;
 			this.isAutoPageTurn = true;
 			try {
-				if (this.host.goToNextPage?.()) {
-					await sleep(300);
-					await this.readCurrentPage(player);
-				} else {
-					this.stopReading();
-					new Notice('朗读完毕');
-				}
+				hasNext = this.host.goToNextPage?.() ?? false;
 			} finally {
 				this.isAutoPageTurn = false;
+			}
+
+			if (hasNext) {
+				await sleep(300);
+				await this.readCurrentPage(player);
+			} else {
+				this.stopReading();
+				new Notice('朗读完毕');
 			}
 		}
 	}

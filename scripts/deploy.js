@@ -123,7 +123,9 @@ function getDevVersion(baseVersion) {
     .slice(0, 30) || 'main';
   const now = new Date();
   const hhmm = String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
-  return `${baseVersion}-${feature}.${hhmm}`;
+  // Trim baseVersion to YYYY.MM.DD (strip any trailing .N patch segment)
+  const baseDate = baseVersion.match(/^\d{4}\.\d{2}\.\d{2}/)?.[0] ?? baseVersion;
+  return `${baseDate}-${feature}.${hhmm}`;
 }
 
 function deployToPath(targetPath, pluginId, targetName, overrideVersion) {

@@ -416,10 +416,46 @@ export class TTSService {
 
         // 1. 播放预缓存（前 250 字符的口语化音频）
         let playedChars = 0;
+        const preLaunchedPromises = new Map<number, Promise<{ audio: HTMLAudioElement; buffer: ArrayBuffer }>>();
+        let isRewritten = false;
+
         if (cached) {
+            // 在播放预览音频之前，先在后台异步启动剩余文本的分段合成，利用播放时间差
+            const previewChars = Math.min(250, totalChars);
+            let remainingText = '';
+
+            const cachedRewrite = this.rewrittenCache.get(messageId);
+            if (cachedRewrite) {
+                const skipRatio = previewChars / totalChars;
+                const skipChars = Math.floor(cachedRewrite.length * skipRatio);
+                remainingText = cachedRewrite.slice(skipChars);
+                isRewritten = true;
+            } else {
+                remainingText = fullContent.slice(previewChars);
+            }
+
+            if (remainingText.trim()) {
+                // 启动异步 IIFE，不要阻塞预览音频播放
+                (async () => {
+                    let textToRead = remainingText;
+                    try {
+                        textToRead = await this.expressivePreprocessor.preprocess(remainingText, {
+                            enableMarks: false,
+                        });
+                    } catch { }
+
+                    if (this.currentMessageId === messageId) {
+                        const segments = this.splitTextIntoSegments(textToRead, 300);
+                        const numPreLaunch = Math.min(segments.length, TTSService.SYNTHESIS_CONCURRENCY);
+                        for (let i = 0; i < numPreLaunch; i++) {
+                            preLaunchedPromises.set(i, this.synthesizeSegment(segments[i], voiceProfile));
+                        }
+                    }
+                })();
+            }
+
             this.setState('playing');
             cached.audio.currentTime = 0;
-            const previewChars = Math.min(250, totalChars);
             const previewRatio = previewChars / totalChars;
             this.startMappedProgressTracking(messageId, cached.audio, {
                 segmentStart: 0,
@@ -446,8 +482,9 @@ export class TTSService {
 
         // 3. 有改写文本 → 截取剩余部分，走预取流水线
         if (rewrittenText) {
-            // 预缓存已播放前 playedChars 原文字符对应的改写内容
-            // 粗略估算：改写文本长度 ≈ 原文长度，按比例截取
+            // 如果是在播放预览前预合成的改写文本，我们可以复用它
+            const usePreLaunched = isRewritten;
+
             const skipRatio = playedChars / totalChars;
             const skipChars = Math.floor(rewrittenText.length * skipRatio);
             const remainingRewritten = rewrittenText.slice(skipChars);
@@ -465,7 +502,7 @@ export class TTSService {
                     await this.playSegmented(messageId, textToRead, voiceProfile, {
                         originalOffset: playedChars,
                         originalTotal: totalChars,
-                    }, diskSaveKey);
+                    }, diskSaveKey, usePreLaunched ? preLaunchedPromises : undefined);
                 }
                 return;
             }
@@ -477,7 +514,7 @@ export class TTSService {
             await this.playSegmented(messageId, remaining, voiceProfile, {
                 originalOffset: playedChars,
                 originalTotal: totalChars,
-            }, diskSaveKey);
+            }, diskSaveKey, !isRewritten ? preLaunchedPromises : undefined);
         } else if (this.currentMessageId === messageId) {
             this.onProgressChange?.(messageId, 100);
             this.setState('idle');
@@ -505,6 +542,7 @@ export class TTSService {
         progressMap?: { originalOffset: number; originalTotal: number },
         /** 磁盘缓存 key（textHash），传入则在合并后写磁盘 */
         diskSaveKey?: string,
+        preLaunchedPromises?: Map<number, Promise<{ audio: HTMLAudioElement; buffer: ArrayBuffer }>>,
     ): Promise<void> {
         const segments = this.splitTextIntoSegments(fullContent, 300);
         const totalSegments = segments.length;
@@ -520,8 +558,8 @@ export class TTSService {
         const audioBuffers: ArrayBuffer[] = [];
 
         // 并发合成池：维护 SYNTHESIS_CONCURRENCY 个并行合成任务
-        const pendingSynthesis = new Map<number, Promise<{ audio: HTMLAudioElement; buffer: ArrayBuffer }>>();
-        let nextSynthIndex = 0;
+        const pendingSynthesis = preLaunchedPromises || new Map<number, Promise<{ audio: HTMLAudioElement; buffer: ArrayBuffer }>>();
+        let nextSynthIndex = pendingSynthesis.size;
 
         const launchSynthesis = (index: number) => {
             if (index >= totalSegments || pendingSynthesis.has(index)) return;
@@ -533,7 +571,7 @@ export class TTSService {
         for (let i = 0; i < initialBatch; i++) {
             launchSynthesis(i);
         }
-        nextSynthIndex = initialBatch;
+        nextSynthIndex = Math.max(nextSynthIndex, initialBatch);
 
         for (let i = 0; i < totalSegments; i++) {
             if (this.currentMessageId !== messageId) return;
