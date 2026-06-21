@@ -41,6 +41,17 @@ describe('detectSetupComplete', () => {
 		delete (settings as any).setupComplete;
 		settings.providers.openai = { apiKey: 'sk-test' };
 		expect(detectSetupComplete(settings)).toBe(true);
-		expect(detectSetupComplete(settings)).toBe(false); // already defined
+		expect(detectSetupComplete(settings)).toBe(false); // already true
+	});
+
+	// 回归锁：daily vault 真实场景 —— loadSettings 的 Object.assign 让 setupComplete
+	// 永远是 DEFAULT 的 false（不是 undefined），早期 `!== undefined` 判断使推断成死代码，
+	// 导致已配 key 的用户每次 onload 都被判定为未完成、反复弹出设置引导。
+	it('marks setupComplete=true when it is false (DEFAULT merged) but providers have apiKey', () => {
+		const settings = makeSettings(); // setupComplete = false（DEFAULT 铺底，不 delete）
+		settings.providers.deepseek = { apiKey: 'sk-test' };
+		const needsSave = detectSetupComplete(settings);
+		expect(needsSave).toBe(true);
+		expect(settings.setupComplete).toBe(true);
 	});
 });

@@ -123,16 +123,23 @@ export interface DeepPDFSettings {
 }
 
 /**
- * 老用户升级兼容：如果 setupComplete 未定义但已有有效 provider key，自动标记。
+ * 配置完成状态推断：只要尚未标记完成（false / undefined）且已存在有效 provider key，
+ * 即视为已完成配置并自动标记。
  *
- * @returns true 如果需要持久化（检测到老用户已有 key）
+ * 注意：DEFAULT_SETTINGS 里 setupComplete 默认为 false，loadSettings 的
+ * Object.assign 会让该字段永远是 defined（不再是 undefined）。早期基于
+ * `!== undefined` 的判断因此失效、推断分支永远走不到——这里改为基于「未完成」推断，
+ * 让已有 provider key 的用户被正确标记，避免 onload 每次弹出设置引导。
+ *
+ * @returns true 如果本次把状态从「未完成」翻成了「已完成」（调用方据此 saveSettings）
  */
 export function detectSetupComplete(settings: DeepPDFSettings): boolean {
-	if (settings.setupComplete !== undefined) return false;
+	// 已标记完成，不重复推断（避免无谓的 saveSettings）
+	if (settings.setupComplete === true) return false;
 	const hasKey = Object.values(settings.providers || {})
 		.some((p: any) => p?.apiKey);
 	settings.setupComplete = !!hasKey;
-	return !!hasKey;
+	return hasKey;
 }
 
 export const DEFAULT_SETTINGS: DeepPDFSettings = {
