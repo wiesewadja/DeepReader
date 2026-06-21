@@ -662,7 +662,7 @@ export class MessageList extends Component {
 			});
 		}
 
-		// 奚童头像 —— 打字标题上方
+		// 1. 头像 —— 最上方
 		const avatar = contentWrapper.createDiv({
 			cls: "deeppdf-empty-avatar deeppdf-animated",
 		});
@@ -670,46 +670,21 @@ export class MessageList extends Component {
 		const mascot = new MascotFace();
 		avatar.appendChild(mascot.getElement()!);
 
-		// 招呼标题 —— 打字机逐字呈现（多条轮播，含能力介绍）
-		const title = contentWrapper.createEl("h2", {
-			cls: "deeppdf-empty-title",
-		});
-		const typewriterMessages = this.currentPdfName
-			? [
-					"你好，我是奚童",
-					"准备好探索这本书了吗",
-					"想聊聊这本书吗",
-					"一起读这本书吧",
-					"有什么想了解的吗",
-					"可以问我书中的观点、概念，或者帮你梳理全书脉络",
-					"支持章节分析、关键概念提取、思维导图生成",
-					"想了解核心观点？还是需要阅读路线建议？",
-					"随时可以聊聊你的阅读感受或疑问",
-				]
-			: [
-					"你好，我是奚童",
-					"想找本好书聊聊吗",
-					"今天想聊点什么",
-					"随时为你效劳",
-					"推荐书单、讨论读书方法、整理笔记，都可以",
-					"可以聊聊你最近在读什么，或者想要什么类型的书",
-					"有什么阅读上的问题，随时问我",
-				];
-		this.startTypewriter(title, typewriterMessages);
-
-		// 书籍信息 —— 书名 + 作者
+		// 2. 判断是否有书籍，进行分流渲染
 		if (this.currentPdfName) {
+			// 有书籍模式：头像 -> 书籍封面+标题+作者 -> 较小的打字机引导语 -> 按钮网格
 			const bookMeta = this.callbacks.getCurrentBookInfo?.();
 			const bookInfo = contentWrapper.createEl("div", {
 				cls: "deeppdf-empty-book-info",
 			});
+			if (coverUrl) {
+				bookInfo.createEl("img", {
+					cls: "deeppdf-empty-book-cover-mini",
+					attr: { src: coverUrl, alt: this.currentPdfName },
+				});
+			}
 			const bookTitleRow = bookInfo.createDiv({
 				cls: "deeppdf-empty-book-title-row",
-			});
-			bookTitleRow.createEl("span", {
-				cls: "deeppdf-empty-book-icon",
-				text: "📖",
-				attr: { "aria-hidden": "true" },
 			});
 			bookTitleRow.createEl("span", {
 				cls: "deeppdf-empty-book-text",
@@ -721,24 +696,38 @@ export class MessageList extends Component {
 					text: bookMeta.author,
 				});
 			}
+
+			// 引导语（打字机效果，作为副标题，字号较小，避免抢主次）
+			const title = contentWrapper.createEl("p", {
+				cls: "deeppdf-empty-title deeppdf-empty-title-prompt",
+			});
+			const typewriterMessages = [
+				"准备好探索这本书了吗",
+				"想聊聊这本书吗",
+				"一起读这本书吧",
+				"有什么想了解的吗",
+				"可以问我书中的观点、概念，或者帮你梳理全书脉络",
+				"支持章节分析、关键概念提取、思维导图生成",
+				"想了解核心观点？还是需要阅读路线建议？",
+				"随时可以聊聊你的阅读感受或疑问",
+			];
+			this.startTypewriter(title, typewriterMessages);
+		} else {
+			// 无书籍模式：头像 -> 大字打字机欢迎语 -> 按钮网格
+			const title = contentWrapper.createEl("h2", {
+				cls: "deeppdf-empty-title",
+			});
+			const typewriterMessages = [
+				"你好，我是奚童",
+				"想找本好书聊聊吗",
+				"今天想聊点什么",
+				"随时为你效劳",
+				"推荐书单、讨论读书方法、整理笔记，都可以",
+				"可以聊聊你最近在读什么，或者想要什么类型的书",
+				"有什么阅读上的问题，随时问我",
+			];
+			this.startTypewriter(title, typewriterMessages);
 		}
-
-	// 副标题 —— 固定文案（"奚童 · " 产品标识 + AI 伴读定位）
-		const subtitleText = this.currentPdfName
-			? `${this.currentPdfName} · 你的 AI 伴读`
-			: "你的 AI 伴读";
-		contentWrapper.createEl("p", {
-			cls: "deeppdf-empty-subtitle",
-			text: subtitleText,
-		});
-
-		// 提示语
-		contentWrapper.createEl("p", {
-			cls: "deeppdf-empty-hint",
-			text: this.currentPdfName
-				? "选择一个问题，开始探索这本书"
-				: "选择一本书，或和我聊聊阅读话题",
-		});
 
 		// 按钮网格
 		const grid = contentWrapper.createEl("div", {

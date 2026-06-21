@@ -178,13 +178,13 @@
 
 /* 顶部圆形 avatar —— AI 原生风格：柔和光晕 + 微妙呼吸感 */
 .deeppdf-empty-avatar {
-	width: 88px;
-	height: 88px;
+	width: 64px;
+	height: 64px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	user-select: none;
-	margin-bottom: var(--dr-space-3);
+	margin-bottom: var(--dr-space-2, 8px);
 	position: relative;
 }
 
@@ -192,7 +192,7 @@
 .deeppdf-empty-avatar::before {
 	content: '';
 	position: absolute;
-	inset: -8px;
+	inset: -6px;
 	border-radius: 50%;
 	background: radial-gradient(
 		circle,
@@ -250,6 +250,16 @@
 	letter-spacing: -0.01em;
 	height: 1.6em;
 	overflow: hidden;
+}
+
+/* 引导提示语样式 —— 较小且柔和，避免抢了书名焦点 */
+.deeppdf-empty-title.deeppdf-empty-title-prompt {
+	font-size: var(--dr-text-sm);
+	font-weight: var(--dr-weight-normal);
+	color: var(--dr-color-text-muted);
+	height: 1.4em;
+	margin-top: var(--dr-space-3);
+	margin-bottom: var(--dr-space-2);
 }
 
 /* 打字机光标 —— 文字后闪烁指示器 */
@@ -330,19 +340,20 @@
 
 .deeppdf-empty-book-text {
 	color: var(--dr-color-text);
-	font-weight: var(--dr-weight-semibold);
-	font-size: var(--dr-text-sm);
+	font-weight: var(--dr-weight-bold);
+	font-size: var(--dr-text-lg); /* 增大字号，突出视觉重心 */
 	line-height: 1.3;
 	text-align: center;
 	white-space: normal;
 	word-break: break-all;
+	margin-top: 4px;
 }
 
 .deeppdf-empty-book-author {
 	color: var(--dr-color-text-muted);
 	font-size: var(--dr-text-xs);
-	margin: 0;
-	line-height: 1;
+	margin: 4px 0 0 0; /* 留出一点空隙 */
+	line-height: 1.2;
 	text-align: center;
 }
 
