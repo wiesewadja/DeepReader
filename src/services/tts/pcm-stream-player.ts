@@ -86,8 +86,8 @@ export class PCMStreamPlayer {
 
         const now = this.ctx.currentTime;
         if (this.nextStartTime < now) {
-            // 首个 chunk 或间隔过大时，增加缓冲时间 (0.25s 抖动缓冲区) 确保 AudioContext 完全就绪且网络抖动不引起断续
-            this.nextStartTime = now + 0.25;
+            // 首个 chunk 或间隔过大时，增加缓冲时间 (1.2s 抖动缓冲区) 确保 AudioContext 完全就绪且网络抖动不引起断续
+            this.nextStartTime = now + 1.2;
         }
         // 记录第一个 chunk 的实际播放开始时间
         if (this.firstStartTime === null) {
