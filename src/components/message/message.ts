@@ -496,6 +496,9 @@ export class AIMessage extends Message {
 		this.lastDisplayedStatus = undefined;
 
 		if (contentEl && this.app) {
+			// 流式结束接管渲染前，先取消 streamingUpdate 可能尚未执行的 RAF 回调。
+			// 该回调会用 innerHTML 覆盖 contentEl，导致此处刚绑定的 hover preview 丢失（根因）。
+			this.streamingRenderer.cancelPendingFrame();
 			this.observers.forEach(obs => obs.disconnect());
 			this.observers = [];
 

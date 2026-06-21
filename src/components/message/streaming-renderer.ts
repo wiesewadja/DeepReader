@@ -125,6 +125,9 @@ export class StreamingRenderer {
 						new Component(),
 					).then(() => {
 						if (!this.host.el) return;
+						// 流式已结束 → 不再覆盖内容，交由 finalizeStreamingEnd 接管渲染 + 绑定 hover。
+						// 否则延迟到达的本回调会用 innerHTML 覆盖掉已绑 hover 的 link（偶发 preview 丢失根因）。
+						if (this.host.data.isStreaming === false) return;
 
 						contentEl.innerHTML = tempContainer.innerHTML;
 
