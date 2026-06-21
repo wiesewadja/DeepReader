@@ -73,7 +73,6 @@ export interface DeepPDFSettings {
 	// 阅读模式设置
 	autoEnableReadingMode: boolean;
 	readingModeStyle: 'paginated' | 'scrolling';
-		messageBubbleTheme: 'notebook' | 'parchment' | 'clean' | 'chat' | 'kami';
 
 	// TTS 语音朗读
 	autoTTS: boolean;
@@ -169,7 +168,6 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	// 阅读模式设置
 	autoEnableReadingMode: true,
 	readingModeStyle: 'paginated' as const,
-		messageBubbleTheme: 'notebook' as const,
 
 	// TTS 语音朗读
 	autoTTS: false,

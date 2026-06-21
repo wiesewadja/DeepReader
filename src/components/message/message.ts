@@ -244,8 +244,6 @@ export class AIMessage extends Message {
 	private fullscreenCtrl: FullscreenController | null = null;
 	private getAllMessages: (() => MessageData[]) | null = null;
 	private getCurrentBookInfo: (() => { coverUrl: string | null; author: string | null; bookName: string | null }) | null = null;
-	private patternClass: string = '';
-	private getBubbleTheme?: () => string;
 
 	constructor(
 		data: MessageData,
@@ -260,7 +258,6 @@ export class AIMessage extends Message {
 			onStreamingEnd?: (messageId: string, content: string) => void;
 			getAllMessages?: () => MessageData[];
 			getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
-			getBubbleTheme?: () => string;
 			app?: App;
 		}
 	) {
@@ -275,8 +272,6 @@ export class AIMessage extends Message {
 		this.onStreamingEndCallback = options?.onStreamingEnd;
 		this.getAllMessages = options?.getAllMessages || null;
 		this.getCurrentBookInfo = options?.getCurrentBookInfo || null;
-		this.getBubbleTheme = options?.getBubbleTheme;
-
 		// 初始化委托控制器（self 闭包用于 host 接口）
 		const self = this;
 		this.ttsReadingCtrl = new TTSReadingController({ get el() { return self.el; } });
@@ -311,22 +306,11 @@ export class AIMessage extends Message {
 
 
 
-	/**
-	 * 随机选择背景图案类
-	 * 每个 AI 消息都是一封独特的信，给用户带来惊喜和新奇感
-	 */
-	private getPatternClass(): string {
-		return `deeppdf-pattern-${this.getBubbleTheme?.() || 'notebook'}`;
-	}
-
 	render(): HTMLElement {
 		const container = this.renderContainer();
 		const wrapper = container.createEl('div', { cls: 'deeppdf-message-wrapper' });
 
-		// 随机选择背景图案（每次 AI 回复都是一封独特的信）
-		const patternClass = this.getPatternClass();
-		this.patternClass = patternClass;
-		const bubble = wrapper.createEl('div', { cls: ['deeppdf-message-bubble', 'deeppdf-message-bubble-ai', patternClass] });
+		const bubble = wrapper.createEl('div', { cls: ['deeppdf-message-bubble', 'deeppdf-message-bubble-ai'] });
 
 		// Agent 消息标识
 		const headerRow = bubble.createEl('div', { cls: 'deeppdf-message-header-row' });
@@ -619,7 +603,6 @@ export class AIMessage extends Message {
 				get el() { return self.el; },
 				get data() { return self.data; },
 				get app() { return self.app; },
-				get patternClass() { return self.patternClass; },
 			}, self.observers, self.getAllMessages, self.getCurrentBookInfo);
 		}
 		this.fullscreenCtrl.openFullscreen();
@@ -653,7 +636,6 @@ export function createMessage(
 		onTTS?: (messageId: string, content: string) => void;
 		onStreamingEnd?: (messageId: string, content: string) => void;
 		getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
-		getBubbleTheme?: () => string;
 		app?: App;
 	}
 ): Message {

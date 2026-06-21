@@ -13,7 +13,6 @@ export interface FullscreenHost {
 	get el(): HTMLElement | null;
 	get data(): MessageData;
 	get app(): App | undefined;
-	get patternClass(): string;
 }
 
 export class FullscreenController {
@@ -54,17 +53,9 @@ export class FullscreenController {
 		let currentLetterIdx = aiMessages.findIndex(m => m.id === data.id);
 		if (currentLetterIdx === -1) currentLetterIdx = 0;
 
-		const getPatternForMessage = (msgId: string): string => {
-			const bubble = document.querySelector(`[data-message-id="${msgId}"] .deeppdf-message-bubble`);
-			if (!bubble) return '';
-			const p = Array.from(bubble.classList).find(c => c.startsWith('deeppdf-pattern-'));
-			return p || '';
-		};
-
 		// ── 创建覆盖层 ──
 		const overlay = document.body.createEl('div', { cls: 'deeppdf-fullscreen-overlay' });
-		let currentPattern = getPatternForMessage(aiMessages[currentLetterIdx]?.id || data.id) || this.host.patternClass;
-		const panel = overlay.createEl('div', { cls: ['deeppdf-fullscreen-panel', currentPattern] });
+		const panel = overlay.createEl('div', { cls: 'deeppdf-fullscreen-panel' });
 
 		// ── 工具栏 ──
 		const toolbar = panel.createEl('div', { cls: 'deeppdf-fullscreen-toolbar' });
@@ -125,7 +116,7 @@ export class FullscreenController {
 		if (currentLetterIdx >= aiMessages.length - 1) nextLetterBtn.style.display = 'none';
 
 		// ── 内容区域 ──
-		const contentArea = panel.createEl('div', { cls: ['deeppdf-fullscreen-content-area', currentPattern] });
+		const contentArea = panel.createEl('div', { cls: 'deeppdf-fullscreen-content-area' });
 
 		// ── 分页 + 渲染闭包（支持翻信时重新调用） ──
 		let currentPages: HTMLElement[][] = [];
@@ -236,17 +227,9 @@ export class FullscreenController {
 			setTimeout(() => {
 				currentLetterIdx = targetIdx;
 				const target = aiMessages[currentLetterIdx];
-				currentPattern = getPatternForMessage(target.id);
 
 				questionEl.textContent = target.question || '';
 				updateBookInfo(target);
-
-				const panelClasses = ['deeppdf-fullscreen-panel'];
-				if (currentPattern) panelClasses.push(currentPattern);
-				panel.className = panelClasses.join(' ');
-				const contentClasses = ['deeppdf-fullscreen-content-area'];
-				if (currentPattern) contentClasses.push(currentPattern);
-				contentArea.className = contentClasses.join(' ');
 
 				prevLetterBtn.style.display = currentLetterIdx > 0 ? '' : 'none';
 				nextLetterBtn.style.display = currentLetterIdx < aiMessages.length - 1 ? '' : 'none';

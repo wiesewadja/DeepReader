@@ -1062,8 +1062,6 @@ export class SidebarView extends ItemView {
 					author: this.bookMgr.currentBookAuthor,
 					bookName: this.bookMgr.currentPdfName,
 				}),
-				getBubbleTheme: () =>
-					this.plugin?.settings?.messageBubbleTheme || "notebook",
 			},
 			this.app,
 		);

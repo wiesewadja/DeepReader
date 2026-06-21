@@ -144,7 +144,6 @@ export interface MessageCallbacks {
 		author: string | null;
 		bookName: string | null;
 	};
-	getBubbleTheme?: () => string;
 }
 
 /**
@@ -368,7 +367,6 @@ export class MessageList extends Component {
 			},
 			getAllMessages: () => this.getMessagesData(),
 			getCurrentBookInfo: this.callbacks.getCurrentBookInfo,
-			getBubbleTheme: this.callbacks.getBubbleTheme,
 			app: this.app,
 		});
 
