@@ -129,10 +129,17 @@ export class ReadingModeService implements ScrollPatchService {
 	}
 
 	/**
-	 * 获取当前页的段落列表（元素 + 文本），供逐段 TTS 朗读
+	 * 获取当前页码
 	 */
-	getPageParagraphs(): { element: HTMLElement; text: string }[] {
-		return this.paginator?.getPageParagraphs() || [];
+	getCurrentPage(): number {
+		return this.paginator?.getCurrentPage() || 1;
+	}
+
+	/**
+	 * 获取指定或当前页的段落列表（元素 + 文本），供逐段 TTS 朗读
+	 */
+	getPageParagraphs(pageNumber?: number): { element: HTMLElement; text: string }[] {
+		return this.paginator?.getPageParagraphs(pageNumber) || [];
 	}
 
 	/**

@@ -32,8 +32,10 @@ export interface TTSControllerHost {
 	getCurrentIndexId(): string | null;
 	setTtsService(service: TTSService | null): void;
 	onReadingTTSStateChange?: (state: TTSPlayState) => void;
-	/** 获取当前页段落列表（元素 + 文本） */
-	getPageParagraphs?: () => { element: HTMLElement; text: string }[];
+	/** 获取当前页码 */
+	getCurrentPage?: () => number;
+	/** 获取指定或当前页段落列表（元素 + 文本） */
+	getPageParagraphs?: (pageNumber?: number) => { element: HTMLElement; text: string }[];
 	/** 高亮段落元素 */
 	highlightElement?: (el: HTMLElement) => void;
 	/** 清除段落高亮 */
@@ -52,6 +54,8 @@ export class TTSController {
 	private isAutoPageTurn = false;
 	/** 上次朗读的段落索引（供暂停后恢复使用） */
 	private lastReadParagraphIndex = 0;
+	/** 下一页首段音频合成的 Promise 预存 */
+	private nextPageFirstStreamPromise: Promise<AsyncGenerator<ArrayBuffer>> | null = null;
 
 	constructor(host: TTSControllerHost) {
 		this.host = host;
@@ -94,6 +98,7 @@ export class TTSController {
 		this.currentSource = 'message';
 		this.host.onReadingTTSStateChange?.('idle');
 		this.host.clearHighlight?.();
+		this.nextPageFirstStreamPromise = null;
 
 		if (resetIndex) {
 			this.lastReadParagraphIndex = 0;
@@ -313,11 +318,17 @@ export class TTSController {
 			}
 
 			// 启动当前段（从 lastReadParagraphIndex 开始）的 stream
-			let currentStream: AsyncGenerator<ArrayBuffer> | null = (this.lastReadParagraphIndex < texts.length && texts[this.lastReadParagraphIndex]) ? this.readingClient.synthesizeStream(
-				texts[this.lastReadParagraphIndex],
-				{ voiceProfile: { voice: '冰糖' } },
-				this.readingAbort?.signal,
-			) : null;
+			let currentStream: AsyncGenerator<ArrayBuffer> | null = null;
+			if (this.lastReadParagraphIndex === 0 && this.nextPageFirstStreamPromise) {
+				currentStream = await this.nextPageFirstStreamPromise;
+				this.nextPageFirstStreamPromise = null;
+			} else if (this.lastReadParagraphIndex < texts.length && texts[this.lastReadParagraphIndex]) {
+				currentStream = this.readingClient.synthesizeStream(
+					texts[this.lastReadParagraphIndex],
+					{ voiceProfile: { voice: '冰糖' } },
+					this.readingAbort?.signal,
+				);
+			}
 
 			// 预取下一段的 stream（如果存在）
 			let nextStreamPromise: Promise<AsyncGenerator<ArrayBuffer>> | null = null;
@@ -364,6 +375,21 @@ export class TTSController {
 					}
 				} else {
 					currentStream = null;
+					// 如果已到本页最后一段，在后台预取下一页的第一段，消除翻页停顿
+					if (i === paragraphs.length - 1) {
+						const nextPageNumber = (this.host.getCurrentPage?.() ?? 1) + 1;
+						const nextPageParagraphs = this.host.getPageParagraphs?.(nextPageNumber) || [];
+						if (nextPageParagraphs.length > 0 && nextPageParagraphs[0].text) {
+							const cleanText = preprocessForTTS(nextPageParagraphs[0].text).trim();
+							if (cleanText && this.readingClient) {
+								this.nextPageFirstStreamPromise = Promise.resolve(this.readingClient.synthesizeStream(
+									cleanText,
+									{ voiceProfile: { voice: '冰糖' } },
+									this.readingAbort?.signal,
+								));
+							}
+						}
+					}
 				}
 			}
 

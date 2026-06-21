@@ -120,7 +120,7 @@ export class PagePaginator {
 		return allTexts.slice(startIdx, endIdx).join('\n\n');
 	}
 
-	getPageParagraphs(): { element: HTMLElement; text: string }[] {
+	getPageParagraphs(pageNumber?: number): { element: HTMLElement; text: string }[] {
 		if (!this._isActive || !this.scrollView) return [];
 
 		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
@@ -135,7 +135,7 @@ export class PagePaginator {
 
 		const containerRect = this.scrollView.getBoundingClientRect();
 		const scrollLeft = this.scrollView.scrollLeft;
-		const currentPage = this._currentPage;
+		const currentPage = pageNumber !== undefined ? pageNumber : this._currentPage;
 
 		return allParagraphs
 			.map(el => {

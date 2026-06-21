@@ -275,9 +275,13 @@ export class SidebarView extends ItemView {
 			},
 			highlightElement: (el) => self.highlightReadingElement(el),
 			clearHighlight: () => self.clearReadingHighlight(),
-			getPageParagraphs: () => {
+			getCurrentPage: () => {
 				const service = self.plugin.readingModeService;
-				return service?.getPageParagraphs?.() || [];
+				return service?.getCurrentPage?.() || 1;
+			},
+			getPageParagraphs: (pageNumber?: number) => {
+				const service = self.plugin.readingModeService;
+				return service?.getPageParagraphs?.(pageNumber) || [];
 			},
 			goToNextPage: () => self.goToNextPage(),
 		});
