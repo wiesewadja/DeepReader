@@ -12,6 +12,7 @@ import type { ElementDef, DiagramLayoutType } from './excalidraw-types.js';
 import { arrangeWithFallback } from './excalidraw-layout.js';
 import { applyOrganicScrollStyle } from './excalidraw-style-processor.js';
 import { PALETTE, TEXT_COLORS } from './excalidraw-organic-palette.js';
+import { buildExcalidrawMd } from './excalidraw-md.js';
 
 /** 完整的 .excalidraw JSON 结构 */
 interface ExcalidrawFile {
@@ -710,10 +711,9 @@ function validateSemantics(elements: ElementDef[]): string[] {
 /**
  * 保存 Excalidraw 文件。
  *
- * 统一输出为 `.excalidraw` 纯 JSON 格式（Excalidraw 插件原生支持，
- * Obsidian embed 也只会对 `.excalidraw` 后缀触发绘图渲染）。
+ * 统一输出为 `.excalidraw.md` 格式（Excalidraw 插件原生 Markdown 包装格式，包含 lz-string 压缩）。
  *
- * @returns 最终 `.excalidraw` 文件的路径和嵌入语法
+ * @returns 最终 `.excalidraw.md` 文件的路径和嵌入语法
  */
 export async function saveExcalidrawFile(
   filename: string,
@@ -731,8 +731,8 @@ export async function saveExcalidrawFile(
     await adapter.mkdir(dir);
   }
 
-  const filepath = `${dir}/${filename}.excalidraw`;
-  await adapter.write(filepath, JSON.stringify(excalidrawFile, null, 2));
+  const filepath = `${dir}/${filename}.excalidraw.md`;
+  await adapter.write(filepath, buildExcalidrawMd(excalidrawFile));
   return {
     filepath,
     embed: `![[${filepath}]]`,

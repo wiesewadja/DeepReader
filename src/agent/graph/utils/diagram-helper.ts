@@ -14,6 +14,7 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import { agentLog as log } from '../../../utils/logger.js';
 import { excalidrawTool, writeExcalidrawJson, buildExcalidrawJSON } from '../../tools/excalidraw.js';
+import { buildExcalidrawMd } from '../../tools/excalidraw-md.js';
 import type { ElementDef, DiagramLayoutType } from '../../tools/excalidraw-types.js';
 import type { ToolContext } from '../../tools/types.js';
 import { SHARED_DIAGRAM_PROMPT } from '../../tools/excalidraw-prompts.js';
@@ -478,20 +479,33 @@ export async function generateDiagramProgressive(
     return '';
   }
 
-  // 5. 收尾：写入最终 .excalidraw（覆盖中间态）
+  // 5. 收尾：转 .excalidraw.md + 删中间文件
+  if (options.signal?.aborted) {
+    log('[DiagramHelper] generateDiagramProgressive: abortSignal 已触发，保留中间 .excalidraw 供部分查看');
+    // 返回中间态 embed（.excalidraw），让用户看到部分图
+    return `![[Excalidraw/${filename}.excalidraw]]`;
+  }
+
   try {
     const excalidrawFile = buildExcalidrawJSON(cumulative, undefined, toolContext);
+    const mdContent = buildExcalidrawMd(excalidrawFile);
 
     const dir = 'Excalidraw';
     const adapter = toolContext.vault.app.vault.adapter;
-    const filepath = `${dir}/${filename}.excalidraw`;
-    await adapter.write(filepath, JSON.stringify(excalidrawFile, null, 2));
+    const mdFilepath = `${dir}/${filename}.excalidraw.md`;
+    await adapter.write(mdFilepath, mdContent);
 
-    log(`[DiagramHelper] generateDiagramProgressive: 收尾完成 ${filepath}（${cumulative.length} 元素，${succeededSections}/${total} 节）`);
-    return `![[${filepath}]]`;
+    // 删除中间 .excalidraw 文件
+    const jsonFilepath = `${dir}/${filename}.excalidraw`;
+    if (await adapter.exists(jsonFilepath)) {
+      await adapter.remove(jsonFilepath);
+    }
+
+    log(`[DiagramHelper] generateDiagramProgressive: 收尾完成 ${mdFilepath}（${cumulative.length} 元素，${succeededSections}/${total} 节）`);
+    return `![[${mdFilepath}]]`;
   } catch (err) {
-    log('[DiagramHelper] generateDiagramProgressive: 收尾写入失败:', err instanceof Error ? err.message : String(err));
-    // 写入失败但中间态可用，返回 .excalidraw embed
+    log('[DiagramHelper] generateDiagramProgressive: 收尾转换失败:', err instanceof Error ? err.message : String(err));
+    // 转换失败但中间态可用，返回 .excalidraw embed
     return `![[Excalidraw/${filename}.excalidraw]]`;
   }
 }
@@ -506,7 +520,7 @@ export function hasDiagramIntent(query: string): boolean {
 /**
  * Generate an excalidraw diagram from analysis context.
  *
- * Returns the embed code (e.g. "![[Excalidraw/xxx.excalidraw]]")
+ * Returns the embed code (e.g. "![[Excalidraw/xxx.excalidraw.md]]")
  * or an empty string if generation failed.
  *
  * 超时由调用方（visualizer 节点 + controller watchdog）保证，这里只透传 abortSignal。

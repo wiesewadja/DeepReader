@@ -99,7 +99,7 @@ describe('visualizerNode (fire-and-forget)', () => {
     await flushAsync();
 
     expect(onDiagramReady).toHaveBeenCalledTimes(1);
-    expect(onDiagramReady).toHaveBeenCalledWith(expect.stringMatching(/!\[\[Excalidraw\/test-diagram-\d+\.excalidraw\]\]/));
+    expect(onDiagramReady).toHaveBeenCalledWith(expect.stringMatching(/!\[\[Excalidraw\/test-diagram-\d+\.excalidraw\.md\]\]/));
   });
 
   it('calls onDiagramFailed (not onDiagramReady) when generation fails (LLM returns invalid JSON)', async () => {

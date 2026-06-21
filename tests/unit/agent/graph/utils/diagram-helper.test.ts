@@ -85,7 +85,7 @@ describe('generateDiagram', () => {
     );
 
     expect(result).toContain('![[Excalidraw/test-diagram-');
-    expect(result).toContain('.excalidraw]]');
+    expect(result).toContain('.excalidraw.md]]');
   });
 
   it('returns empty when LLM returns non-JSON', async () => {
@@ -116,7 +116,7 @@ describe('generateDiagram', () => {
     );
 
     expect(result).toContain('![[Excalidraw/画个图-');
-    expect(result).toContain('.excalidraw]]');
+    expect(result).toContain('.excalidraw.md]]');
   });
 
   it('returns empty when JSON is missing elements', async () => {
@@ -185,7 +185,7 @@ describe('generateDiagram', () => {
     );
 
     expect(result).toContain('![[Excalidraw/wrapped-');
-    expect(result).toContain('.excalidraw]]');
+    expect(result).toContain('.excalidraw.md]]');
   });
 
   it('includes pdfName in prompt when provided', async () => {
@@ -230,7 +230,7 @@ describe('generateDiagram', () => {
     );
 
     expect(result).toContain('![[Excalidraw/brace-in-string-');
-    expect(result).toContain('.excalidraw]]');
+    expect(result).toContain('.excalidraw.md]]');
   });
 
   it('passes the layout parameter from LLM to excalidrawTool', async () => {

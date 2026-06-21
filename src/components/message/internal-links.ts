@@ -5,6 +5,7 @@
 import { type App, MarkdownRenderer, Component, type HoverParent, MarkdownView } from 'obsidian';
 import { uiLog as log } from '../../utils/logger.js';
 import { escapeHtml } from './utils.js';
+import { decompressFromBase64 } from 'lz-string';
 
 /** 清理文本中的 block ID 标记（^xxx） */
 const cleanBlockIds = (text: string) => text.replace(/\^[a-zA-Z0-9_-]+/g, '').trim();
@@ -469,4 +470,190 @@ export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHove
 			target = target.parentElement;
 		}
 	});
+
+	// Retry config: covers the indexing/parsing window right after the file is created —
+	// the plugin's native embed renderer often shows an empty {"type":"excalidraw/clipboard"...}
+	// placeholder because metadataCache hasn't indexed the new .excalidraw.md yet.
+	const MAX_EMBED_RETRIES = 3;
+	const EMBED_RETRY_DELAY_MS = 300;
+
+	/**
+	 * Try ONCE to render a single excalidraw embed as an SVG via ExcalidrawAutomate.
+	 * Resolves true on success, false otherwise (caller decides whether to retry).
+	 * Does NOT touch concurrency markers — the caller manages the in-flight lock.
+	 */
+	const tryRenderEmbed = async (embedEl: HTMLElement): Promise<boolean> => {
+		const src = embedEl.getAttribute('src');
+		if (!src) return false;
+
+		// Resolve the file: metadataCache first, then direct-path fallback to bypass indexing delay
+		let file = app.metadataCache.getFirstLinkpathDest(src, '');
+		if (!file) {
+			const possiblePaths = [src, src + '.md', src + '.excalidraw.md', src + '.excalidraw'];
+			for (const p of possiblePaths) {
+				const abstractFile = app.vault.getAbstractFileByPath(p);
+				if (abstractFile && 'extension' in abstractFile) {
+					file = abstractFile as any;
+					break;
+				}
+			}
+		}
+		if (!file) return false;
+
+		const ea = (window as any).ExcalidrawAutomate;
+		if (!ea) {
+			log('[DeepPDF] ExcalidrawAutomate not found, skipping embed render');
+			return false;
+		}
+
+		// Parse scene: ExcalidrawAutomate first, then manual decompression fallback
+		// (covers the window where the plugin hasn't indexed the freshly-created file yet)
+		let scene: any = null;
+		try {
+			ea.reset();
+			scene = await ea.getSceneFromFile(file);
+		} catch (err) {
+			log('[DeepPDF] ea.getSceneFromFile failed, attempting manual decompression fallback', err);
+			try {
+				const content = await app.vault.read(file);
+				scene = parseExcalidrawFileContent(content);
+			} catch (fallbackErr) {
+				log('[DeepPDF] Manual decompression fallback failed:', fallbackErr);
+			}
+		}
+
+		// Empty/missing scene (typical right after creation, before indexing) → signal retry
+		if (!scene || !scene.elements || scene.elements.length === 0) {
+			return false;
+		}
+
+		try {
+			ea.reset();
+			for (const el of scene.elements) {
+				ea.elementsDict[el.id] = el;
+			}
+			if (scene.appState && scene.appState.viewBackgroundColor) {
+				if (!ea.canvas) ea.canvas = {};
+				ea.canvas.viewBackgroundColor = scene.appState.viewBackgroundColor;
+			}
+			const svg = await ea.createSVG();
+			if (svg) {
+				svg.classList.add('excalidraw-svg');
+				// innerHTML='' wipes any native placeholder (e.g. the {"type":"excalidraw/clipboard"...} text)
+				embedEl.innerHTML = '';
+				embedEl.appendChild(svg);
+				embedEl.setAttribute('data-dr-rendered', 'svg');
+				log('[DeepPDF] Programmatically rendered excalidraw embed:', src);
+				return true;
+			}
+		} catch (err) {
+			log('[DeepPDF] Failed to render excalidraw embed:', err);
+		}
+		return false;
+	};
+
+	/**
+	 * Render one embed with bounded retry. Concurrency-safe against the MutationObserver
+	 * firing processExcalidrawEmbeds repeatedly: the first pass (attempt 0) acquires an
+	 * in-flight lock (data-dr-inflight); self-scheduled retries (attempt>0) skip the lock
+	 * and keep it held until success or exhaustion.
+	 */
+	const renderEmbedWithRetry = (embedEl: HTMLElement, attempt = 0): void => {
+		// Already rendered by the native extension → don't compete with it
+		if (embedEl.querySelector('svg.excalidraw-svg, img.excalidraw-svg, .excalidraw-svg, .excalidraw-embedded-img')) {
+			return;
+		}
+		// Already rendered by DeepReader → done
+		if (embedEl.getAttribute('data-dr-rendered') === 'svg') {
+			return;
+		}
+		// First pass only: bail if another pass is already in flight (observer storm guard)
+		if (attempt === 0 && embedEl.getAttribute('data-dr-inflight') === '1') {
+			return;
+		}
+		embedEl.setAttribute('data-dr-inflight', '1');
+
+		tryRenderEmbed(embedEl).then((ok) => {
+			if (ok) {
+				embedEl.removeAttribute('data-dr-inflight');
+				return;
+			}
+			if (attempt < MAX_EMBED_RETRIES) {
+				// Keep the in-flight lock held across the retry delay (self-scheduled → skips lock check)
+				window.setTimeout(() => renderEmbedWithRetry(embedEl, attempt + 1), EMBED_RETRY_DELAY_MS);
+			} else {
+				embedEl.removeAttribute('data-dr-inflight');
+				log('[DeepPDF] Excalidraw embed render exhausted retries:', embedEl.getAttribute('src'));
+			}
+		}).catch((err) => {
+			embedEl.removeAttribute('data-dr-inflight');
+			log('[DeepPDF] renderEmbedWithRetry unexpected error:', err);
+		});
+	};
+
+	// Post-process excalidraw embeds to render them as SVG drawings via ExcalidrawAutomate API.
+	// Native embed rendering of freshly-created .excalidraw.md files is unreliable (async parsing
+	// race), so DeepReader renders the SVG itself with retry and only falls back when the native
+	// renderer has already produced an svg.excalidraw-svg.
+	const processExcalidrawEmbeds = () => {
+		const excalidrawEmbeds = contentEl.querySelectorAll('.internal-embed[src*="excalidraw" i], .markdown-embed[src*="excalidraw" i]');
+		excalidrawEmbeds.forEach((embedEl) => {
+			renderEmbedWithRetry(embedEl as HTMLElement);
+		});
+	};
+
+	// 1. Initial processing for any embeds that are already loaded
+	processExcalidrawEmbeds();
+
+	// 2. Set up observer on the parent contentEl to capture future transclusion loading/replacements
+	const observer = new MutationObserver(() => {
+		processExcalidrawEmbeds();
+	});
+	observer.observe(contentEl, { 
+		childList: true, 
+		subtree: true,
+		attributes: true,
+		attributeFilter: ['class']
+	});
+	if (observers) {
+		observers.push(observer);
+	}
+}
+
+/**
+ * Parses the compressed Excalidraw drawing JSON inside an `.excalidraw.md` Markdown wrapper.
+ */
+function parseExcalidrawMdContent(content: string): any {
+	const lines = content.split('\n');
+	let base64 = '';
+	let inBlock = false;
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (trimmed.startsWith('```compressed-json')) {
+			inBlock = true;
+			continue;
+		}
+		if (inBlock && trimmed.startsWith('```')) {
+			inBlock = false;
+			break;
+		}
+		if (inBlock) {
+			base64 += trimmed;
+		}
+	}
+	if (!base64) return null;
+	const decompressed = decompressFromBase64(base64);
+	if (!decompressed) return null;
+	return JSON.parse(decompressed);
+}
+
+/**
+ * Automatically detects format (JSON or Markdown) and parses Excalidraw drawing data.
+ */
+function parseExcalidrawFileContent(content: string): any {
+	const trimmed = content.trim();
+	if (trimmed.startsWith('{')) {
+		return JSON.parse(trimmed);
+	}
+	return parseExcalidrawMdContent(content);
 }
