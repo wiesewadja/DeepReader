@@ -114,9 +114,6 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             }
         }
 
-        // 同步 Skills 到 vault（插件启动时执行）
-        await this.syncSkillsToVault();
-
         // FrontendAgent 延迟初始化：首次聊天时通过 getFrontendAgent() 按需加载
 
         // 初始化 ProfileBuilder 并自动增量构建（距上次 > 24h）
@@ -693,25 +690,6 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
     }
 
     /**
-     * 同步内置 Skills 到 vault
-     * 在插件启动时执行，将硬编码的 Skills 写入 Obsidian vault
-     */
-    private async syncSkillsToVault(): Promise<void> {
-        const SKILLS_DIR = "DeepReader/skills";
-
-        try {
-            // 确保 skills 目录存在
-            const dirExists = await this.app.vault.adapter.exists(SKILLS_DIR);
-            if (!dirExists) {
-                await this.app.vault.createFolder(SKILLS_DIR);
-                log('[DeepPDF] Created skills directory');
-            }
-        } catch (err) {
-            log.error('[DeepPDF] Skills dir creation failed:', err);
-        }
-    }
-
-    /**
      * 获取或初始化 FrontendAgent
      */
     async getFrontendAgent(): Promise<FrontendAgent> {
@@ -796,20 +774,6 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             log('[DeepPDF] FrontendAgent 已重置，下次对话将使用新配置');
         }
     }
-
-    /**
-     * 重载 Skills
-     */
-    async reloadSkills(): Promise<{ success: boolean; message: string; skills: string[] }> {
-        try {
-            // Skills 现在由 PI 管理，无需重载
-            return { success: true, message: 'Skills 由 PI Agent 管理', skills: [] };
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            return { success: false, message, skills: [] };
-        }
-    }
-
 
     async loadSettings() {
         const rawData = (await this.loadData()) ?? {};
