@@ -1,27 +1,30 @@
 /**
- * 从 .pageindex 目录加载已索引书籍列表
+ * 从 pageindex 目录加载已索引书籍列表
+ * 
+ * 采用 100% 跨平台安全的 app.vault.adapter API，
+ * 避免对 Node.js 'fs' 和 'path' 的依赖，以支持移动端。
  */
 
-import { promises as fs } from 'fs';
-import { join } from 'path';
-import { getPageindexRoot } from '../../pageindex/paths.js';
-import type { IndexedBook } from '../sync/matcher';
+import { type App } from 'obsidian';
+import { getPageindexDir } from '../../pageindex/paths.js';
+import type { IndexedBook } from '../sync/matcher.js';
 
-export async function loadIndexedBooks(vaultPath: string): Promise<IndexedBook[]> {
-	const pageindexDir = getPageindexRoot(vaultPath);
+export async function loadIndexedBooks(app: App): Promise<IndexedBook[]> {
 	const books: IndexedBook[] = [];
+	const pageindexDir = getPageindexDir();
 
-	let entries: string[];
+	let folders: string[];
 	try {
-		entries = await fs.readdir(pageindexDir);
+		const result = await app.vault.adapter.list(pageindexDir);
+		folders = result.folders;
 	} catch {
 		return books;
 	}
 
-	for (const entry of entries) {
-		const metaPath = join(pageindexDir, entry, 'book-meta.json');
+	for (const folder of folders) {
+		const metaPath = `${folder}/book-meta.json`;
 		try {
-			const raw = await fs.readFile(metaPath, 'utf-8');
+			const raw = await app.vault.adapter.read(metaPath);
 			const meta = JSON.parse(raw);
 			if (meta.bookId && meta.title) {
 				books.push({
@@ -31,7 +34,7 @@ export async function loadIndexedBooks(vaultPath: string): Promise<IndexedBook[]
 				});
 			}
 		} catch {
-			// 忽略无法读取的文件
+			// 忽略不存在或无法解析的 book-meta.json
 		}
 	}
 

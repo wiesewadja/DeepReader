@@ -404,9 +404,6 @@ export class ReadingModeService implements ScrollPatchService {
 		}
 	}
 
-	/**
-	 * 初始化移动端浮动按钮
-	 */
 	private initMobileFab(): void {
 		if (!Platform.isMobile) return;
 		this.mobileFab = new MobileReadingFab(() => {
@@ -414,6 +411,11 @@ export class ReadingModeService implements ScrollPatchService {
 			if (leaf) {
 				leaf.setViewState({ type: "deepreader-sidebar", active: true });
 				this.app.workspace.revealLeaf(leaf);
+				// 确保在手机端侧边栏滑动抽屉能正常拉出/展开
+				const rightSplit = (this.app.workspace as any).rightSplit;
+				if (rightSplit && typeof rightSplit.expand === 'function') {
+					rightSplit.expand();
+				}
 			}
 		});
 		this.mobileFab.show();

@@ -8,7 +8,6 @@
  *     保证 dev/daily 部署到不同物理目录时数据落在各自 plugin 目录下。
  */
 
-import { join } from 'path';
 import type { VaultAdapter } from '../../utils/vault.js';
 import type { WereadSyncState, WereadMapping } from '../types';
 
@@ -42,7 +41,7 @@ export class SyncStateManager {
 
 	/** 读取同步状态，文件不存在时返回空状态 */
 	async loadSyncState(): Promise<WereadSyncState> {
-		const filePath = join(this.wereadDir, SYNC_STATE_FILE);
+		const filePath = `${this.wereadDir}/${SYNC_STATE_FILE}`;
 		try {
 			if (!(await this.adapter.exists(filePath))) {
 				return { lastSyncTime: 0, syncedBooks: {}, excludedBooks: [] };
@@ -60,7 +59,7 @@ export class SyncStateManager {
 	/** 写入同步状态 */
 	async saveSyncState(state: WereadSyncState): Promise<void> {
 		await this.ensureDir();
-		const filePath = join(this.wereadDir, SYNC_STATE_FILE);
+		const filePath = `${this.wereadDir}/${SYNC_STATE_FILE}`;
 		await this.adapter.write(filePath, JSON.stringify(state, null, 2));
 	}
 
@@ -84,7 +83,7 @@ export class SyncStateManager {
 
 	/** 读取映射关系，文件不存在时返回空映射 */
 	async loadMapping(): Promise<WereadMapping> {
-		const filePath = join(this.wereadDir, MAPPING_FILE);
+		const filePath = `${this.wereadDir}/${MAPPING_FILE}`;
 		try {
 			if (!(await this.adapter.exists(filePath))) {
 				return { mappings: {} };
@@ -99,7 +98,7 @@ export class SyncStateManager {
 	/** 写入映射关系 */
 	async saveMapping(mapping: WereadMapping): Promise<void> {
 		await this.ensureDir();
-		const filePath = join(this.wereadDir, MAPPING_FILE);
+		const filePath = `${this.wereadDir}/${MAPPING_FILE}`;
 		await this.adapter.write(filePath, JSON.stringify(mapping, null, 2));
 	}
 }

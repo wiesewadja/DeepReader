@@ -109,8 +109,7 @@ export class WereadService {
 			author: b.author,
 		}));
 
-		const vaultPath = this.getVaultPathLocal();
-		const indexedBooks = await loadIndexedBooks(vaultPath);
+		const indexedBooks = await loadIndexedBooks(this.plugin.app);
 		const matchResults = matchBooks(wereadSummaries, indexedBooks);
 
 		const now = Date.now();

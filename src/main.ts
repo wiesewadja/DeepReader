@@ -927,6 +927,11 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
 
         if (leaf) {
             workspace.revealLeaf(leaf);
+            // 确保侧边栏抽屉展开可见
+            const rightSplit = (workspace as any).rightSplit;
+            if (rightSplit && typeof rightSplit.expand === 'function') {
+                rightSplit.expand();
+            }
         }
     }
 

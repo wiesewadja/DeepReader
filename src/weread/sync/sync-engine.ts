@@ -4,7 +4,6 @@
  * 流程：拉取书架 → 差异检测 → 逐本同步（并发控制）→ 匹配关联 → 持久化状态
  */
 
-import { dirname } from 'path';
 import { bookNotePath } from '../../utils/book-paths';
 import { serviceLog as logger } from '../../utils/logger';
 import { WereadApiClient } from '../api/client';
@@ -403,7 +402,8 @@ export class WereadSyncEngine {
 
 	/** 确保文件所在目录存在 */
 	private async ensureDirForFile(filePath: string): Promise<void> {
-		const dir = dirname(filePath);
+		const lastSlashIndex = filePath.lastIndexOf('/');
+		const dir = lastSlashIndex !== -1 ? filePath.substring(0, lastSlashIndex) : '';
 		if (dir && !(await this.adapter.exists(dir))) {
 			await this.adapter.mkdir(dir);
 		}

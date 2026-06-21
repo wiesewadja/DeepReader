@@ -118,7 +118,7 @@ describe("MessageList — Empty State 重构（去背景图）", () => {
 	});
 
 	describe("invariant 3 — 内容层次", () => {
-		it("PDF 模式下有 title / subtitle / hint / grid", () => {
+		it("PDF 模式下有 title / book-info / grid", () => {
 			list = new MessageList({
 				onGuidanceClick: mockOnGuidanceClick,
 			});
@@ -127,13 +127,11 @@ describe("MessageList — Empty State 重构（去背景图）", () => {
 			document.body.appendChild(root);
 
 			const title = root.querySelector(".deeppdf-empty-title");
-			const subtitle = root.querySelector(".deeppdf-empty-subtitle");
-			const hint = root.querySelector(".deeppdf-empty-hint");
+			const bookInfo = root.querySelector(".deeppdf-empty-book-info");
 			const grid = root.querySelector(".deeppdf-empty-grid");
 
 			expect(title).toBeTruthy();
-			expect(subtitle).toBeTruthy();
-			expect(hint).toBeTruthy();
+			expect(bookInfo).toBeTruthy();
 			expect(grid).toBeTruthy();
 		});
 
@@ -141,7 +139,7 @@ describe("MessageList — Empty State 重构（去背景图）", () => {
 			list = new MessageList({
 				onGuidanceClick: mockOnGuidanceClick,
 			});
-			list.setCurrentPdfName("深度工作.pdf");
+			// 不设置 PDF 才会显示奚童欢迎语
 			root = list.el!;
 			document.body.appendChild(root);
 
@@ -157,7 +155,7 @@ describe("MessageList — Empty State 重构（去背景图）", () => {
 			expect(title.textContent).toContain("你好，我是奚童");
 		});
 
-		it("subtitle 含 PDF 名称 (有 PDF 时)", () => {
+		it("book-text 含 PDF 名称 (有 PDF 时)", () => {
 			list = new MessageList({
 				onGuidanceClick: mockOnGuidanceClick,
 			});
@@ -165,23 +163,21 @@ describe("MessageList — Empty State 重构（去背景图）", () => {
 			root = list.el!;
 			document.body.appendChild(root);
 
-			const subtitle = root.querySelector(
-				".deeppdf-empty-subtitle",
+			const bookText = root.querySelector(
+				".deeppdf-empty-book-text",
 			) as HTMLElement;
-			expect(subtitle.textContent).toContain("深度工作.pdf");
+			expect(bookText.textContent).toContain("深度工作.pdf");
 		});
 
-		it("subtitle 不含 PDF 名称 (无 PDF 时)", () => {
+		it("无 PDF 时不显示 book-info", () => {
 			list = new MessageList({
 				onGuidanceClick: mockOnGuidanceClick,
 			});
 			root = list.el!;
 			document.body.appendChild(root);
 
-			const subtitle = root.querySelector(
-				".deeppdf-empty-subtitle",
-			) as HTMLElement;
-			expect(subtitle.textContent).not.toContain("·");
+			const bookInfo = root.querySelector(".deeppdf-empty-book-info");
+			expect(bookInfo).toBeNull();
 		});
 	});
 
