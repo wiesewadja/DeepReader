@@ -4,13 +4,12 @@
  * 管理 TTS 服务初始化和播放控制。
  * 支持两种来源：Agent 回复朗读（message）和原文朗读（reading）。
  *
- * 两条 TTS 路径：
- * 1. AI 回复朗读 → TTSService.play() → mimo-v2.5-tts-voicedesign（用户配置）
- * 2. 原文朗读    → 独立 TTSClient  → mimo-v2.5-tts 冰糖，流式实时播放 + 段落级高亮
+ * 两条 TTS 路径（共享相同播放架构）：
+ * 1. AI 回复朗读 → PCMStreamPlayer + TTSClient.synthesizeStream()（流式 PCM）
+ * 2. 原文朗读    → PCMStreamPlayer + TTSClient.synthesizeStream()（流式 PCM）
  */
 
 import { Notice } from 'obsidian';
-import { MemoryStore } from '../../agent/memory/store.js';
 import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
 import { resolveRoleConfig } from '../../config/providers.js';
 import { PCMStreamPlayer } from '../../services/tts/pcm-stream-player.js';
@@ -56,6 +55,14 @@ export class TTSController {
 	private lastReadParagraphIndex = 0;
 	/** 下一页首段音频合成的 Promise 预存 */
 	private nextPageFirstStreamPromise: Promise<AsyncGenerator<ArrayBuffer>> | null = null;
+
+	// ── 流式消息朗读状态 ──────────────────────────
+	private messageAbort: AbortController | null = null;
+	private messagePlayer: PCMStreamPlayer | null = null;
+	private messageStreamingId: string | null = null;
+	private messageParagraphIndex = 0;
+	private messagePaused = false;
+	private messageStreamDone = false;
 
 	constructor(host: TTSControllerHost) {
 		this.host = host;
@@ -156,13 +163,25 @@ export class TTSController {
 		});
 	}
 
-	async handleTTS(messageId: string, content: string, options?: { rawText?: boolean }): Promise<void> {
-		if (!this.ttsService) {
-			this.ttsService = this.initTTSService();
-			this.host.setTtsService(this.ttsService);
-		}
-		if (!this.ttsService) {
-			new Notice('请先在设置中配置语音播报（TTS）服务：添加小米 API Key 并启用 tts 角色');
+	// ── 消息朗读入口 ──────────────────────────────────
+
+	/**
+	 * 消息朗读统一入口。调用流式播放方法 handleMessageStreamTTS。
+	 */
+	async handleTTS(messageId: string, content: string): Promise<void> {
+		await this.handleMessageStreamTTS(messageId, content);
+	}
+
+	// ── 流式消息朗读 ──────────────────────────────────
+
+	/**
+	 * 流式播放 AI 回复。逐段流式合成 + PCM 实时播放，
+	 * 与原文朗读共用相同的播放架构，保证播报质量一致。
+	 */
+	async handleMessageStreamTTS(messageId: string, content: string): Promise<void> {
+		// 如果正在朗读同一个消息 → toggle pause/resume
+		if (this.currentSource === 'message' && this.messageStreamingId === messageId) {
+			this.toggleMessagePause();
 			return;
 		}
 
@@ -170,26 +189,167 @@ export class TTSController {
 		if (this.currentSource === 'reading') {
 			this.stopReading();
 		}
-		this.currentSource = 'message';
 
-		if (this.ttsService.getCurrentMessageId() === messageId && this.ttsService.getState() !== 'idle') {
-			const state = this.ttsService.getState();
-			if (state === 'tts_loading' || state === 'summarizing') {
-				this.ttsService.stop();
-			} else {
-				this.ttsService.togglePauseResume();
-			}
+		// 停止之前的消息流
+		this.stopMessageStream();
+
+		this.currentSource = 'message';
+		this.messageStreamingId = messageId;
+		this.messageParagraphIndex = 0;
+		this.messagePaused = false;
+		this.messageStreamDone = false;
+
+		const settings = this.host.plugin.settings;
+		const ttsConfig = resolveRoleConfig('tts', settings);
+		if (!ttsConfig?.apiKey) {
+			new Notice('请先在设置中配置语音播报（TTS）服务');
 			return;
 		}
 
-		const userQuestion = this.findUserQuestion(messageId);
+		const client = new TTSClient({
+			apiKey: ttsConfig.apiKey,
+			baseUrl: ttsConfig.baseUrl,
+			model: ttsConfig.model || 'mimo-v2.5-tts',
+		});
 
-		await this.ttsService.play(messageId, content, userQuestion, {
-			bookId: this.host.getCurrentIndexId() || undefined,
-			bookTitle: this.host.getDisplayName(this.host.getCurrentPdfName() || '') || undefined,
-			bookAuthor: this.host.getCurrentBookAuthor() || undefined,
-			memoryContent: await new MemoryStore(this.host.app).readLongTermMemory() || undefined,
-		}, options);
+		const player = new PCMStreamPlayer();
+		this.messagePlayer = player;
+		this.messageAbort = new AbortController();
+
+		// 通知 UI 显示 loading 状态
+		this.host.messageList?.updateTTSState(messageId, 'tts_loading');
+
+		try {
+			// 清洗文本：去除 Markdown 标记、wiki-link 等
+			const cleanText = preprocessForTTS(content).trim();
+			if (!cleanText) {
+				this.stopMessageStream();
+				return;
+			}
+
+			// 按段落分割（空行分隔）
+			const paragraphs = cleanText.split(/\n\n+/).filter(p => p.trim());
+			if (paragraphs.length === 0) {
+				this.stopMessageStream();
+				return;
+			}
+
+			const totalChars = paragraphs.reduce((sum, p) => sum + p.length, 0);
+			let charsSoFar = 0;
+
+			// 逐段流式合成 + 播放
+			while (
+				this.currentSource === 'message'
+				&& this.messageStreamingId === messageId
+				&& this.messageParagraphIndex < paragraphs.length
+			) {
+				if (this.messagePaused) {
+					await sleep(100);
+					continue;
+				}
+
+				const paraIndex = this.messageParagraphIndex;
+				const paraText = paragraphs[paraIndex].trim();
+				if (!paraText) {
+					this.messageParagraphIndex++;
+					continue;
+				}
+
+				// 通知 UI 进入 playing 状态（仅首次）
+				if (paraIndex === 0) {
+					this.host.messageList?.updateTTSState(messageId, 'playing');
+				}
+
+				// 流式合成
+				const stream = client.synthesizeStream(
+					paraText,
+					{ voiceProfile: { voice: '冰糖' } },
+					this.messageAbort?.signal,
+				);
+
+				for await (const chunk of stream) {
+					if (
+						this.currentSource !== 'message'
+						|| this.messageStreamingId !== messageId
+						|| this.messagePaused
+					) {
+						break;
+					}
+					player.enqueue(chunk);
+				}
+
+				if (
+					this.currentSource !== 'message'
+					|| this.messageStreamingId !== messageId
+				) {
+					break;
+				}
+
+				// 段落完成，更新进度
+				charsSoFar += paraText.length;
+				const progress = Math.min(99, Math.round((charsSoFar / totalChars) * 100));
+				const msg = this.host.messageList?.getMessage(messageId);
+				msg?.highlightTTSProgress?.(progress);
+
+				this.messageParagraphIndex++;
+			}
+
+			// 所有段播放完毕
+			if (
+				this.currentSource === 'message'
+				&& this.messageStreamingId === messageId
+				&& !this.messagePaused
+			) {
+				this.messageStreamDone = true;
+				player.seal();
+				await player.waitForEnd();
+			}
+		} catch (err) {
+			if ((err as Error)?.name === 'AbortError') return;
+			serviceLog.error('[TTS] Message stream TTS failed:', err);
+			new Notice(`朗读失败: ${err instanceof Error ? err.message : String(err)}`);
+		} finally {
+			player.stop();
+			this.messagePlayer = null;
+			this.messageAbort = null;
+			if (
+				this.currentSource === 'message'
+				&& this.messageStreamingId === messageId
+			) {
+				const msg = this.host.messageList?.getMessage(messageId);
+				msg?.highlightTTSProgress?.(-1);
+				this.host.messageList?.updateTTSState(messageId, 'idle');
+				this.messageStreamingId = null;
+			}
+		}
+	}
+
+	/** 停止消息流式朗读（完全停止，重置所有状态） */
+	private stopMessageStream(): void {
+		this.messageAbort?.abort();
+		this.messageAbort = null;
+		this.messagePlayer?.stop();
+		this.messagePlayer = null;
+		this.messageStreamingId = null;
+		this.messageParagraphIndex = 0;
+		this.messagePaused = false;
+		this.messageStreamDone = false;
+		this.currentSource = 'message';
+	}
+
+	/** 暂停 / 恢复消息流式朗读 */
+	private toggleMessagePause(): void {
+		if (this.messagePaused) {
+			// 恢复
+			this.messagePaused = false;
+			this.messagePlayer?.resume();
+			this.host.messageList?.updateTTSState(this.messageStreamingId!, 'playing');
+		} else {
+			// 暂停
+			this.messagePaused = true;
+			this.messagePlayer?.pause();
+			this.host.messageList?.updateTTSState(this.messageStreamingId!, 'paused');
+		}
 	}
 
 	// ── 原文朗读（逐段流式） ──────────────────────────────
@@ -211,8 +371,8 @@ export class TTSController {
 		}
 
 		// 互斥：如果正在朗读 Agent 回复，先停止
-		if (this.currentSource === 'message' && this.ttsService?.getState() !== 'idle') {
-			this.ttsService?.stop();
+		if (this.currentSource === 'message') {
+			this.stopMessageStream();
 		}
 
 		this.currentSource = 'reading';
@@ -446,6 +606,7 @@ export class TTSController {
 	}
 
 	destroy(): void {
+		this.stopMessageStream();
 		this.stopReading();
 		if (this.ttsService) {
 			try {

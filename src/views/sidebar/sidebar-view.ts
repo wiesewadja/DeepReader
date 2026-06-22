@@ -1056,7 +1056,7 @@ export class SidebarView extends ItemView {
 				},
 				onTTS: async (messageId: string, content: string) => {
 					// 喇叭按钮始终直接朗读原文，不走摘要模式
-					this.ttsCtrl.handleTTS(messageId, content, { rawText: true });
+					this.ttsCtrl.handleTTS(messageId, content);
 				},
 				onStreamingEnd: (messageId: string, content: string) => {
 					this.preloadTTSPreview(messageId, content);
