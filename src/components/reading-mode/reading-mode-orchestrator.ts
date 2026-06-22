@@ -814,9 +814,17 @@ export class ReadingModeService implements ScrollPatchService {
 									: Math.max(1, Math.min(savedPage!, totalPages || savedPage!));
 								if (targetPage <= 1 && !restoreLastPage) return;
 
+								let step = scrollView.clientWidth;
+								if (this.isDualPageMode()) {
+									const style = window.getComputedStyle(scrollView);
+									const paddingLeft = parseFloat(style.paddingLeft) || 0;
+									const paddingRight = parseFloat(style.paddingRight) || 0;
+									const columnGap = parseFloat(style.columnGap) || 0;
+									step = scrollView.clientWidth - paddingLeft - paddingRight + columnGap;
+								}
 								const targetScroll = this.isDualPageMode()
-									? Math.floor((targetPage - 1) / 2) * scrollView.clientWidth
-									: (targetPage - 1) * scrollView.clientWidth;
+									? Math.floor((targetPage - 1) / 2) * step
+									: (targetPage - 1) * step;
 								const maxScroll = Math.max(
 									0,
 									scrollView.scrollWidth - scrollView.clientWidth,
@@ -1204,9 +1212,20 @@ export class ReadingModeService implements ScrollPatchService {
 
 				if (viewWidth === 0) return;
 
-				// 计算目标页（列）：0-based
-				const targetPage = Math.floor(absoluteLeft / viewWidth);
-				const targetScrollLeft = targetPage * viewWidth;
+				const isDual = this.isDualPageMode();
+				let targetScrollLeft = 0;
+				let targetPage = 0; // 0-based logical page
+
+				if (isDual) {
+					const colStep = (viewWidth - 100 - 60) / 2 + 60; // 714px
+					const spreadStep = 2 * colStep; // 1428px
+					const spreadIndex = Math.floor(Math.max(0, absoluteLeft - 50) / spreadStep);
+					targetScrollLeft = spreadIndex * spreadStep;
+					targetPage = spreadIndex * 2;
+				} else {
+					targetPage = Math.floor(absoluteLeft / viewWidth);
+					targetScrollLeft = targetPage * viewWidth;
+				}
 
 				serviceLog(
 					`[ReadingMode] BlockId jump: absoluteLeft=${absoluteLeft.toFixed(0)}, viewWidth=${viewWidth}, targetPage=${targetPage + 1}, scrollLeft=${targetScrollLeft}`,

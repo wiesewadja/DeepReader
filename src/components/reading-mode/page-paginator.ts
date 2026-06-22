@@ -286,8 +286,15 @@ export class PagePaginator {
 			return false;
 		}
 
-		const pageWidth = this.scrollView.clientWidth;
-		this.scrollView.scrollBy({ left: pageWidth, behavior: 'smooth' });
+		let stepWidth = this.scrollView.clientWidth;
+		if (this.isDualPageMode) {
+			const style = window.getComputedStyle(this.scrollView);
+			const paddingLeft = parseFloat(style.paddingLeft) || 0;
+			const paddingRight = parseFloat(style.paddingRight) || 0;
+			const columnGap = parseFloat(style.columnGap) || 0;
+			stepWidth = this.scrollView.clientWidth - paddingLeft - paddingRight + columnGap;
+		}
+		this.scrollView.scrollBy({ left: stepWidth, behavior: 'smooth' });
 		// 同步更新 _currentPage，确保 getPageParagraphs 等依赖它的方法
 		// 在 scroll 事件触发前也能读到正确的页码
 		const step = this.isDualPageMode ? 2 : 1;
@@ -306,8 +313,15 @@ export class PagePaginator {
 			return false;
 		}
 
-		const pageWidth = this.scrollView.clientWidth;
-		this.scrollView.scrollBy({ left: -pageWidth, behavior: 'smooth' });
+		let stepWidth = this.scrollView.clientWidth;
+		if (this.isDualPageMode) {
+			const style = window.getComputedStyle(this.scrollView);
+			const paddingLeft = parseFloat(style.paddingLeft) || 0;
+			const paddingRight = parseFloat(style.paddingRight) || 0;
+			const columnGap = parseFloat(style.columnGap) || 0;
+			stepWidth = this.scrollView.clientWidth - paddingLeft - paddingRight + columnGap;
+		}
+		this.scrollView.scrollBy({ left: -stepWidth, behavior: 'smooth' });
 		const step = this.isDualPageMode ? 2 : 1;
 		this._currentPage = Math.max(1, this._currentPage - step);
 		this.options.onPageChange?.(this._currentPage, this._totalPages);
@@ -397,10 +411,22 @@ export class PagePaginator {
 		const viewWidth = this.scrollView.clientWidth;
 		if (viewWidth === 0) return 1;
 
-		const pageSize = this.isDualPageMode ? viewWidth / 2 : viewWidth;
+		const scrollW = this.scrollView.scrollWidth;
+		if (this.isDualPageMode) {
+			const style = window.getComputedStyle(this.scrollView);
+			const paddingLeft = parseFloat(style.paddingLeft) || 0;
+			const paddingRight = parseFloat(style.paddingRight) || 0;
+			const columnGap = parseFloat(style.columnGap) || 0;
+
+			const colWidth = (viewWidth - paddingLeft - paddingRight - columnGap) / 2;
+			const colStep = colWidth + columnGap;
+			const N = Math.ceil((scrollW - paddingLeft - paddingRight + columnGap) / colStep);
+			return N;
+		}
+
+		const pageSize = viewWidth;
 
 		// 优先用 scrollWidth（CSS multi-column 撑开后的真实内容宽度）
-		const scrollW = this.scrollView.scrollWidth;
 		if (scrollW > viewWidth) {
 			return Math.ceil(scrollW / pageSize);
 		}
@@ -504,10 +530,19 @@ export class PagePaginator {
 
 		if (viewWidth === 0) return;
 
+		let step = viewWidth;
+		if (this.isDualPageMode) {
+			const style = window.getComputedStyle(this.scrollView);
+			const paddingLeft = parseFloat(style.paddingLeft) || 0;
+			const paddingRight = parseFloat(style.paddingRight) || 0;
+			const columnGap = parseFloat(style.columnGap) || 0;
+			step = viewWidth - paddingLeft - paddingRight + columnGap;
+		}
+
 		// 计算当前处于第几页 (1-based)
 		const newPage = this.isDualPageMode
-			? Math.round(scrollLeft / viewWidth) * 2 + 1
-			: Math.round(scrollLeft / viewWidth) + 1;
+			? Math.round(scrollLeft / step) * 2 + 1
+			: Math.round(scrollLeft / step) + 1;
 
 		if (newPage !== this._currentPage) {
 			this._currentPage = Math.max(1, Math.min(newPage, this._totalPages));
@@ -686,9 +721,17 @@ export class PagePaginator {
 					: clampedPage;
 
 				// 立刻强制同步滚动，对齐内容盒子
+				let step = this.scrollView.clientWidth;
+				if (this.isDualPageMode) {
+					const style = window.getComputedStyle(this.scrollView);
+					const paddingLeft = parseFloat(style.paddingLeft) || 0;
+					const paddingRight = parseFloat(style.paddingRight) || 0;
+					const columnGap = parseFloat(style.columnGap) || 0;
+					step = this.scrollView.clientWidth - paddingLeft - paddingRight + columnGap;
+				}
 				const targetScroll = this.isDualPageMode
-					? Math.floor((this._currentPage - 1) / 2) * this.scrollView.clientWidth
-					: (this._currentPage - 1) * this.scrollView.clientWidth;
+					? Math.floor((this._currentPage - 1) / 2) * step
+					: (this._currentPage - 1) * step;
 				this.scrollView.scrollLeft = targetScroll;
 
 				// 更新底部控件
