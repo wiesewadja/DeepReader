@@ -235,9 +235,11 @@ export class MascotFace extends Component {
 			this.resetIdleTimer();
 		}
 
-		// 回到 idle 时启动眨眼
-		if (expr === 'idle') {
+		// 回到 idle 或 curious 时启动眨眼
+		if (expr === 'idle' || expr === 'curious') {
 			this.scheduleBlink();
+		} else {
+			this.clearBlinkTimer();
 		}
 	}
 
@@ -256,7 +258,7 @@ export class MascotFace extends Component {
 
 	private scheduleBlink(): void {
 		this.clearBlinkTimer();
-		if (this.currentExpression !== 'idle') return;
+		if (this.currentExpression !== 'idle' && this.currentExpression !== 'curious') return;
 		const delay = 3000 + Math.random() * 4000; // 3-7 秒
 		this.blinkTimer = setTimeout(() => {
 			this.blinkTimer = null;
@@ -265,13 +267,13 @@ export class MascotFace extends Component {
 	}
 
 	private doBlink(): void {
-		if (this.currentExpression !== 'idle' || !this.svgEl) return;
+		if ((this.currentExpression !== 'idle' && this.currentExpression !== 'curious') || !this.svgEl) return;
 
 		// 闭眼
 		this.svgEl.innerHTML = renderFaceSVG(IDLE_FRAMES.blink);
 
 		setTimeout(() => {
-			if (this.currentExpression !== 'idle' || !this.svgEl) {
+			if ((this.currentExpression !== 'idle' && this.currentExpression !== 'curious') || !this.svgEl) {
 				this.scheduleBlink();
 				return;
 			}
@@ -279,16 +281,17 @@ export class MascotFace extends Component {
 			// 30% 几率转眼
 			if (Math.random() < 0.3) {
 				const frame = Math.random() < 0.5 ? 'lookRight' : 'normal';
-				this.svgEl.innerHTML = renderFaceSVG(IDLE_FRAMES[frame]);
+				const frameData = this.currentExpression === 'curious' && frame === 'normal' ? FACE_DATA.curious : IDLE_FRAMES[frame];
+				this.svgEl.innerHTML = renderFaceSVG(frameData);
 
 				setTimeout(() => {
-					if (this.currentExpression === 'idle' && this.svgEl) {
-						this.svgEl.innerHTML = renderFaceSVG(IDLE_FRAMES.normal);
+					if ((this.currentExpression === 'idle' || this.currentExpression === 'curious') && this.svgEl) {
+						this.svgEl.innerHTML = renderFaceSVG(this.currentExpression === 'curious' ? FACE_DATA.curious : IDLE_FRAMES.normal);
 					}
 					this.scheduleBlink();
 				}, 800 + Math.random() * 1200);
 			} else {
-				this.svgEl.innerHTML = renderFaceSVG(IDLE_FRAMES.normal);
+				this.svgEl.innerHTML = renderFaceSVG(this.currentExpression === 'curious' ? FACE_DATA.curious : IDLE_FRAMES.normal);
 				this.scheduleBlink();
 			}
 		}, 150);

@@ -689,3 +689,170 @@
         height: 44px;
     }
 }
+
+/* ==================== 奚童右下角浮动提问组件 ==================== */
+.deeppdf-xitong-float-widget {
+    position: absolute;
+    right: 24px;
+    bottom: 48px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1000;
+    transition: transform 0.2s cubic-bezier(0.3, 0, 0, 1), filter 0.2s ease;
+    /* Subtle default glow around the mascot face pixels */
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15)) drop-shadow(0 0 4px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.2));
+}
+
+.deeppdf-xitong-float-widget:hover {
+    transform: scale(1.1);
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2)) drop-shadow(0 0 8px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.5));
+}
+
+.deeppdf-xitong-float-widget.is-thinking {
+    animation: pulse-glow-filter 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-glow-filter {
+    0% {
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15)) drop-shadow(0 0 2px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.2));
+    }
+    50% {
+        filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.2)) drop-shadow(0 0 12px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.75));
+    }
+    100% {
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15)) drop-shadow(0 0 2px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.2));
+    }
+}
+
+.deeppdf-xitong-float-face-container {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.deeppdf-xitong-float-face-container .deeppdf-mascot-face {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+}
+
+.deeppdf-xitong-float-face-container .deeppdf-mascot-face-svg {
+    width: 36px !important;
+    height: 36px !important;
+}
+
+.deeppdf-xitong-float-face-container .deeppdf-mascot-face-svg svg {
+    width: 36px !important;
+    height: 36px !important;
+}
+
+/* Unread state with subtle breathing animation on the entire widget */
+.deeppdf-xitong-float-widget.has-unread {
+    animation: widget-breath 2s infinite ease-in-out;
+}
+
+@keyframes widget-breath {
+    0%, 100% {
+        transform: scale(1);
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15)) drop-shadow(0 0 4px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.3));
+    }
+    50% {
+        transform: scale(1.06);
+        filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.2)) drop-shadow(0 0 10px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.7));
+    }
+}
+
+/* 提问弹窗 (Minimalist Pill Style) */
+.deeppdf-xitong-float-popup {
+    position: absolute;
+    bottom: 52px;
+    right: 84px;
+    width: 260px;
+    height: 40px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 20px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    padding: 0 8px 0 14px;
+    z-index: 1001;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    animation: popup-fade-in 0.2s cubic-bezier(0.3, 0, 0, 1);
+}
+
+@keyframes popup-fade-in {
+    from {
+        opacity: 0;
+        transform: translateX(12px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+}
+
+.deeppdf-xitong-popup-input {
+    flex: 1;
+    height: 100%;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    color: var(--text-normal);
+    font-size: 13px;
+}
+
+.deeppdf-xitong-popup-input:focus {
+    outline: none !important;
+}
+
+.deeppdf-xitong-popup-send-btn {
+    background: transparent;
+    border: none;
+    color: var(--interactive-accent);
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.deeppdf-xitong-popup-send-btn:hover {
+    background-color: var(--background-secondary-alt);
+    color: var(--interactive-accent-hover);
+}
+
+.deeppdf-xitong-float-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
+    background-color: var(--text-error, #f87171);
+    border-radius: 50%;
+    border: 1px solid var(--background-primary);
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.25);
+    z-index: 1002;
+    pointer-events: none;
+}
+
+

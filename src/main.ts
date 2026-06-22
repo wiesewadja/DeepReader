@@ -301,6 +301,26 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                     view.stopReadingTTS();
                 }
             },
+            onQuickQuestion: async (question: string) => {
+                let leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                if (leaves.length === 0) {
+                    const leaf = this.app.workspace.getRightLeaf(false);
+                    if (leaf) {
+                        await leaf.setViewState({
+                            type: SIDEBAR_VIEW_TYPE,
+                            active: true
+                        });
+                        leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                    }
+                }
+                if (leaves.length > 0) {
+                    const sidebarView = leaves[0].view as SidebarView;
+                    await sidebarView.sendMessageWithInput(question);
+                }
+            },
+            onRevealSidebar: () => {
+                this.activateView();
+            },
         };
         this.readingModeService = new ReadingModeService(this.app, readingModeCallbacks, this.manifest.id);
 
