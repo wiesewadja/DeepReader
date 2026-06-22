@@ -136,7 +136,7 @@ export class AgentChatController {
 		this.host.chatInput?.setDisabled(false);
 		this.reattachMascot();
 		this.host.readingTopbar?.setMascotExpression('idle');
-		this.host.plugin.readingModeService?.notifyChatFinished();
+		this.host.plugin.readingModeService?.clearChatThinking();
 	}
 
 	constructor(host: AgentChatControllerHost) {
@@ -721,7 +721,7 @@ export class AgentChatController {
 					}
 
 					self.host.chatInput?.focus();
-					self.host.plugin.readingModeService?.notifyChatFinished();
+					self.host.plugin.readingModeService?.notifyChatReplyReceived();
 				},
 				onError: (error: string) => {
 					logError('[DeepPDF] Agent 错误:', error);
@@ -744,7 +744,7 @@ export class AgentChatController {
 
 					self.host.chatInput?.focus();
 					self.streamController = null;
-					self.host.plugin.readingModeService?.notifyChatFinished();
+					self.host.plugin.readingModeService?.notifyChatReplyReceived();
 				},
 				onHumanizedProgress: ((() => {
 					let lastUpdateTime = 0;

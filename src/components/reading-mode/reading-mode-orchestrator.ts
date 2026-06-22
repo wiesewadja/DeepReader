@@ -505,11 +505,17 @@ export class ReadingModeService implements ScrollPatchService {
 		this.xitongWidget?.setThinking(true);
 	}
 
-	notifyChatFinished(): void {
+	/** AI 回复到达（含出错）：若处于思考态则标记未读，并清除思考态 */
+	notifyChatReplyReceived(): void {
 		if (this.isChatThinking) {
 			this.hasUnreadChatReply = true;
 			this.xitongWidget?.setUnread(true);
 		}
+		this.clearChatThinking();
+	}
+
+	/** 仅清除思考态，不产生未读副作用。用于 reset / 取消等重置场景 */
+	clearChatThinking(): void {
 		this.isChatThinking = false;
 		this.xitongWidget?.setThinking(false);
 	}
