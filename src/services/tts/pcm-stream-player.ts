@@ -13,6 +13,7 @@ export class PCMStreamPlayer {
     private stopped = false;
     private firstStartTime: number | null = null;
     private leftover: Uint8Array | null = null;
+    private visibilityHandler: (() => void) | null = null;
 
     constructor(sampleRate = DEFAULT_SAMPLE_RATE) {
         this.sampleRate = sampleRate;
@@ -20,6 +21,15 @@ export class PCMStreamPlayer {
         // 预先恢复 AudioContext，避免第一个 chunk 播放时的延迟
         if (this.ctx.state === 'suspended') {
             this.ctx.resume().catch(() => {});
+        }
+
+        this.visibilityHandler = () => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'visible' && this.ctx.state === 'suspended' && !this.paused && !this.stopped) {
+                this.ctx.resume().catch(() => {});
+            }
+        };
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', this.visibilityHandler);
         }
     }
 
@@ -42,7 +52,7 @@ export class PCMStreamPlayer {
 
         // 确保不在 suspended 状态（自动播放策略），但暂停期间不恢复
         if (this.ctx.state === 'suspended' && !this.paused) {
-            this.ctx.resume();
+            this.ctx.resume().catch(() => {});
         }
 
         // 拼接前一次未处理的残留字节
@@ -153,13 +163,20 @@ export class PCMStreamPlayer {
     resume(): void {
         if (!this.stopped) {
             this.paused = false;
-            this.ctx.resume();
+            this.ctx.resume().catch(() => {});
         }
     }
 
     stop(): void {
         if (this.stopped) return;
         this.stopped = true;
+        
+        // 清理 visibility 变化事件监听
+        if (typeof document !== 'undefined' && this.visibilityHandler) {
+            document.removeEventListener('visibilitychange', this.visibilityHandler);
+            this.visibilityHandler = null;
+        }
+
         // 主动 resolve，让 waitForEnd 不死锁
         this.completeResolve?.();
         this.completeResolve = null;

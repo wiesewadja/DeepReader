@@ -6,6 +6,7 @@
  * 激活时锁住 .markdown-preview-view 的滚动。
  */
 
+import { Platform } from 'obsidian';
 import { serviceLog } from '../../utils/logger.js';
 
 export interface PagePaginatorOptions {
@@ -42,6 +43,12 @@ export class PagePaginator {
 	private pageIndicator: HTMLElement | null = null;
 	private chapterIndicator: HTMLElement | null = null;
 	private bookLabelEl: HTMLElement | null = null;
+
+	private touchStartX = 0;
+	private touchStartY = 0;
+	private touchStartTime = 0;
+	private touchHandlerStart: ((e: TouchEvent) => void) | null = null;
+	private touchHandlerEnd: ((e: TouchEvent) => void) | null = null;
 
 	private resizeObserver: ResizeObserver | null = null;
 	private resizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -230,6 +237,7 @@ export class PagePaginator {
 		this.setupResizeObserver();
 		this.setupScrollListener();
 		this.setupMutationObserver();
+		this.setupTouchListeners();
 
 		// 延迟验证：multi-column 布局可能在初始化时尚未完全计算
 		this.verifyTimer = setTimeout(() => {
@@ -326,6 +334,7 @@ export class PagePaginator {
 		this.teardownResizeObserver();
 		this.teardownScrollListener();
 		this.teardownMutationObserver();
+		this.teardownTouchListeners();
 		this._totalPages = 0;
 		this._currentPage = 1;
 		this._pendingRestorePage = null;
@@ -651,5 +660,55 @@ export class PagePaginator {
 	private teardownMutationObserver(): void {
 		this.mutationObserver?.disconnect();
 		this.mutationObserver = null;
+	}
+
+	private setupTouchListeners(): void {
+		if (!this.scrollView || !Platform.isMobile) return;
+
+		this.touchHandlerStart = (e: TouchEvent) => {
+			if (e.touches.length !== 1) return;
+			this.touchStartX = e.touches[0].clientX;
+			this.touchStartY = e.touches[0].clientY;
+			this.touchStartTime = Date.now();
+		};
+
+		this.touchHandlerEnd = (e: TouchEvent) => {
+			if (e.changedTouches.length !== 1) return;
+			const deltaX = e.changedTouches[0].clientX - this.touchStartX;
+			const deltaY = e.changedTouches[0].clientY - this.touchStartY;
+			const deltaTime = Date.now() - this.touchStartTime;
+
+			// 识别为滑动手势的阈值：
+			// 1. 水平滑动距离必须大于 50px
+			// 2. 垂直偏角不可太大 (deltaY 的绝对值小于 deltaX 的绝对值的 60%)
+			// 3. 时间在 400ms 以内（快速滑动）
+			if (
+				Math.abs(deltaX) > 50 &&
+				Math.abs(deltaY) < Math.abs(deltaX) * 0.6 &&
+				deltaTime < 400
+			) {
+				if (deltaX < 0) {
+					this.nextPage();
+				} else {
+					this.prevPage();
+				}
+			}
+		};
+
+		this.scrollView.addEventListener('touchstart', this.touchHandlerStart, { passive: true });
+		this.scrollView.addEventListener('touchend', this.touchHandlerEnd, { passive: true });
+	}
+
+	private teardownTouchListeners(): void {
+		if (this.scrollView) {
+			if (this.touchHandlerStart) {
+				this.scrollView.removeEventListener('touchstart', this.touchHandlerStart);
+				this.touchHandlerStart = null;
+			}
+			if (this.touchHandlerEnd) {
+				this.scrollView.removeEventListener('touchend', this.touchHandlerEnd);
+				this.touchHandlerEnd = null;
+			}
+		}
 	}
 }
