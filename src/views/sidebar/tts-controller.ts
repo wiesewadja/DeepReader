@@ -103,7 +103,7 @@ export class TTSController {
 		this.readingPlayer = null;
 
 		this.currentSource = 'message';
-		this.host.onReadingTTSStateChange?.('idle');
+		this.emitReadingTTSState('idle');
 		this.host.clearHighlight?.();
 		this.nextPageFirstStreamPromise = null;
 
@@ -217,7 +217,7 @@ export class TTSController {
 		this.messageAbort = new AbortController();
 
 		// 通知 UI 显示 loading 状态
-		this.host.messageList?.updateTTSState(messageId, 'tts_loading');
+		this.emitMessageTTSState(messageId, 'tts_loading');
 
 		try {
 			// 清洗文本：去除 Markdown 标记、wiki-link 等
@@ -257,7 +257,7 @@ export class TTSController {
 
 				// 通知 UI 进入 playing 状态（仅首次）
 				if (paraIndex === 0) {
-					this.host.messageList?.updateTTSState(messageId, 'playing');
+					this.emitMessageTTSState(messageId, 'playing');
 				}
 
 				// 流式合成
@@ -318,10 +318,27 @@ export class TTSController {
 			) {
 				const msg = this.host.messageList?.getMessage(messageId);
 				msg?.highlightTTSProgress?.(-1);
-				this.host.messageList?.updateTTSState(messageId, 'idle');
+				this.emitMessageTTSState(messageId, 'idle');
 				this.messageStreamingId = null;
 			}
 		}
+	}
+
+	/** 通知消息朗读状态：更新 messageList UI + 联动悬浮球朗读动效 */
+	private emitMessageTTSState(messageId: string, state: TTSPlayState): void {
+		this.host.messageList?.updateTTSState(messageId, state);
+		this.notifyXitongReading(state);
+	}
+
+	/** 通知原文朗读状态：转发 host 回调 + 联动悬浮球朗读动效 */
+	private emitReadingTTSState(state: TTSPlayState): void {
+		this.host.onReadingTTSStateChange?.(state);
+		this.notifyXitongReading(state);
+	}
+
+	/** 悬浮球朗读动效：仅 playing 时点亮，其余状态关闭 */
+	private notifyXitongReading(state: TTSPlayState): void {
+		this.host.plugin.readingModeService?.setXitongReading(state === 'playing');
 	}
 
 	/** 停止消息流式朗读（完全停止，重置所有状态） */
@@ -343,12 +360,12 @@ export class TTSController {
 			// 恢复
 			this.messagePaused = false;
 			this.messagePlayer?.resume();
-			this.host.messageList?.updateTTSState(this.messageStreamingId!, 'playing');
+			this.emitMessageTTSState(this.messageStreamingId!, 'playing');
 		} else {
 			// 暂停
 			this.messagePaused = true;
 			this.messagePlayer?.pause();
-			this.host.messageList?.updateTTSState(this.messageStreamingId!, 'paused');
+			this.emitMessageTTSState(this.messageStreamingId!, 'paused');
 		}
 	}
 
@@ -378,7 +395,7 @@ export class TTSController {
 		this.currentSource = 'reading';
 		this.readingAbort = new AbortController();
 		this.readingClient = this.initReadingClient();
-		this.host.onReadingTTSStateChange?.('tts_loading');
+		this.emitReadingTTSState('tts_loading');
 
 		const player = new PCMStreamPlayer();
 		this.readingPlayer = player;
@@ -397,7 +414,7 @@ export class TTSController {
 		} finally {
 			if (this.currentSource === 'reading') {
 				this.currentSource = 'message';
-				this.host.onReadingTTSStateChange?.('idle');
+				this.emitReadingTTSState('idle');
 				this.host.clearHighlight?.();
 			}
 			player.stop();
@@ -421,7 +438,7 @@ export class TTSController {
 			return;
 		}
 
-		this.host.onReadingTTSStateChange?.('playing');
+		this.emitReadingTTSState('playing');
 
 		try {
 			const stream = this.readingClient.synthesizeStream(
@@ -467,7 +484,7 @@ export class TTSController {
 			return;
 		}
 
-		this.host.onReadingTTSStateChange?.('playing');
+		this.emitReadingTTSState('playing');
 
 		try {
 			// 预处理所有段落文本（一次遍历，避免多次 preprocessForTTS）

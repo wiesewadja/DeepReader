@@ -10,6 +10,7 @@ export class XitongFloatWidget {
 	private badgeEl: HTMLElement | null = null;
 	private hasUnread: boolean = false;
 	private isThinking: boolean = false;
+	private isReading: boolean = false;
 
 	constructor(
 		private app: App,
@@ -73,14 +74,17 @@ export class XitongFloatWidget {
 		this.isThinking = thinking;
 		if (thinking) {
 			this.hasUnread = false;
-			this.mascotFace?.setExpression('thinking');
-			this.widgetEl?.classList.add('is-thinking');
+			// 朗读中不覆盖 reading 视觉（字段照常更新，退出朗读时回退会用到）
+			if (!this.isReading) {
+				this.mascotFace?.setExpression('thinking');
+				this.widgetEl?.classList.add('is-thinking');
+			}
 			if (this.badgeEl) {
 				this.badgeEl.style.display = 'none';
 			}
 		} else {
 			this.widgetEl?.classList.remove('is-thinking');
-			if (!this.hasUnread) {
+			if (!this.hasUnread && !this.isReading) {
 				this.mascotFace?.setExpression('idle');
 			}
 		}
@@ -89,8 +93,10 @@ export class XitongFloatWidget {
 	setUnread(unread: boolean): void {
 		this.hasUnread = unread;
 		if (unread) {
-			this.mascotFace?.setExpression('curious');
-			this.widgetEl?.classList.add('has-unread');
+			if (!this.isReading) {
+				this.mascotFace?.setExpression('curious');
+				this.widgetEl?.classList.add('has-unread');
+			}
 			if (this.badgeEl) {
 				this.badgeEl.style.display = 'block';
 			}
@@ -99,7 +105,29 @@ export class XitongFloatWidget {
 			if (this.badgeEl) {
 				this.badgeEl.style.display = 'none';
 			}
-			if (!this.isThinking) {
+			if (!this.isThinking && !this.isReading) {
+				this.mascotFace?.setExpression('idle');
+			}
+		}
+	}
+
+	setReading(reading: boolean): void {
+		this.isReading = reading;
+		if (reading) {
+			// reading 优先级最高，独占视觉（移除其他态 class 避免动画冲突）
+			this.widgetEl?.classList.remove('is-thinking', 'has-unread');
+			this.widgetEl?.classList.add('is-reading');
+			this.mascotFace?.setExpression('reading');
+		} else {
+			this.widgetEl?.classList.remove('is-reading');
+			// 回退：thinking > unread > idle
+			if (this.isThinking) {
+				this.widgetEl?.classList.add('is-thinking');
+				this.mascotFace?.setExpression('thinking');
+			} else if (this.hasUnread) {
+				this.widgetEl?.classList.add('has-unread');
+				this.mascotFace?.setExpression('curious');
+			} else {
 				this.mascotFace?.setExpression('idle');
 			}
 		}

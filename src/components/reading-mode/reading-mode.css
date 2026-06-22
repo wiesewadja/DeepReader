@@ -776,6 +776,53 @@
     }
 }
 
+/* 朗读态：柔和光晕呼吸（比 thinking 更慢更柔，区分语义） */
+.deeppdf-xitong-float-widget.is-reading {
+    animation: reading-glow 1.8s infinite ease-in-out;
+}
+
+@keyframes reading-glow {
+    0%, 100% {
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15))
+                drop-shadow(0 0 4px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.35));
+    }
+    50% {
+        filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.2))
+                drop-shadow(0 0 14px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.7));
+    }
+}
+
+/* 音波扩散：两层圆环从头像向外扩散淡出，错相位 0.9s */
+.deeppdf-xitong-float-widget.is-reading::before,
+.deeppdf-xitong-float-widget.is-reading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 48px;
+    height: 48px;
+    margin: -24px 0 0 -24px;
+    border-radius: 50%;
+    border: 2px solid rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.5);
+    pointer-events: none;
+    animation: reading-wave 1.8s infinite ease-out;
+}
+
+.deeppdf-xitong-float-widget.is-reading::after {
+    animation-delay: 0.9s;
+}
+
+@keyframes reading-wave {
+    0% {
+        transform: scale(1);
+        opacity: 0.6;
+    }
+    100% {
+        transform: scale(1.8);
+        opacity: 0;
+    }
+}
+
 /* 提问弹窗 (Minimalist Pill Style) */
 .deeppdf-xitong-float-popup {
     position: absolute;

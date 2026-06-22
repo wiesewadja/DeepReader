@@ -520,6 +520,11 @@ export class ReadingModeService implements ScrollPatchService {
 		this.xitongWidget?.setThinking(false);
 	}
 
+	/** TTS 朗读状态变化时驱动悬浮球朗读动效（message + reading 两路朗读统一入口） */
+	setXitongReading(reading: boolean): void {
+		this.xitongWidget?.setReading(reading);
+	}
+
 
 	/**
 	 * 获取当前视图的 .markdown-preview-view 元素（实际阅读区域）
