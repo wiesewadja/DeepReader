@@ -150,16 +150,17 @@ SVG 模板内部颜色使用 CSS 变量，例如 `fill="var(--xitong-bg)"`、 `s
   - 渲染为块级元素 `div.xitong-illustration-hero`。
 
 - **小图（type="inline"）**：
-  - 高度固定 `36px`，宽度按 SVG 自身比例自适应，最大 `120px`。
-  - 出现在段落之间，作为主题切换的视觉间隔。
-  - 左浮动或 inline-block，右侧留出 `10px` 与文字保持呼吸感。
-  - 渲染为内联元素 `span.xitong-illustration-inline`。
+  - 固定 `36px × 36px` 徽章，出现在段落开头作为主题切换的视觉标记。
+  - 左浮动，右侧留出 `10px`、下方留出 `4px` 与文字保持呼吸感。
+  - 渲染为内联块元素 `.xitong-illustration-inline`。
   - 触发条件：回复正文自然分成的段落数 ≥ 3，且检测到情绪/主题转换信号（如"另一方面""不过""其次"等转折词）。
 
-- **占位符替换规则**：
-  - `<illustration type="hero" ... />` 替换为块级 `div`，类名 `.xitong-illustration-hero`。
-  - `<illustration type="inline" ... />` 替换为内联 `span`，类名 `.xitong-illustration-inline`。
-  - 替换发生在 `MarkdownRenderer.render` 之前，确保 Markdown 不会把占位符当作普通文本。
+- **占位符渲染流程（preprocess + hydrate）**：
+  1. `formatter` 输出 XML 自闭合占位符：`<illustration type="hero" scene="..." motifs="..." quote="..." />`。
+  2. 前端在调用 `MarkdownRenderer.render` 之前，先通过 `preprocessIllustrationTags()` 把占位符替换为不会破坏 Markdown 语法的 `<div class="xitong-illustration-placeholder" data-type="..." data-scene="..." data-motifs="..." data-quote="..."></div>`。
+  3. `MarkdownRenderer.render` 渲染正文 + 占位 div。
+  4. 渲染完成后，通过 `hydrateIllustrationPlaceholders()` 读取占位 div 的 `data-*` 属性，调用 `renderIllustration()` 生成 SVG 并填充到占位 div 中。
+  5. 这种方式避免了对整个消息容器做 `innerHTML` 全局替换，也避免 XML 标签在 Markdown 解析阶段被误处理。
 
 ### C. SVG 内部图文排版
 
@@ -243,6 +244,6 @@ SVG 模板内部颜色使用 CSS 变量，例如 `fill="var(--xitong-bg)"`、 `s
 
 ## Open Questions
 
-1. 是否需要为每个 motif 设计独立的小图 icon，还是只在主横幅中叠加 motifs？
+1. ~~是否需要为每个 motif 设计独立的小图 icon，还是只在主横幅中叠加 motifs？~~ **已决定：motifs 只在主横幅中叠加；inline 小图使用 36×36 场景徽章。**
 2. ~~quote 是否允许 LLM 从回复正文首句截取，还是必须由独立 prompt 提炼？~~ **已决定：首句截取或默认金句，零 LLM 调用。**
-3. 小图触发条件是否严格按"3 个段落"，还是由 formatter 根据内容结构决定？
+3. ~~小图触发条件是否严格按"3 个段落"，还是由 formatter 根据内容结构决定？~~ **已决定：段落数 ≥ 3 且检测到转折词时触发，由 formatter 在注入占位符时判断。**
