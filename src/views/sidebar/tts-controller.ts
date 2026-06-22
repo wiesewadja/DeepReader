@@ -209,7 +209,7 @@ export class TTSController {
 		const client = new TTSClient({
 			apiKey: ttsConfig.apiKey,
 			baseUrl: ttsConfig.baseUrl,
-			model: ttsConfig.model || 'mimo-v2.5-tts',
+			model: 'mimo-v2.5-tts', // 流式固定预置音色（voicedesign 流式未上线，同 initReadingClient）
 		});
 
 		const player = new PCMStreamPlayer();
