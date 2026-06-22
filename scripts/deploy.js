@@ -75,10 +75,10 @@ const targets = args.length > 0 ? args : ['dev'];
 
 console.log('🚀 DeepReader 插件部署\n');
 
-// 执行构建
-console.log('📦 正在构建...');
+// 类型检查 + 版本同步 + css（与 target 无关，一次性；bundle 在 per-target 循环里按 target 构建）
+console.log('📦 正在构建（类型检查 + 资源）...');
 try {
-  execSync('npm run build', { stdio: 'inherit', cwd: path.join(__dirname, '..') });
+  execSync('npm run build:check', { stdio: 'inherit', cwd: path.join(__dirname, '..') });
   console.log('');
 } catch (error) {
   console.error('❌ 构建失败');
@@ -171,6 +171,22 @@ for (const targetName of targets) {
   if (!target) {
     console.log(`⚠️  未知目标: ${targetName}，跳过`);
     continue;
+  }
+
+  // per-target bundle：
+  //   dev  = test-vault 测试版本 → 保留内部命令（微信读书快捷入口 + 调试/测试命令），测试照常跑
+  //   daily= 正式版本（坚果云 / GitHub release）→ 剥离内部命令，不暴露给最终用户
+  const internalCommands = targetName === 'dev' ? 'true' : 'false';
+  console.log(`📦 构建 bundle (target=${targetName}, 内部命令=${internalCommands === 'true' ? '保留' : '剥离'})...`);
+  try {
+    execSync('npm run build:bundle', {
+      stdio: 'inherit',
+      cwd: path.join(__dirname, '..'),
+      env: { ...process.env, INTERNAL_COMMANDS: internalCommands },
+    });
+  } catch (error) {
+    console.error(`❌ ${targetName} bundle 构建失败`);
+    process.exit(1);
   }
 
   // dev 目标注入特性版本号，方便用户在 Obsidian 插件列表里看到部署生效

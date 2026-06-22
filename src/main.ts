@@ -218,15 +218,6 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             callback: () => this.openLibraryView()
         });
 
-        // 调试命令：发送测试消息
-        this.addCommand({
-            id: "debug-send-message",
-            name: "Debug: Send test message",
-            callback: () => {
-                this.sendTestMessage("这本书主要讲了什么");
-            }
-        });
-
         // 快速配置命令
         this.addCommand({
             id: "open-quick-setup",
@@ -238,149 +229,6 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                     setting.openTabById(this.manifest.id);
                 }
             },
-        });
-
-        // 调试命令：测试分析阅读工具
-        this.addCommand({
-            id: "debug-analytical-reading",
-            name: "Debug: Test analytical reading tools",
-            callback: () => {
-                this.sendTestMessage("分析这本书的整体结构和纲要");
-            }
-        });
-
-        // 调试命令：测试主题阅读
-        this.addCommand({
-            id: "debug-syntopical-reading",
-            name: "Debug: Test syntopical reading",
-            callback: () => {
-                this.sendTestMessage("在已读书中搜索关于经济危机的内容");
-            }
-        });
-
-        // 调试命令：测试知识图谱/思维导图 skill（用于性能分析）
-        this.addCommand({
-            id: "debug-mindmap-skill",
-            name: "Debug: Test mindmap skill",
-            callback: () => {
-                this.sendTestMessage("帮我整理这本书的整体框架，画一个思维导图");
-            }
-        });
-
-        // 调试命令：测试知识卡片 skill（用于性能分析 write_note）
-        this.addCommand({
-            id: "debug-knowledge-cards",
-            name: "Debug: Test knowledge cards skill",
-            callback: () => {
-                this.sendTestMessage("帮我提取这本书的核心概念，生成知识卡片");
-            }
-        });
-
-        // PageIndex 测试命令 - 测试核心功能集成
-        this.addCommand({
-            id: "test-pageindex",
-            name: "Test: PageIndex Core Features",
-            callback: async () => {
-                try {
-                    new Notice("正在测试 PageIndex 核心功能...");
-                    log('[PageIndex] Testing core features...');
-                    
-                    // 创建 PageIndex 实例
-                    const pageIndex = new PageIndex({
-                        model: 'gpt-4o',
-                        addNodeId: true,
-                        addNodeSummary: true,
-                        onProgress: (progress: ProgressInfo) => {
-                            log(`[PageIndex] ${progress.stage}: ${progress.percent}% - ${progress.message}`);
-                        }
-                    });
-                    
-                    // 测试 1: 验证实例创建
-                    log('[PageIndex] ✓ PageIndex instance created');
-                    
-                    // 测试 2: 验证类型导入
-                    const testOptions = {
-                        model: 'test-model',
-                        addNodeId: true,
-                    };
-                    log('[PageIndex] ✓ Type imports working');
-                    
-                    new Notice("PageIndex 核心功能测试成功！\n✓ 实例创建\n✓ 类型导入\n✓ API 可用");
-                    log('[PageIndex] ✓ All core features working');
-                    
-                } catch (err) {
-                    const errorMsg = err instanceof Error ? err.message : String(err);
-                    new Notice(`PageIndex 测试失败: ${errorMsg}`);
-                    log.error('[PageIndex] Test failed:', err);
-                }
-            }
-        });
-
-        // PageIndex 示例命令 - 处理 PDF 文件
-        this.addCommand({
-            id: "process-pdf-with-pageindex",
-            name: "Process PDF with PageIndex",
-            checkCallback: (checking: boolean) => {
-                const file = this.app.workspace.getActiveFile();
-                if (file && file.extension === 'pdf') {
-                    if (!checking) {
-                        this.processPdfWithPageIndex(file.path);
-                    }
-                    return true;
-                }
-                return false;
-            }
-        });
-
-
-        // 调试命令：抓取系统提示词
-        this.addCommand({
-            id: "dump-system-prompt",
-            name: "Debug: Dump System Prompt",
-            callback: async () => {
-                try {
-                    const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
-                    if (leaves.length === 0) {
-                        new Notice("请先打开 DeepReader 侧边栏");
-                        return;
-                    }
-
-                    const sidebarView = leaves[0].view as SidebarView;
-                    const currentBook = sidebarView.getCurrentBookInfo?.();
-
-                    const bookTitle = currentBook?.title ?? '';
-                    new Notice(bookTitle ? `正在抓取《${bookTitle}》的系统提示词...` : '正在抓取阅读顾问模式的系统提示词...');
-
-                    const agent = await this.getFrontendAgent();
-                    const systemPrompt = await agent.getSystemPromptAsync(
-                        { title: bookTitle || undefined, page_count: currentBook?.page_count },
-                        currentBook?.docDescription ?? undefined
-                    );
-
-                    const debugDir = 'DeepReader/debug';
-                    const dirExists = await this.app.vault.adapter.exists(debugDir);
-                    if (!dirExists) {
-                        await this.app.vault.createFolder(debugDir);
-                    }
-
-                    const filename = `system-prompt-${Date.now()}.md`;
-                    const bookInfo = `<!-- 书籍: ${currentBook?.title} -->\n<!-- 生成时间: ${new Date().toISOString()} -->\n\n`;
-                    await this.app.vault.create(`${debugDir}/${filename}`, bookInfo + systemPrompt);
-
-                    serviceLog('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
-                    serviceLog(`%c系统提示词 - 《${currentBook?.title}》`, 'color: #4CAF50; font-weight: bold; font-size: 14px');
-                    serviceLog('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
-                    serviceLog('%c' + systemPrompt, 'color: #2196F3; font-family: monospace; font-size: 12px');
-                    serviceLog('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
-                    serviceLog(`%c提示词长度: ${systemPrompt.length} 字符`, 'color: #9E9E9E');
-
-                    new Notice(`系统提示词已保存到 DeepReader/debug/${filename}`);
-                } catch (err) {
-                    const msg = err instanceof Error ? err.message : String(err);
-                    new Notice(`抓取失败: ${msg}`);
-                    serviceLog.error('[DumpSystemPrompt] 错误:', err);
-                }
-            }
         });
 
         // 注册 URI 协议处理器 - 单书籍对话
@@ -463,7 +311,41 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         this.readingModeService.start();
         serviceLog('[DeepPDF] Reading mode service started');
 
-        // ═══ 微信读书命令 ═══
+        this.addCommand({
+            id: "tts-reading-toggle",
+            name: "朗读原文：开始/停止",
+            callback: () => {
+                const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                if (sidebarLeaves.length > 0) {
+                    const view = sidebarLeaves[0].view as SidebarView;
+                    view.toggleReadingTTS();
+                }
+            },
+        });
+
+        // ── E2E 评估模式后门 API（仅 evalMode=true + EVAL_MODE 环境变量时注册）──
+        // E2E 测试通过 executeObsidian 动态注册 startQnA/pollResult，此处仅为守卫标记
+        if (this.settings.evalMode && process.env.EVAL_MODE === 'true') {
+            serviceLog('[DeepPDF] Eval mode active (EVAL_MODE=true)');
+        }
+
+        // 注册内部命令（微信读书快捷入口 + 调试/测试）—— 仅 DEV_COMMANDS='true' 构建注册
+        this.registerDevCommands();
+
+        // ═══ 启动微信读书定时同步 ═══
+        this.setupWereadScheduledSync();
+    }
+
+    /**
+     * 注册内部命令（微信读书快捷入口 + 调试/测试命令）。
+     * 仅 dev 构建（DEV_COMMANDS='true'，即 test-vault 测试版本）注册；
+     * 正式版本（daily / GitHub release）由 esbuild 死代码消除，命令面板不可见。
+     * 微信读书功能在设置页 weread-section 已有完整 UI，此处仅为开发/测试快捷入口。
+     */
+    private registerDevCommands(): void {
+        if (process.env.DEV_COMMANDS !== 'true') return;
+
+        // ═══ 微信读书（设置页 weread-section 已有 UI，此处为调试快捷入口）═══
         this.addCommand({
             id: "weread-login",
             name: "微信读书：打开设置配置 API Key",
@@ -486,14 +368,12 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                     let lastProgressNotice = 0;
                     const result = await svc.sync(false, {
                         onProgress: (p) => {
-                            // phase 切换时通知
                             if (p.phase !== lastPhase) {
                                 lastPhase = p.phase;
                                 if (p.phase === 'fetching-books') {
                                     new Notice(`开始同步微信读书，共 ${p.total} 本`, 5000);
                                 }
                             }
-                            // fetching-books 阶段每 5 本或最后一本通知一次
                             if (p.phase === 'fetching-books' && p.total > 0) {
                                 const now = Date.now();
                                 if (p.current % 5 === 0 || p.current === p.total || now - lastProgressNotice > 10000) {
@@ -591,26 +471,149 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             },
         });
 
+        // ═══ 调试 / 测试 ═══
         this.addCommand({
-            id: "tts-reading-toggle",
-            name: "朗读原文：开始/停止",
+            id: "debug-send-message",
+            name: "Debug: Send test message",
             callback: () => {
-                const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
-                if (sidebarLeaves.length > 0) {
-                    const view = sidebarLeaves[0].view as SidebarView;
-                    view.toggleReadingTTS();
-                }
-            },
+                this.sendTestMessage("这本书主要讲了什么");
+            }
         });
 
-        // ── E2E 评估模式后门 API（仅 evalMode=true + EVAL_MODE 环境变量时注册）──
-        // E2E 测试通过 executeObsidian 动态注册 startQnA/pollResult，此处仅为守卫标记
-        if (this.settings.evalMode && process.env.EVAL_MODE === 'true') {
-            serviceLog('[DeepPDF] Eval mode active (EVAL_MODE=true)');
-        }
+        this.addCommand({
+            id: "debug-analytical-reading",
+            name: "Debug: Test analytical reading tools",
+            callback: () => {
+                this.sendTestMessage("分析这本书的整体结构和纲要");
+            }
+        });
 
-        // ═══ 启动微信读书定时同步 ═══
-        this.setupWereadScheduledSync();
+        this.addCommand({
+            id: "debug-syntopical-reading",
+            name: "Debug: Test syntopical reading",
+            callback: () => {
+                this.sendTestMessage("在已读书中搜索关于经济危机的内容");
+            }
+        });
+
+        this.addCommand({
+            id: "debug-mindmap-skill",
+            name: "Debug: Test mindmap skill",
+            callback: () => {
+                this.sendTestMessage("帮我整理这本书的整体框架，画一个思维导图");
+            }
+        });
+
+        this.addCommand({
+            id: "debug-knowledge-cards",
+            name: "Debug: Test knowledge cards skill",
+            callback: () => {
+                this.sendTestMessage("帮我提取这本书的核心概念，生成知识卡片");
+            }
+        });
+
+        this.addCommand({
+            id: "test-pageindex",
+            name: "Test: PageIndex Core Features",
+            callback: async () => {
+                try {
+                    new Notice("正在测试 PageIndex 核心功能...");
+                    log('[PageIndex] Testing core features...');
+
+                    // 创建 PageIndex 实例
+                    const pageIndex = new PageIndex({
+                        model: 'gpt-4o',
+                        addNodeId: true,
+                        addNodeSummary: true,
+                        onProgress: (progress: ProgressInfo) => {
+                            log(`[PageIndex] ${progress.stage}: ${progress.percent}% - ${progress.message}`);
+                        }
+                    });
+
+                    // 测试 1: 验证实例创建
+                    log('[PageIndex] ✓ PageIndex instance created');
+
+                    // 测试 2: 验证类型导入
+                    const testOptions = {
+                        model: 'test-model',
+                        addNodeId: true,
+                    };
+                    log('[PageIndex] ✓ Type imports working');
+
+                    new Notice("PageIndex 核心功能测试成功！\n✓ 实例创建\n✓ 类型导入\n✓ API 可用");
+                    log('[PageIndex] ✓ All core features working');
+
+                } catch (err) {
+                    const errorMsg = err instanceof Error ? err.message : String(err);
+                    new Notice(`PageIndex 测试失败: ${errorMsg}`);
+                    log.error('[PageIndex] Test failed:', err);
+                }
+            }
+        });
+
+        this.addCommand({
+            id: "process-pdf-with-pageindex",
+            name: "Process PDF with PageIndex",
+            checkCallback: (checking: boolean) => {
+                const file = this.app.workspace.getActiveFile();
+                if (file && file.extension === 'pdf') {
+                    if (!checking) {
+                        this.processPdfWithPageIndex(file.path);
+                    }
+                    return true;
+                }
+                return false;
+            }
+        });
+
+        this.addCommand({
+            id: "dump-system-prompt",
+            name: "Debug: Dump System Prompt",
+            callback: async () => {
+                try {
+                    const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                    if (leaves.length === 0) {
+                        new Notice("请先打开 DeepReader 侧边栏");
+                        return;
+                    }
+
+                    const sidebarView = leaves[0].view as SidebarView;
+                    const currentBook = sidebarView.getCurrentBookInfo?.();
+
+                    const bookTitle = currentBook?.title ?? '';
+                    new Notice(bookTitle ? `正在抓取《${bookTitle}》的系统提示词...` : '正在抓取阅读顾问模式的系统提示词...');
+
+                    const agent = await this.getFrontendAgent();
+                    const systemPrompt = await agent.getSystemPromptAsync(
+                        { title: bookTitle || undefined, page_count: currentBook?.page_count },
+                        currentBook?.docDescription ?? undefined
+                    );
+
+                    const debugDir = 'DeepReader/debug';
+                    const dirExists = await this.app.vault.adapter.exists(debugDir);
+                    if (!dirExists) {
+                        await this.app.vault.createFolder(debugDir);
+                    }
+
+                    const filename = `system-prompt-${Date.now()}.md`;
+                    const bookInfo = `<!-- 书籍: ${currentBook?.title} -->\n<!-- 生成时间: ${new Date().toISOString()} -->\n\n`;
+                    await this.app.vault.create(`${debugDir}/${filename}`, bookInfo + systemPrompt);
+
+                    serviceLog('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
+                    serviceLog(`%c系统提示词 - 《${currentBook?.title}》`, 'color: #4CAF50; font-weight: bold; font-size: 14px');
+                    serviceLog('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
+                    serviceLog('%c' + systemPrompt, 'color: #2196F3; font-family: monospace; font-size: 12px');
+                    serviceLog('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
+                    serviceLog(`%c提示词长度: ${systemPrompt.length} 字符`, 'color: #9E9E9E');
+
+                    new Notice(`系统提示词已保存到 DeepReader/debug/${filename}`);
+                } catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    new Notice(`抓取失败: ${msg}`);
+                    serviceLog.error('[DumpSystemPrompt] 错误:', err);
+                }
+            }
+        });
     }
 
     /**

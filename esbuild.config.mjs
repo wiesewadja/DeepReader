@@ -18,9 +18,20 @@ try{if(typeof require!=='undefined'&&typeof require.ensure==='undefined'){requir
 
 const prod = (process.argv[2] === "production");
 
+// 内部命令（微信读书快捷入口 + 调试/测试命令）剥离开关。
+// 值为字符串 'true' | 'false'（非 boolean），经 JSON.stringify 注入为 esbuild define 字面量：
+// - INTERNAL_COMMANDS 显式优先（deploy.js 按 target 注入：dev=保留 / daily=剥离）
+// - 未设时 fail-safe：production 构建剥离（正式版语义），dev watch 保留
+const internalCommandsFlag = process.env.INTERNAL_COMMANDS !== undefined
+    ? process.env.INTERNAL_COMMANDS
+    : (prod ? 'false' : 'true');
+
 const context = await esbuild.context({
     banner: {
         js: banner,
+    },
+    define: {
+        'process.env.DEV_COMMANDS': JSON.stringify(internalCommandsFlag),
     },
     entryPoints: ["src/main.ts"],
     bundle: true,

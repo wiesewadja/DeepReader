@@ -5,7 +5,9 @@
   "main": "bin/main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "npm run sync-version && npm run copy-css && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "build": "npm run build:check && npm run build:bundle",
+    "build:check": "npm run sync-version && npm run copy-css && tsc -noEmit -skipLibCheck",
+    "build:bundle": "node esbuild.config.mjs production",
     "sync-version": "node scripts/sync-version.js",
     "copy-css": "node scripts/build-css.js",
     "test": "vitest",
