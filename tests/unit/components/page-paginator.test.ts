@@ -694,3 +694,138 @@ describe('PagePaginator (multi-column) - 边界与状态发散', () => {
 		}
 	});
 });
+
+describe('PagePaginator - Dual-Page Mode', () => {
+	let onNavigatePrev: ReturnType<typeof vi.fn>;
+	let onNavigateNext: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		(global as any).ResizeObserver = MockResizeObserver;
+		onNavigatePrev = vi.fn().mockResolvedValue(true);
+		onNavigateNext = vi.fn().mockResolvedValue(true);
+		// Mock the global app for isViewportFullyExpanded
+		(global as any).app = {
+			workspace: {
+				rootSplit: { children: [{}] },
+				leftSplit: { collapsed: true },
+				rightSplit: { collapsed: true },
+			},
+		};
+	});
+
+	afterEach(() => {
+		document.body.innerHTML = '';
+		delete (global as any).ResizeObserver;
+		delete (global as any).app;
+		vi.restoreAllMocks();
+	});
+
+	function makeActiveDualPaginator(args: {
+		clientWidth: number;
+		scrollWidth: number;
+		scrollLeft: number;
+		totalPages: number;
+		currentPage: number;
+		autoDualPage?: boolean;
+	}): { paginator: PagePaginator; scrollView: HTMLElement } {
+		const { sizer, scrollView } = createMultiColumnDom({
+			clientWidth: args.clientWidth,
+			scrollWidth: args.scrollWidth,
+			scrollLeft: args.scrollLeft,
+		});
+		const paginator = new PagePaginator({
+			container: sizer,
+			onNavigatePrev,
+			onNavigateNext,
+			hasPrevChapter: () => true,
+			hasNextChapter: () => true,
+			autoDualPage: args.autoDualPage ?? true,
+		});
+		(paginator as any)._isActive = true;
+		(paginator as any)._totalPages = args.totalPages;
+		(paginator as any)._currentPage = args.currentPage;
+		return { paginator, scrollView };
+	}
+
+	it('should identify dual-page mode when layout is expanded and clientWidth >= 1400', () => {
+		const { paginator } = makeActiveDualPaginator({
+			clientWidth: 1500,
+			scrollWidth: 3000,
+			scrollLeft: 0,
+			totalPages: 4,
+			currentPage: 1,
+		});
+		expect(paginator.isDualPageMode).toBe(true);
+	});
+
+	it('should NOT identify dual-page mode when clientWidth < 1400', () => {
+		const { paginator } = makeActiveDualPaginator({
+			clientWidth: 1200,
+			scrollWidth: 2400,
+			scrollLeft: 0,
+			totalPages: 4,
+			currentPage: 1,
+		});
+		expect(paginator.isDualPageMode).toBe(false);
+	});
+
+	it('should NOT identify dual-page mode when autoDualPage option is false', () => {
+		const { paginator } = makeActiveDualPaginator({
+			clientWidth: 1500,
+			scrollWidth: 3000,
+			scrollLeft: 0,
+			totalPages: 4,
+			currentPage: 1,
+			autoDualPage: false,
+		});
+		expect(paginator.isDualPageMode).toBe(false);
+	});
+
+	it('countActualPages should double logic pages in dual page mode', () => {
+		const { paginator } = makeActiveDualPaginator({
+			clientWidth: 1600,
+			scrollWidth: 3200, // 2 screens
+			scrollLeft: 0,
+			totalPages: 0,
+			currentPage: 1,
+		});
+		// Since each page is half width (800px), 3200px scrollWidth / 800px pageSize = 4 logical pages
+		expect((paginator as any).countActualPages()).toBe(4);
+	});
+
+	it('nextPage/prevPage should jump by 2 pages in dual page mode', () => {
+		const { paginator, scrollView } = makeActiveDualPaginator({
+			clientWidth: 1600,
+			scrollWidth: 3200,
+			scrollLeft: 0,
+			totalPages: 4,
+			currentPage: 1,
+		});
+		const scrollBySpy = vi.spyOn(scrollView, 'scrollBy').mockImplementation(() => {});
+
+		paginator.nextPage();
+		expect(paginator.getCurrentPage()).toBe(3);
+
+		// Simulate scroll to nextPage (non-zero scrollLeft)
+		scrollView.scrollLeft = 1600;
+
+		paginator.prevPage();
+		expect(paginator.getCurrentPage()).toBe(1);
+	});
+
+	it('updateControls should show left-right range in dual-page mode', () => {
+		const { paginator } = makeActiveDualPaginator({
+			clientWidth: 1600,
+			scrollWidth: 3200,
+			scrollLeft: 0,
+			totalPages: 4,
+			currentPage: 1,
+		});
+		const mockIndicator = document.createElement('span');
+		(paginator as any).pageIndicator = mockIndicator;
+
+		(paginator as any).updateControls();
+		expect(mockIndicator.textContent).toBe('1-2 / 4');
+	});
+});
+

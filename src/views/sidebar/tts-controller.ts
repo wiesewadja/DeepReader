@@ -35,6 +35,8 @@ export interface TTSControllerHost {
 	getCurrentPage?: () => number;
 	/** 获取指定或当前页段落列表（元素 + 文本） */
 	getPageParagraphs?: (pageNumber?: number) => { element: HTMLElement; text: string }[];
+	/** 是否处于双页阅读模式 */
+	isDualPageMode?: () => boolean;
 	/** 高亮段落元素 */
 	highlightElement?: (el: HTMLElement) => void;
 	/** 清除段落高亮 */
@@ -574,7 +576,8 @@ export class TTSController {
 					currentStream = null;
 					// 如果已到本页最后一段，在后台预取下一页的第一段，消除翻页停顿
 					if (i === paragraphs.length - 1) {
-						const nextPageNumber = (this.host.getCurrentPage?.() ?? 1) + 1;
+						const isDual = this.host.isDualPageMode?.() ?? false;
+						const nextPageNumber = (this.host.getCurrentPage?.() ?? 1) + (isDual ? 2 : 1);
 						const nextPageParagraphs = this.host.getPageParagraphs?.(nextPageNumber) || [];
 						if (nextPageParagraphs.length > 0 && nextPageParagraphs[0].text) {
 							const cleanText = preprocessForTTS(nextPageParagraphs[0].text).trim();

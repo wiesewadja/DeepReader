@@ -902,4 +902,14 @@
     pointer-events: none;
 }
 
+/* ==================== 双页布局样式 ==================== */
+.deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view.deeppdf-dual-page {
+    column-count: 2 !important;
+    column-width: auto !important;
+    column-gap: 60px !important;
+    padding-left: 50px !important;
+    padding-right: 50px !important;
+}
+
+
 

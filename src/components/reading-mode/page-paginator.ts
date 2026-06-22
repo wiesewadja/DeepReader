@@ -8,6 +8,7 @@
 
 import { Platform } from 'obsidian';
 import { serviceLog } from '../../utils/logger.js';
+import { isViewportFullyExpanded } from './viewport-state.js';
 
 export interface PagePaginatorOptions {
 	container: HTMLElement;                    // .markdown-preview-sizer
@@ -17,6 +18,7 @@ export interface PagePaginatorOptions {
 	hasNextChapter: () => boolean;             // 是否有下一章
 	chapterName?: string;                      // 当前章节名称
 	bookName?: string;                         // 当前书名
+	autoDualPage?: boolean;                    // 是否开启自动双页
 	onPageChange?: (page: number, totalPages: number) => void;
 }
 
@@ -77,6 +79,14 @@ export class PagePaginator {
 	getTotalPages(): number { return this._totalPages; }
 	getCurrentPage(): number { return this._currentPage; }
 
+	get isDualPageMode(): boolean {
+		if (!this.scrollView) return false;
+		if (!this.options.autoDualPage) return false;
+		const app = (window as any).app;
+		if (!app) return false;
+		return isViewportFullyExpanded(app) && this.scrollView.clientWidth >= 1400;
+	}
+
 	/** 实时判断是否已滚动到最后一页(不依赖 _currentPage 缓存) */
 	isAtLastPage(): boolean {
 		if (!this._isActive || !this.scrollView) return false;
@@ -120,9 +130,10 @@ export class PagePaginator {
 			return allTexts.join('\n\n');
 		}
 
-		// 按页码比例计算当前页的段落范围
+		// 按页码比例计算当前页/屏的段落范围
+		const step = this.isDualPageMode ? 2 : 1;
 		const startIdx = Math.floor((currentPage - 1) * totalParagraphs / totalPages);
-		const endIdx = Math.floor(currentPage * totalParagraphs / totalPages);
+		const endIdx = Math.floor(Math.min(currentPage - 1 + step, totalPages) * totalParagraphs / totalPages);
 
 		return allTexts.slice(startIdx, endIdx).join('\n\n');
 	}
@@ -142,6 +153,7 @@ export class PagePaginator {
 
 		const containerRect = this.scrollView.getBoundingClientRect();
 		const scrollLeft = this.scrollView.scrollLeft;
+		const pageSize = this.isDualPageMode ? viewWidth / 2 : viewWidth;
 		const currentPage = pageNumber !== undefined ? pageNumber : this._currentPage;
 
 		return allParagraphs
@@ -153,10 +165,16 @@ export class PagePaginator {
 				// 元素在可滚动内容中的绝对水平位置
 				const absoluteLeft = rect.left - containerRect.left + scrollLeft;
 				// 计算它所在的页码 (1-based)，加 5px 容差防止边缘浮点误差
-				const page = Math.floor((absoluteLeft + 5) / viewWidth) + 1;
+				const page = Math.floor((absoluteLeft + 5) / pageSize) + 1;
 				return { element: el, text: el.textContent?.trim() || '', page };
 			})
-			.filter(p => p.page === currentPage && p.text.length > 0)
+			.filter(p => {
+				if (p.text.length === 0) return false;
+				if (this.isDualPageMode) {
+					return p.page === currentPage || p.page === currentPage + 1;
+				}
+				return p.page === currentPage;
+			})
 			.map(p => ({ element: p.element, text: p.text }));
 	}
 
@@ -242,6 +260,7 @@ export class PagePaginator {
 		// 延迟验证：multi-column 布局可能在初始化时尚未完全计算
 		this.verifyTimer = setTimeout(() => {
 			if (!this._isActive) return;
+			this.updateColumnSizing();
 			const newTotal = this.countActualPages();
 			if (newTotal !== this._totalPages) {
 				serviceLog(`[PagePaginator] 延迟校正: ${this._totalPages} → ${newTotal} 页`);
@@ -269,7 +288,8 @@ export class PagePaginator {
 		this.scrollView.scrollBy({ left: pageWidth, behavior: 'smooth' });
 		// 同步更新 _currentPage，确保 getPageParagraphs 等依赖它的方法
 		// 在 scroll 事件触发前也能读到正确的页码
-		this._currentPage = Math.min(this._currentPage + 1, this._totalPages);
+		const step = this.isDualPageMode ? 2 : 1;
+		this._currentPage = Math.min(this._currentPage + step, this._totalPages);
 		this.options.onPageChange?.(this._currentPage, this._totalPages);
 		this.forceRerender();
 		return true;
@@ -286,6 +306,9 @@ export class PagePaginator {
 
 		const pageWidth = this.scrollView.clientWidth;
 		this.scrollView.scrollBy({ left: -pageWidth, behavior: 'smooth' });
+		const step = this.isDualPageMode ? 2 : 1;
+		this._currentPage = Math.max(1, this._currentPage - step);
+		this.options.onPageChange?.(this._currentPage, this._totalPages);
 		this.forceRerender();
 		return true;
 	}
@@ -350,6 +373,7 @@ export class PagePaginator {
 			requestAnimationFrame(() => {
 				if (!this.scrollView) return;
 
+				this.updateColumnSizing();
 				this._totalPages = this.countActualPages();
 
 				this.options.onPageChange?.(this._currentPage, this._totalPages);
@@ -371,16 +395,18 @@ export class PagePaginator {
 		const viewWidth = this.scrollView.clientWidth;
 		if (viewWidth === 0) return 1;
 
+		const pageSize = this.isDualPageMode ? viewWidth / 2 : viewWidth;
+
 		// 优先用 scrollWidth（CSS multi-column 撑开后的真实内容宽度）
 		const scrollW = this.scrollView.scrollWidth;
 		if (scrollW > viewWidth) {
-			return Math.ceil(scrollW / viewWidth);
+			return Math.ceil(scrollW / pageSize);
 		}
 
 		// 兜底：通过 sizer offsetWidth
 		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
 		if (sizer && sizer.offsetWidth > viewWidth) {
-			return Math.ceil(sizer.offsetWidth / viewWidth);
+			return Math.ceil(sizer.offsetWidth / pageSize);
 		}
 
 		return 1;
@@ -410,6 +436,15 @@ export class PagePaginator {
 		
 		const viewWidth = this.scrollView.clientWidth;
 		if (viewWidth === 0) return;
+
+		if (this.isDualPageMode) {
+			this.scrollView.classList.add('deeppdf-dual-page');
+			this.scrollView.style.setProperty('--deeppdf-col-width', 'auto');
+			this.scrollView.style.setProperty('--deeppdf-col-gap', '60px');
+			this.scrollView.style.setProperty('--deeppdf-side-padding', '50px');
+			return;
+		}
+		this.scrollView.classList.remove('deeppdf-dual-page');
 
 		// 纸质书最佳阅读行宽（基础值）
 		const MAX_TEXT_WIDTH = 640;
@@ -468,7 +503,9 @@ export class PagePaginator {
 		if (viewWidth === 0) return;
 
 		// 计算当前处于第几页 (1-based)
-		const newPage = Math.round(scrollLeft / viewWidth) + 1;
+		const newPage = this.isDualPageMode
+			? Math.round(scrollLeft / viewWidth) * 2 + 1
+			: Math.round(scrollLeft / viewWidth) + 1;
 
 		if (newPage !== this._currentPage) {
 			this._currentPage = Math.max(1, Math.min(newPage, this._totalPages));
@@ -543,7 +580,17 @@ export class PagePaginator {
 		if (!this._isActive) return;
 
 		if (this.pageIndicator) {
-			this.pageIndicator.textContent = `${this._currentPage} / ${this._totalPages}`;
+			if (this.isDualPageMode) {
+				const leftPage = this._currentPage;
+				const rightPage = leftPage + 1;
+				if (rightPage <= this._totalPages) {
+					this.pageIndicator.textContent = `${leftPage}-${rightPage} / ${this._totalPages}`;
+				} else {
+					this.pageIndicator.textContent = `${leftPage} / ${this._totalPages}`;
+				}
+			} else {
+				this.pageIndicator.textContent = `${this._currentPage} / ${this._totalPages}`;
+			}
 		}
 
 		// 边界页且有上/下一章时，不隐藏按钮（用户可点击跳章）
@@ -622,10 +669,16 @@ export class PagePaginator {
 
 				// 根据之前的进度计算调整后的新页码
 				const newPage = Math.round(prevProgress * (this._totalPages - 1)) + 1;
-				this._currentPage = Math.max(1, Math.min(newPage, this._totalPages));
+				const clampedPage = Math.max(1, Math.min(newPage, this._totalPages));
+				this._currentPage = this.isDualPageMode
+					? (Math.floor((clampedPage - 1) / 2) * 2 + 1)
+					: clampedPage;
 
 				// 立刻强制同步滚动，对齐内容盒子
-				this.scrollView.scrollLeft = (this._currentPage - 1) * this.scrollView.clientWidth;
+				const targetScroll = this.isDualPageMode
+					? Math.floor((this._currentPage - 1) / 2) * this.scrollView.clientWidth
+					: (this._currentPage - 1) * this.scrollView.clientWidth;
+				this.scrollView.scrollLeft = targetScroll;
 
 				// 更新底部控件
 				this.updateControls();

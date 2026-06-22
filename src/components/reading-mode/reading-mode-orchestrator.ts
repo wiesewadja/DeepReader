@@ -204,6 +204,13 @@ export class ReadingModeService implements ScrollPatchService {
 	}
 
 	/**
+	 * 获取当前是否处于双页阅读模式
+	 */
+	isDualPageMode(): boolean {
+		return this.paginator?.isDualPageMode || false;
+	}
+
+	/**
 	 * 初始化悬浮工具栏
 	 */
 	private initSelectionToolbar(): void {
@@ -750,6 +757,7 @@ export class ReadingModeService implements ScrollPatchService {
 			) as HTMLElement;
 
 			if (container && container.children.length > 1) {
+				const settings = (this.app as any).plugins.plugins[this._pluginId]?.settings;
 				this.paginator = new PagePaginator({
 					container,
 					onNavigatePrev: () => this.navigateToPrev(),
@@ -765,6 +773,7 @@ export class ReadingModeService implements ScrollPatchService {
 					},
 					chapterName,
 					bookName: this.currentBookName,
+					autoDualPage: settings?.autoDualPage ?? true,
 				});
 				this.paginator.paginateAndShow();
 
@@ -794,7 +803,9 @@ export class ReadingModeService implements ScrollPatchService {
 									: Math.max(1, Math.min(savedPage!, totalPages || savedPage!));
 								if (targetPage <= 1 && !restoreLastPage) return;
 
-								const targetScroll = (targetPage - 1) * scrollView.clientWidth;
+								const targetScroll = this.isDualPageMode()
+									? Math.floor((targetPage - 1) / 2) * scrollView.clientWidth
+									: (targetPage - 1) * scrollView.clientWidth;
 								const maxScroll = Math.max(
 									0,
 									scrollView.scrollWidth - scrollView.clientWidth,

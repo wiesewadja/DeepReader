@@ -283,6 +283,10 @@ export class SidebarView extends ItemView {
 				const service = self.plugin.readingModeService;
 				return service?.getPageParagraphs?.(pageNumber) || [];
 			},
+			isDualPageMode: () => {
+				const service = self.plugin.readingModeService;
+				return service?.isDualPageMode?.() || false;
+			},
 			goToNextPage: () => self.goToNextPage(),
 		});
 		this.sessionMgr = new SessionManager({
