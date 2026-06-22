@@ -8,7 +8,7 @@
 
 import { Platform } from 'obsidian';
 import { serviceLog } from '../../utils/logger.js';
-import { isViewportFullyExpanded } from './viewport-state.js';
+import { isViewportFullyExpanded, getDualPageMetrics, type DualPageMetrics } from './viewport-state.js';
 
 export interface PagePaginatorOptions {
 	container: HTMLElement;                    // .markdown-preview-sizer
@@ -59,6 +59,9 @@ export class PagePaginator {
 	private verifyTimer: ReturnType<typeof setTimeout> | null = null;
 	private chapterName: string;
 	private bookName: string;
+	/** 程序化滚动期间置 true，抑制 updateCurrentPageFromScroll 用中间 scrollLeft 覆盖页码。
+	 *  800ms 超时取 smooth scroll 的近似上限；超大屏/慢机下长距离翻页可能略短，但
+	 *  nextPage/prevPage 已乐观更新 _currentPage，极端情况仅指示器短暂闪烁，可接受。 */
 	private isProgrammaticScrolling = false;
 	private programmaticScrollTimer: ReturnType<typeof setTimeout> | null = null;
 	private lastKnownViewWidth: number = 0;
@@ -89,6 +92,15 @@ export class PagePaginator {
 		const app = (window as any).app;
 		if (!app) return false;
 		return isViewportFullyExpanded(app) && this.scrollView.clientWidth >= 1400;
+	}
+
+	/**
+	 * 双页布局度量快照。调用方通常已通过 isDualPageMode 保证 scrollView 非空；
+	 * 返回 null 时应回退到单页逻辑。
+	 */
+	private getDualPageMetrics(): DualPageMetrics | null {
+		if (!this.scrollView) return null;
+		return getDualPageMetrics(this.scrollView);
 	}
 
 	/** 实时判断是否已滚动到最后一页(不依赖 _currentPage 缓存) */
@@ -171,13 +183,10 @@ export class PagePaginator {
 				
 				let page = 1;
 				if (this.isDualPageMode) {
-					const style = window.getComputedStyle(this.scrollView!);
-					const paddingLeft = parseFloat(style.paddingLeft) || 0;
-					const paddingRight = parseFloat(style.paddingRight) || 0;
-					const columnGap = parseFloat(style.columnGap) || 0;
-					const colWidth = (viewWidth - paddingLeft - paddingRight - columnGap) / 2;
-					const colStep = colWidth + columnGap;
-					page = Math.floor((absoluteLeft - paddingLeft + 5) / colStep) + 1;
+					const m = this.getDualPageMetrics();
+					page = m
+						? Math.floor((absoluteLeft - m.paddingLeft + 5) / m.colStep) + 1
+						: Math.floor((absoluteLeft + 5) / pageSize) + 1;
 				} else {
 					page = Math.floor((absoluteLeft + 5) / pageSize) + 1;
 				}
@@ -321,11 +330,7 @@ export class PagePaginator {
 
 		let stepWidth = this.scrollView.clientWidth;
 		if (this.isDualPageMode) {
-			const style = window.getComputedStyle(this.scrollView);
-			const paddingLeft = parseFloat(style.paddingLeft) || 0;
-			const paddingRight = parseFloat(style.paddingRight) || 0;
-			const columnGap = parseFloat(style.columnGap) || 0;
-			stepWidth = this.scrollView.clientWidth - paddingLeft - paddingRight + columnGap;
+			stepWidth = this.getDualPageMetrics()?.spreadStep ?? stepWidth;
 		}
 		
 		this.isProgrammaticScrolling = true;
@@ -357,11 +362,7 @@ export class PagePaginator {
 
 		let stepWidth = this.scrollView.clientWidth;
 		if (this.isDualPageMode) {
-			const style = window.getComputedStyle(this.scrollView);
-			const paddingLeft = parseFloat(style.paddingLeft) || 0;
-			const paddingRight = parseFloat(style.paddingRight) || 0;
-			const columnGap = parseFloat(style.columnGap) || 0;
-			stepWidth = this.scrollView.clientWidth - paddingLeft - paddingRight + columnGap;
+			stepWidth = this.getDualPageMetrics()?.spreadStep ?? stepWidth;
 		}
 		
 		this.isProgrammaticScrolling = true;
@@ -464,15 +465,11 @@ export class PagePaginator {
 		if (viewWidth === 0) return 1;
 
 		const scrollW = this.scrollView.scrollWidth;
-		if (this.isDualPageMode) {
-			const style = window.getComputedStyle(this.scrollView);
-			const paddingLeft = parseFloat(style.paddingLeft) || 0;
-			const paddingRight = parseFloat(style.paddingRight) || 0;
-			const columnGap = parseFloat(style.columnGap) || 0;
-
-			const colWidth = (viewWidth - paddingLeft - paddingRight - columnGap) / 2;
-			const colStep = colWidth + columnGap;
-			const N = Math.ceil((scrollW - paddingLeft - paddingRight + columnGap) / colStep);
+		const dualMetrics = this.isDualPageMode ? this.getDualPageMetrics() : null;
+		if (dualMetrics) {
+			const N = Math.ceil(
+				(scrollW - dualMetrics.paddingLeft - dualMetrics.paddingRight + dualMetrics.columnGap) / dualMetrics.colStep,
+			);
 			return N;
 		}
 
@@ -584,11 +581,7 @@ export class PagePaginator {
 
 		let step = viewWidth;
 		if (this.isDualPageMode) {
-			const style = window.getComputedStyle(this.scrollView);
-			const paddingLeft = parseFloat(style.paddingLeft) || 0;
-			const paddingRight = parseFloat(style.paddingRight) || 0;
-			const columnGap = parseFloat(style.columnGap) || 0;
-			step = viewWidth - paddingLeft - paddingRight + columnGap;
+			step = this.getDualPageMetrics()?.spreadStep ?? step;
 		}
 
 		// 计算当前处于第几页 (1-based)
@@ -775,11 +768,7 @@ export class PagePaginator {
 				// 立刻强制同步滚动，对齐内容盒子
 				let step = this.scrollView.clientWidth;
 				if (this.isDualPageMode) {
-					const style = window.getComputedStyle(this.scrollView);
-					const paddingLeft = parseFloat(style.paddingLeft) || 0;
-					const paddingRight = parseFloat(style.paddingRight) || 0;
-					const columnGap = parseFloat(style.columnGap) || 0;
-					step = this.scrollView.clientWidth - paddingLeft - paddingRight + columnGap;
+					step = this.getDualPageMetrics()?.spreadStep ?? step;
 				}
 				const targetScroll = this.isDualPageMode
 					? Math.floor((this._currentPage - 1) / 2) * step

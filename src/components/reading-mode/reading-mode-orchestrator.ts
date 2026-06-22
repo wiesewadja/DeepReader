@@ -16,12 +16,14 @@ import {
 } from "../../pageindex/last-page-store.js";
 import type { HighlightColorId } from "../../types/highlight.js";
 import type { QuoteMetadata } from "../../types/quote.js";
+import type { DeepPDFSettings } from "../../config/settings.js";
 import { serviceLog } from "../../utils/logger.js";
 import { getVaultPath } from "../../utils/mobile-fs.js";
 import { ChapterNav } from "./chapter-nav.js";
 import type { ChapterNavOptions } from "./chapter-nav.js";
 import { MobileReadingFab } from "./mobile-reading-fab.js";
 import { PagePaginator } from "./page-paginator.js";
+import { getDualPageMetrics } from "./viewport-state.js";
 import {
 	installScrollPatch,
 	uninstallScrollPatch,
@@ -201,6 +203,14 @@ export class ReadingModeService implements ScrollPatchService {
 	 */
 	getStyle(): "paginated" | "scrolling" {
 		return this.style;
+	}
+
+	/**
+	 * 读取自身插件设置。通过 Obsidian 内部 plugins 映射反射访问
+	 * （ReadingModeService 未持有 plugin 引用），集中在此处便于将来改为注入式。
+	 */
+	private get pluginSettings(): DeepPDFSettings | undefined {
+		return (this.app as any).plugins?.plugins?.[this._pluginId]?.settings;
 	}
 
 	/**
@@ -768,7 +778,7 @@ export class ReadingModeService implements ScrollPatchService {
 			) as HTMLElement;
 
 			if (container && container.children.length > 1) {
-				const settings = (this.app as any).plugins.plugins[this._pluginId]?.settings;
+				const settings = this.pluginSettings;
 				this.paginator = new PagePaginator({
 					container,
 					onNavigatePrev: () => this.navigateToPrev(),
@@ -814,15 +824,9 @@ export class ReadingModeService implements ScrollPatchService {
 									: Math.max(1, Math.min(savedPage!, totalPages || savedPage!));
 								if (targetPage <= 1 && !restoreLastPage) return;
 
-								let step = scrollView.clientWidth;
-								if (this.isDualPageMode()) {
-									const style = window.getComputedStyle(scrollView);
-									const paddingLeft = parseFloat(style.paddingLeft) || 0;
-									const paddingRight = parseFloat(style.paddingRight) || 0;
-									const columnGap = parseFloat(style.columnGap) || 0;
-									step = scrollView.clientWidth - paddingLeft - paddingRight + columnGap;
-								}
-								const targetScroll = this.isDualPageMode()
+								const dualMetrics = this.isDualPageMode() ? getDualPageMetrics(scrollView) : null;
+								const step = dualMetrics ? dualMetrics.spreadStep : scrollView.clientWidth;
+								const targetScroll = dualMetrics
 									? Math.floor((targetPage - 1) / 2) * step
 									: (targetPage - 1) * step;
 								const maxScroll = Math.max(
@@ -1217,9 +1221,9 @@ export class ReadingModeService implements ScrollPatchService {
 				let targetPage = 0; // 0-based logical page
 
 				if (isDual) {
-					const colStep = (viewWidth - 100 - 60) / 2 + 60; // 714px
-					const spreadStep = 2 * colStep; // 1428px
-					const spreadIndex = Math.floor(Math.max(0, absoluteLeft - 50) / spreadStep);
+					// 动态读取列度量，避免与 CSS 的 padding(50)/column-gap(60) 硬编码耦合
+					const spreadStep = getDualPageMetrics(scrollView).spreadStep;
+					const spreadIndex = Math.floor(Math.max(0, absoluteLeft - paddingLeft) / spreadStep);
 					targetScrollLeft = spreadIndex * spreadStep;
 					targetPage = spreadIndex * 2;
 				} else {

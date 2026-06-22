@@ -903,12 +903,14 @@
 }
 
 /* ==================== 双页布局样式 ==================== */
+/* 双页布局：间距/边距复用 page-paginator.ts 通过 CSS 变量设置的值（单一真相源），
+   fallback 与 JS 默认一致，避免 CSS 硬编码与 getDualPageMetrics 的计算脱节。 */
 .deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view.deeppdf-dual-page {
     column-count: 2 !important;
     column-width: auto !important;
-    column-gap: 60px !important;
-    padding-left: 50px !important;
-    padding-right: 50px !important;
+    column-gap: var(--deeppdf-col-gap, 60px) !important;
+    padding-left: var(--deeppdf-side-padding, 50px) !important;
+    padding-right: var(--deeppdf-side-padding, 50px) !important;
 }
 
 

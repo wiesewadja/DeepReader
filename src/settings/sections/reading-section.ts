@@ -44,6 +44,8 @@ export function renderReadingSection(
         ctx.plugin.settings.autoDualPage = value;
         await ctx.plugin.saveSettings();
         if (ctx.plugin.readingModeService?.isActive && ctx.plugin.readingModeService.getCurrentFile?.()) {
+          // 借 setStyle 触发 deactivate+activate 重建 paginator，使其重新读取 autoDualPage；
+          // 入参用当前 readingModeStyle（无需改变），仅为复用其重建副作用。
           ctx.plugin.readingModeService.setStyle(ctx.plugin.settings.readingModeStyle);
         }
       }));
