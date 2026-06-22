@@ -59,6 +59,8 @@ export class PagePaginator {
 	private verifyTimer: ReturnType<typeof setTimeout> | null = null;
 	private chapterName: string;
 	private bookName: string;
+	private isProgrammaticScrolling = false;
+	private programmaticScrollTimer: ReturnType<typeof setTimeout> | null = null;
 	private lastKnownViewWidth: number = 0;
 	private lastActiveDualPageMode: boolean = false;
 	private _rerenderRafIds: number[] = [];
@@ -166,8 +168,19 @@ export class PagePaginator {
 				}
 				// 元素在可滚动内容中的绝对水平位置
 				const absoluteLeft = rect.left - containerRect.left + scrollLeft;
-				// 计算它所在的页码 (1-based)，加 5px 容差防止边缘浮点误差
-				const page = Math.floor((absoluteLeft + 5) / pageSize) + 1;
+				
+				let page = 1;
+				if (this.isDualPageMode) {
+					const style = window.getComputedStyle(this.scrollView!);
+					const paddingLeft = parseFloat(style.paddingLeft) || 0;
+					const paddingRight = parseFloat(style.paddingRight) || 0;
+					const columnGap = parseFloat(style.columnGap) || 0;
+					const colWidth = (viewWidth - paddingLeft - paddingRight - columnGap) / 2;
+					const colStep = colWidth + columnGap;
+					page = Math.floor((absoluteLeft - paddingLeft + 5) / colStep) + 1;
+				} else {
+					page = Math.floor((absoluteLeft + 5) / pageSize) + 1;
+				}
 				return { element: el, text: el.textContent?.trim() || '', page };
 			})
 			.filter(p => {
@@ -205,7 +218,10 @@ export class PagePaginator {
 			this._pendingRestorePage = page;
 			return;
 		}
-		const next = Math.max(1, Math.min(page, this._totalPages));
+		let next = Math.max(1, Math.min(page, this._totalPages));
+		if (this.isDualPageMode) {
+			next = Math.floor((next - 1) / 2) * 2 + 1;
+		}
 		if (next === this._currentPage) {
 			// 即便页码未变，也要尊重"用户主动跳到这里"的事实，
 			// 取消可能仍在排队的不同页码延后恢复
@@ -214,6 +230,13 @@ export class PagePaginator {
 		}
 		this._currentPage = next;
 		this.cancelPendingRestoreIfDifferent(next);
+
+		this.isProgrammaticScrolling = true;
+		if (this.programmaticScrollTimer) clearTimeout(this.programmaticScrollTimer);
+		this.programmaticScrollTimer = setTimeout(() => {
+			this.isProgrammaticScrolling = false;
+		}, 800);
+
 		this.updateControls();
 		this.options.onPageChange?.(this._currentPage, this._totalPages);
 	}
@@ -234,11 +257,21 @@ export class PagePaginator {
 	 */
 	private applyPendingRestorePage(): void {
 		if (this._pendingRestorePage == null) return;
-		const target = this._pendingRestorePage;
+		let target = this._pendingRestorePage;
 		if (this._totalPages === 0 || target > this._totalPages) return;
 		this._pendingRestorePage = null;
+		if (this.isDualPageMode) {
+			target = Math.floor((target - 1) / 2) * 2 + 1;
+		}
 		if (target === this._currentPage) return;
 		this._currentPage = target;
+
+		this.isProgrammaticScrolling = true;
+		if (this.programmaticScrollTimer) clearTimeout(this.programmaticScrollTimer);
+		this.programmaticScrollTimer = setTimeout(() => {
+			this.isProgrammaticScrolling = false;
+		}, 800);
+
 		this.updateControls();
 		this.options.onPageChange?.(this._currentPage, this._totalPages);
 	}
@@ -294,13 +327,22 @@ export class PagePaginator {
 			const columnGap = parseFloat(style.columnGap) || 0;
 			stepWidth = this.scrollView.clientWidth - paddingLeft - paddingRight + columnGap;
 		}
+		
+		this.isProgrammaticScrolling = true;
 		this.scrollView.scrollBy({ left: stepWidth, behavior: 'smooth' });
+		
 		// 同步更新 _currentPage，确保 getPageParagraphs 等依赖它的方法
 		// 在 scroll 事件触发前也能读到正确的页码
 		const step = this.isDualPageMode ? 2 : 1;
 		this._currentPage = Math.min(this._currentPage + step, this._totalPages);
 		this.options.onPageChange?.(this._currentPage, this._totalPages);
 		this.forceRerender();
+
+		if (this.programmaticScrollTimer) clearTimeout(this.programmaticScrollTimer);
+		this.programmaticScrollTimer = setTimeout(() => {
+			this.isProgrammaticScrolling = false;
+		}, 800);
+
 		return true;
 	}
 
@@ -321,11 +363,20 @@ export class PagePaginator {
 			const columnGap = parseFloat(style.columnGap) || 0;
 			stepWidth = this.scrollView.clientWidth - paddingLeft - paddingRight + columnGap;
 		}
+		
+		this.isProgrammaticScrolling = true;
 		this.scrollView.scrollBy({ left: -stepWidth, behavior: 'smooth' });
+		
 		const step = this.isDualPageMode ? 2 : 1;
 		this._currentPage = Math.max(1, this._currentPage - step);
 		this.options.onPageChange?.(this._currentPage, this._totalPages);
 		this.forceRerender();
+
+		if (this.programmaticScrollTimer) clearTimeout(this.programmaticScrollTimer);
+		this.programmaticScrollTimer = setTimeout(() => {
+			this.isProgrammaticScrolling = false;
+		}, 800);
+
 		return true;
 	}
 
@@ -367,6 +418,7 @@ export class PagePaginator {
 	destroy(): void {
 		this._isActive = false;
 		if (this.verifyTimer) { clearTimeout(this.verifyTimer); this.verifyTimer = null; }
+		if (this.programmaticScrollTimer) { clearTimeout(this.programmaticScrollTimer); this.programmaticScrollTimer = null; }
 		this._rerenderRafIds.forEach(id => cancelAnimationFrame(id));
 		this._rerenderRafIds = [];
 		this.removeControls();
@@ -523,7 +575,7 @@ export class PagePaginator {
 	}
 
 	private updateCurrentPageFromScroll(): void {
-		if (!this.scrollView) return;
+		if (!this.scrollView || this.isProgrammaticScrolling) return;
 
 		const scrollLeft = this.scrollView.scrollLeft;
 		const viewWidth = this.scrollView.clientWidth;
