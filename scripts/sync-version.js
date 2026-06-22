@@ -30,16 +30,30 @@ try {
         rootManifest = JSON.parse(fs.readFileSync(binManifestPath, 'utf8'));
         console.log('Created root manifest from bin/manifest.json');
     } else {
-        // 如果都不存在，使用 package.json 的 name 和 description 作为基础
+        // manifest 模板缺失时，用 Obsidian 插件必需字段重建。
+        // ⚠️ 必须包含 id —— 缺失会导致 Obsidian 静默加载失败（manifest.id 须与插件目录名一致）
+        //    （曾因 fallback 只带 package.json 的 name/description 而丢 id，污染过 origin/main 基线）
         rootManifest = {
-            name: packageJson.name || 'deepreader',
+            id: 'deepreader',
+            name: 'DeepReader',
             version: version,
-            description: packageJson.description || ''
+            description: packageJson.description || '',
+            minAppVersion: '1.0.0',
+            author: 'DeepReader Team',
+            authorUrl: 'https://github.com/wiesewadja/DeepReader',
+            isDesktopOnly: false,
         };
-        console.log('Created new manifest from package.json');
+        console.warn('⚠️ manifest.json 模板缺失，已用默认值重建（请核对 id/author 等字段）');
     }
 
     const manifest = { ...rootManifest, version };
+
+    // id 是 Obsidian 插件加载的必需字段（缺失 → 插件静默加载失败 + S-RES 校验失败）。
+    // fail-fast：宁可构建失败，也不生成残缺 manifest 静默污染基线。
+    if (!manifest.id) {
+        console.error('❌ manifest.json 缺少 id 字段，Obsidian 将无法加载插件。请补全 manifest.json');
+        process.exit(1);
+    }
 
     // 同时写入根目录和 bin/
     fs.writeFileSync(rootManifestPath, JSON.stringify(manifest, null, '\t') + '\n');
