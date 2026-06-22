@@ -60,6 +60,7 @@ export class PagePaginator {
 	private chapterName: string;
 	private bookName: string;
 	private lastKnownViewWidth: number = 0;
+	private lastActiveDualPageMode: boolean = false;
 	private _rerenderRafIds: number[] = [];
 
 	constructor(options: PagePaginatorOptions) {
@@ -73,6 +74,7 @@ export class PagePaginator {
 		this.scrollView = this.container.closest('.markdown-preview-view') as HTMLElement;
 		this.viewContent = this.container.closest('.view-content') as HTMLElement;
 		this.lastKnownViewWidth = this.scrollView?.clientWidth || 0;
+		this.lastActiveDualPageMode = this.isDualPageMode;
 	}
 
 	isActive(): boolean { return this._isActive; }
@@ -634,15 +636,24 @@ export class PagePaginator {
 		this.resizeObserver = null;
 	}
 
+	updateLayout(): void {
+		if (!this._isActive || !this.scrollView) return;
+		this.handleResize();
+	}
+
 	private handleResize(): void {
 		if (!this._isActive || !this.scrollView) return;
 
 		const currentViewWidth = this.scrollView.clientWidth;
 		if (currentViewWidth === 0) return;
 
-		// 宽度没变，跳过（纯滚动不应触发重排）
-		if (currentViewWidth === this.lastKnownViewWidth) return;
+		const isDual = this.isDualPageMode;
+		const dualModeChanged = isDual !== this.lastActiveDualPageMode;
 
+		// 宽度没变且双页模式状态也没变，跳过（纯滚动不应触发重排）
+		if (currentViewWidth === this.lastKnownViewWidth && !dualModeChanged) return;
+
+		this.lastActiveDualPageMode = isDual;
 		this.lastKnownViewWidth = currentViewWidth;
 
 		// 记录调整前的进度百分比

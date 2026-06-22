@@ -639,9 +639,20 @@ export class ReadingModeService implements ScrollPatchService {
 		// 监听布局变更和窗口缩放事件以动态显示/隐藏桌面端提问悬浮球
 		this.layoutChangeHandler = this.app.workspace.on("layout-change", () => {
 			this.updateXitongWidgetVisibility();
+			if (this.paginator && this.paginator.isActive()) {
+				this.paginator.updateLayout();
+				setTimeout(() => {
+					if (this.paginator && this.paginator.isActive()) {
+						this.paginator.updateLayout();
+					}
+				}, 300);
+			}
 		});
 		this.resizeHandler = this.app.workspace.on("resize", () => {
 			this.updateXitongWidgetVisibility();
+			if (this.paginator && this.paginator.isActive()) {
+				this.paginator.updateLayout();
+			}
 		});
 
 		this.fileOpenHandler = this.app.workspace.on("file-open", (file) => {
