@@ -258,6 +258,13 @@ export class TTSController {
 					this.emitMessageTTSState(messageId, 'playing');
 				}
 
+				// 段落起始字符位置（用于 highlightTTSProgress 映射到该段 <p>）
+				const paragraphStartProgress = Math.min(99, Math.round((charsSoFar / totalChars) * 100));
+				// 本段音频计划开始时间 = 当前已排队音频末尾（与 readCurrentPage 完全一致）
+				const paragraphStartTime = player.endTime;
+				// enqueue 前调度：等实际播放到本段开始时再高亮（与朗读同步）
+				this.scheduleMessageHighlight(messageId, paragraphStartProgress, paragraphStartTime, player);
+
 				// 流式合成
 				const stream = client.synthesizeStream(
 					paraText,
@@ -283,11 +290,8 @@ export class TTSController {
 					break;
 				}
 
-				// 段落完成，更新进度
+				// 段落完成，累加字符进度
 				charsSoFar += paraText.length;
-				const progress = Math.min(99, Math.round((charsSoFar / totalChars) * 100));
-				const msg = this.host.messageList?.getMessage(messageId);
-				msg?.highlightTTSProgress?.(progress);
 
 				this.messageParagraphIndex++;
 			}
@@ -336,6 +340,26 @@ export class TTSController {
 	/** 悬浮球朗读动效：仅 playing 时点亮，其余状态关闭 */
 	private notifyXitongReading(state: TTSPlayState): void {
 		this.host.plugin.readingModeService?.setXitongReading(state === 'playing');
+	}
+
+	/** 等音频播放到指定时间再触发段落高亮（基于 player.currentTime，与朗读同步，参考 scheduleHighlight） */
+	private async scheduleMessageHighlight(
+		messageId: string,
+		progress: number,
+		startTime: number,
+		player: PCMStreamPlayer
+	): Promise<void> {
+		while (
+			this.currentSource === 'message'
+			&& this.messageStreamingId === messageId
+			&& player.currentTime < startTime
+		) {
+			await sleep(20);
+		}
+		if (this.currentSource === 'message' && this.messageStreamingId === messageId) {
+			const msg = this.host.messageList?.getMessage(messageId);
+			msg?.highlightTTSProgress?.(progress);
+		}
 	}
 
 	/** 停止消息流式朗读（完全停止，重置所有状态） */
