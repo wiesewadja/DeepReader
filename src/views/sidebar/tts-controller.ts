@@ -62,7 +62,6 @@ export class TTSController {
 	private messageStreamingId: string | null = null;
 	private messageParagraphIndex = 0;
 	private messagePaused = false;
-	private messageStreamDone = false;
 
 	constructor(host: TTSControllerHost) {
 		this.host = host;
@@ -197,7 +196,6 @@ export class TTSController {
 		this.messageStreamingId = messageId;
 		this.messageParagraphIndex = 0;
 		this.messagePaused = false;
-		this.messageStreamDone = false;
 
 		const settings = this.host.plugin.settings;
 		const ttsConfig = resolveRoleConfig('tts', settings);
@@ -300,7 +298,6 @@ export class TTSController {
 				&& this.messageStreamingId === messageId
 				&& !this.messagePaused
 			) {
-				this.messageStreamDone = true;
 				player.seal();
 				await player.waitForEnd();
 			}
@@ -350,7 +347,6 @@ export class TTSController {
 		this.messageStreamingId = null;
 		this.messageParagraphIndex = 0;
 		this.messagePaused = false;
-		this.messageStreamDone = false;
 		this.currentSource = 'message';
 	}
 
@@ -612,15 +608,6 @@ export class TTSController {
 	}
 
 	// ── 辅助 ────────────────────────────────────────────
-
-	private findUserQuestion(aiMessageId: string): string | undefined {
-		const messages = this.host.messageList?.getMessagesData();
-		if (!messages) return undefined;
-		const idx = messages.findIndex(m => m.id === aiMessageId);
-		if (idx <= 0) return undefined;
-		const prev = messages[idx - 1];
-		return prev?.role === 'user' ? prev.content : undefined;
-	}
 
 	destroy(): void {
 		this.stopMessageStream();
