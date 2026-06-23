@@ -92,11 +92,7 @@ export interface DeepPDFSettings {
 	langsmithProject: string;
 	langsmithEnabled: boolean;
 
-	// Proactive guidance settings
-	proactiveGuidanceEnabled: boolean;
-	proactiveCooldownMinutes: number;
-
-		// 微信读书集成
+	// 微信读书集成
 		wereadApiKey: string;
 		wereadAutoSync: boolean;
 		wereadSyncInterval: number;
@@ -189,10 +185,6 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	langsmithApiKey: "",
 	langsmithProject: "DeepReader",
 	langsmithEnabled: false,
-
-		// Proactive guidance
-		proactiveGuidanceEnabled: true,
-		proactiveCooldownMinutes: 5,
 
 		// 用户画像
 		journalDir: "",

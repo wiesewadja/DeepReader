@@ -70,24 +70,6 @@ describe('routeAfterInspectional', () => {
     });
     expect(routeAfterInspectional(state)).toBe(NODE_NAMES.SYNTOPICAL);
   });
-
-  it('mode=socratic → formatter', () => {
-    const state = makeState({
-      mode: 'socratic',
-      depth: ReadingDepth.ANALYTICAL,
-    });
-    expect(routeAfterInspectional(state)).toBe(EDGE_KEYS.DONE);
-  });
-
-  it('mode=proactive → formatter', () => {
-    const state = makeState({
-      mode: 'proactive',
-      depth: ReadingDepth.INSPECTIONAL,
-      rewrittenQuery: '画一个思维导图',
-      structuralAnalysis: '分析结果',
-    });
-    expect(routeAfterInspectional(state)).toBe(EDGE_KEYS.DONE);
-  });
 });
 
 describe('routeAfterPreSearch', () => {

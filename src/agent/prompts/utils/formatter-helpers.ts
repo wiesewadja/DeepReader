@@ -8,6 +8,7 @@ export function buildFormatterSystemPrompt(
   memoryContext?: string,
   userProfileSummary?: string,
   isReadingAdvisor?: boolean,
+  enableFollowUp?: boolean,
 ): string {
   const memorySection = memoryContext
     ? `\n<memory>\n${memoryContext}\n</memory>\n`
@@ -22,6 +23,17 @@ export function buildFormatterSystemPrompt(
 - 语气像老朋友在分享读书心得，不是咨询师在做分析
 - 不要强行关联，生硬比沉默更糟糕
 </profile_instruction>\n`
+    : '';
+
+  const followUpSection = enableFollowUp
+    ? `\n<follow_up_instruction>
+在回复的最末尾，根据 <user_profile> 和 <memory>（如果存在）以及本次书籍分析，自然地提出**一个**个性化的追问：
+- 这个追问必须是为用户量身定制的，结合其经历、痛点、或者读书目标，引导用户将书中的智慧与自己的真实生活/工作行动进行关联（例如：“你之前提到在带团队，对于这一章提到的分权，你打算如何在下周的周会上实践一下？”）
+- 语气要自然、温和、充满探索欲，像真正的读书伙伴在聊天中随口一问。
+- 绝不要使用机械化、套路化或居高临下的模板式追问（如“你觉得呢？”、“这对你有什么启发？”）。
+- 如果没有可参考的用户画像/记忆信息，或者强行关联显得极其尴尬，则只提一个简短的、结合本章内容与用户当前困惑的高质量启发性问题即可。
+- 追问要极其克制，合并在最后一个段落中，或者单起一行，长度在一两句话以内。
+</follow_up_instruction>\n`
     : '';
 
   const now = new Date();
@@ -39,7 +51,7 @@ export function buildFormatterSystemPrompt(
 </advisor_mode>\n`
     : '';
 
-  return `${formatterPrompt.locales.zh.systemPrompt}${timeSection}${advisorSection}${memorySection}${profileSection}`;
+  return `${formatterPrompt.locales.zh.systemPrompt}${timeSection}${advisorSection}${memorySection}${profileSection}${followUpSection}`;
 }
 
 function countWikiLinks(text: string): number {

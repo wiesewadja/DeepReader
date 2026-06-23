@@ -36,30 +36,4 @@ export function renderAdvancedSection(
         await ctx.plugin.saveSettings();
       }));
 
-  container.createEl('hr', { cls: 'deeppdf-settings-divider' });
-
-  // 主动阅读引导
-  container.createEl('h4', { text: '主动阅读引导' });
-
-  new Setting(container)
-    .setName('启用主动引导')
-    .setDesc('打开新书时，奚童会主动提出结构化问题，帮助你快速建立对书籍的整体理解')
-    .addToggle(toggle => toggle
-      .setValue(ctx.plugin.settings.proactiveGuidanceEnabled)
-      .onChange(async (value) => {
-        ctx.plugin.settings.proactiveGuidanceEnabled = value;
-        await ctx.plugin.saveSettings();
-      }));
-
-  new Setting(container)
-    .setName('引导冷却时间')
-    .setDesc('两次主动引导之间的最小间隔（分钟）')
-    .addSlider(slider => slider
-      .setLimits(1, 30, 1)
-      .setValue(ctx.plugin.settings.proactiveCooldownMinutes)
-      .setDynamicTooltip()
-      .onChange(async (value) => {
-        ctx.plugin.settings.proactiveCooldownMinutes = value;
-        await ctx.plugin.saveSettings();
-      }));
 }

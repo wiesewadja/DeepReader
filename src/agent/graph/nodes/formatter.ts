@@ -19,10 +19,6 @@ import type { FormatterInput } from '../node-io.js';
 import {
   buildFormatterSystemPrompt,
   buildFormatterUserMessage,
-  buildProactiveSystemPrompt,
-  buildProactiveUserMessage,
-  buildSocraticDialoguePrompt,
-  buildSocraticDialogueUserMessage,
   buildScopedChaptersBlock,
 } from '../../prompts/utils/index.js';
 import type { CognitiveEngineState, NodeError, ToolResultSnapshot } from '../state';
@@ -154,68 +150,7 @@ export async function formatterNode(
     return { formattedOutput: effectiveAR || rewrittenQuery || '' };
   }
 
-  // === Proactive mode: ask a question, don't answer ===
-  if (mode === 'proactive') {
-    const trigger = (proactiveTrigger || 'inspectional') as 'inspectional' | 'highlight' | 'chapter';
-    const ar = analysisResult || '';
-    const hasDiagram = false; // Proactive 模式直接结束到 formatter，不经过 VISUALIZER 节点，因此不附带图表
-    callbacks?.onProgress?.('思考引导问题...');
-    const proactivePromptStr = buildProactiveSystemPrompt(trigger, hasDiagram);
-    let proactiveUserMsg = buildProactiveUserMessage({
-      structuralAnalysis: structuralAnalysis || undefined,
-      tocSummary: tocSummary || undefined,
-      highlightContext: highlightContext || undefined,
-      bookName: pdfName || '',
-    });
-    if (hasDiagram) {
-      proactiveUserMsg += `\n\n<diagram_result>\n${ar}\n</diagram_result>`;
-    }
-    const content = await streamToContent(
-      mainModel,
-      [new SystemMessage(proactivePromptStr), new HumanMessage(proactiveUserMsg)],
-      config,
-      callbacks?.onContent,
-    );
 
-    const formatted = await sanitizeOutput(content, {
-      bookName: pdfName || '',
-      crossBookMode,
-      inputTextsForValidation: [structuralAnalysis || '', tocSummary || '', content],
-      markdownFiles: ctx?.toolContext?.book.markdownFiles ?? {},
-      vaultApp: ctx?.toolContext?.vault?.app,
-      toolResults: [],
-      skipVaultVerification: true,
-    });
-    return { formattedOutput: formatted };
-  }
-
-  // === Socratic dialogue: respond + follow-up using chatHistory ===
-  if (mode === 'socratic') {
-    callbacks?.onProgress?.('正在思考...');
-    const chatHistory = ctx?.chatHistory ?? [];
-    const socraticPrompt = buildSocraticDialoguePrompt();
-    const socraticUserMsg = buildSocraticDialogueUserMessage(
-      rewrittenQuery || '',
-      chatHistory,
-    );
-    const content = await streamToContent(
-      mainModel,
-      [new SystemMessage(socraticPrompt), new HumanMessage(socraticUserMsg)],
-      config,
-      callbacks?.onContent,
-    );
-
-    const formatted = await sanitizeOutput(content, {
-      bookName: pdfName || '',
-      crossBookMode,
-      inputTextsForValidation: [content],
-      markdownFiles: ctx?.toolContext?.book.markdownFiles ?? {},
-      vaultApp: ctx?.toolContext?.vault?.app,
-      toolResults: [],
-      skipVaultVerification: true,
-    });
-    return { formattedOutput: formatted };
-  }
 
   // === ADVISOR node passthrough: already produced formatted response via ReAct ===
   if (!pdfName && !crossBookMode && effectiveAR) {
@@ -258,7 +193,8 @@ export async function formatterNode(
 
 
   // === Normal mode (depth >= 1): format with full context ===
-  const systemPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
+  const enableFollowUp = depth >= ReadingDepth.INSPECTIONAL;
+  const systemPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary, false, enableFollowUp);
 
   const chatHistory = ctx?.chatHistory ?? [];
   const markdownFiles = ctx?.toolContext?.book.markdownFiles ?? {};
