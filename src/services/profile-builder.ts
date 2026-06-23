@@ -156,11 +156,6 @@ export class ProfileBuilder {
 	// ── 文件扫描 ──
 
 	async scanFiles(): Promise<TFile[]> {
-		const dir = this.settings.journalDir;
-		if (!dir) return [];
-		const folder = this.vault.getAbstractFileByPath(dir);
-		if (!folder || !(folder instanceof TFolder)) return [];
-
 		const files: TFile[] = [];
 		const collect = (f: TFolder) => {
 			for (const child of f.children) {
@@ -173,8 +168,33 @@ export class ProfileBuilder {
 				}
 			}
 		};
-		collect(folder);
-		return files.sort((a, b) => a.stat.mtime - b.stat.mtime);
+
+		// 1. Scan user's journalDir
+		const dir = this.settings.journalDir;
+		if (dir) {
+			const folder = this.vault.getAbstractFileByPath(dir);
+			if (folder && folder instanceof TFolder) {
+				collect(folder);
+			}
+		}
+
+		// 2. Scan "书籍摘录" directory (Scheme B integration)
+		const excerptFolder = this.vault.getAbstractFileByPath('书籍摘录');
+		if (excerptFolder && excerptFolder instanceof TFolder) {
+			collect(excerptFolder);
+		}
+
+		// Remove duplicate files based on path
+		const uniqueFiles: TFile[] = [];
+		const seenPaths = new Set<string>();
+		for (const f of files) {
+			if (!seenPaths.has(f.path)) {
+				seenPaths.add(f.path);
+				uniqueFiles.push(f);
+			}
+		}
+
+		return uniqueFiles.sort((a, b) => a.stat.mtime - b.stat.mtime);
 	}
 
 	// ── 元数据读写 ──

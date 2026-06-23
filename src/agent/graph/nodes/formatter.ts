@@ -21,6 +21,8 @@ import {
   buildFormatterUserMessage,
   buildScopedChaptersBlock,
 } from '../../prompts/utils/index.js';
+import { vaultExists, vaultList, vaultRead, joinPath } from '../../../utils/mobile-fs.js';
+import { bookExcerptDir } from '../../../utils/book-paths.js';
 import type { CognitiveEngineState, NodeError, ToolResultSnapshot } from '../state';
 import { ReadingDepth, NODE_ERROR_HINTS } from '../state';
 import { resolveMode } from '../utils/engine-helpers';
@@ -212,6 +214,75 @@ export async function formatterNode(
   );
 
   // 收集输入文本用于校验编造链接。
+  // === Extract Current Chapter Highlights & Excerpts (Scheme A) ===
+  let userNotesContext = '';
+  const vaultApp = ctx?.toolContext?.vault?.app;
+  const currentNodeId = ctx?.toolContext?.book?.currentNodeId;
+  if (vaultApp && pdfName && currentNodeId) {
+    try {
+      const excerptDir = bookExcerptDir(pdfName);
+      if (await vaultExists(vaultApp, excerptDir)) {
+        const { files } = await vaultList(vaultApp, excerptDir);
+        const mdFiles = files.filter(f => f.endsWith('.md') && !f.endsWith(`${pdfName}.md`));
+        const matchedNotes: { content: string; mtime: number }[] = [];
+
+        for (const filePath of mdFiles) {
+          const fileContent = await vaultRead(vaultApp, filePath);
+          const stat = await vaultApp.vault.adapter.stat(filePath);
+          const mtime = stat?.mtime || 0;
+
+          // Parse markdown callouts
+          // Callout pattern: > [!type]+ Title\n(> body lines...)
+          const calloutRegex = />\s*\[\!(warning|quote|note|info|tip|success|example)\]\+?([^\n]*)\n((?:>\s*[^\n]*\n*)*)/g;
+          let match;
+          while ((match = calloutRegex.exec(fileContent)) !== null) {
+            const fullCallout = match[0];
+            // Check if callout mentions currentNodeId (e.g. [[chapterPath#^blockId]])
+            // chapterPath filenames usually start with currentNodeId (like 01, 02) or contain it.
+            // We match the node ID number sequence or clean ID
+            const cleanNodeId = currentNodeId.replace(/^0+/, '');
+            const nodeMatchRegex = new RegExp(`\\[\\[[^\\]]*?\\b${cleanNodeId}\\b[^\\]]*?\\]\\]`);
+            if (nodeMatchRegex.test(fullCallout)) {
+              matchedNotes.push({
+                content: fullCallout.trim(),
+                mtime
+              });
+            }
+          }
+        }
+
+        if (matchedNotes.length > 0) {
+          // Sort by mtime descending (most recent first)
+          matchedNotes.sort((a, b) => b.mtime - a.mtime);
+          const topNotes = matchedNotes.slice(0, 10);
+          let cumulativeLength = 0;
+          const selectedNotes: string[] = [];
+
+          for (const note of topNotes) {
+            if (cumulativeLength + note.content.length > 1200) {
+              // Truncate to avoid context overflow
+              const budgetLeft = 1200 - cumulativeLength;
+              if (budgetLeft > 50) {
+                selectedNotes.push(note.content.substring(0, budgetLeft) + '... (已截断)');
+              }
+              break;
+            }
+            selectedNotes.push(note.content);
+            cumulativeLength += note.content.length;
+          }
+
+          if (selectedNotes.length > 0) {
+            userNotesContext = selectedNotes.join('\n\n');
+            log('[DeepPDF] Extracted current chapter user notes:', selectedNotes.length, 'items');
+          }
+        }
+      }
+    } catch (err) {
+      log('[DeepPDF] Failed to extract current chapter notes:', err);
+    }
+  }
+
+  // 收集输入文本用于校验编造链接。
   // coveredScope 包含 tree.json 中验证过的 file_name（vault 真实文件），
   // 纳入校验是为了让早停路径已引用的链接在 formatter 输出中不被误删。
   // 当 effectiveScopeNodeIds 为空时 coveredScope 为 ''，对校验无影响。
@@ -236,6 +307,7 @@ export async function formatterNode(
     coveredScope || undefined,
     !!crossBookMode,
     retrievalCoverage,
+    userNotesContext || undefined,
   );
 
   const messages = [

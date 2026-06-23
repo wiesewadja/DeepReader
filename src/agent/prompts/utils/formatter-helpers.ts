@@ -25,6 +25,14 @@ export function buildFormatterSystemPrompt(
 </profile_instruction>\n`
     : '';
 
+  const notesInstructionSection = `
+<user_notes_instruction>
+若输入中存在 <current_chapter_user_notes>，表示用户在当前阅读章节做过的高亮划线与批注笔记：
+- 请优先在回答中以极度自然的方式融入或印证这些高亮划线内容，例如提及“关于你划线的这部分...”，或者结合用户的批注来展开分析。
+- 绝不要刻意机械地堆砌高亮内容。如果划线很多，应找出最贴合用户当下提问的一两处，将其点出作为回答的抓手。
+</user_notes_instruction>
+`;
+
   const followUpSection = enableFollowUp
     ? `\n<follow_up_instruction>
 在回复的最末尾，根据 <user_profile> 和 <memory>（如果存在）以及本次书籍分析，自然地提出**一个**个性化的追问：
@@ -51,7 +59,7 @@ export function buildFormatterSystemPrompt(
 </advisor_mode>\n`
     : '';
 
-  return `${formatterPrompt.locales.zh.systemPrompt}${timeSection}${advisorSection}${memorySection}${profileSection}${followUpSection}`;
+  return `${formatterPrompt.locales.zh.systemPrompt}${timeSection}${advisorSection}${memorySection}${profileSection}${notesInstructionSection}${followUpSection}`;
 }
 
 function countWikiLinks(text: string): number {
@@ -73,6 +81,7 @@ export function buildFormatterUserMessage(
     currentNodeId?: string;
     isCoverageGap: boolean;
   },
+  userNotesContext?: string,
 ): string {
   const historyText = recentHistory && recentHistory.length > 0
     ? formatHistoryBlock(summarizeRecentHistory(recentHistory, MAX_HISTORY_ROUNDS))
@@ -83,6 +92,10 @@ export function buildFormatterUserMessage(
 
   const scopeSection = coveredScope
     ? `\n${coveredScope}`
+    : '';
+
+  const notesSection = userNotesContext
+    ? `\n<current_chapter_user_notes>\n${userNotesContext}\n</current_chapter_user_notes>\n`
     : '';
 
   const retrievalSection = retrievalCoverage
@@ -104,9 +117,9 @@ ${retrievalCoverage.isCoverageGap
     : '';
 
   const bookInstruction = multiBook
-    ? `1. wiki 链接硬性要求${linkCountHint}：每一个 [[...]] 链接都必须原样保留在你的回复中。禁止修改其路径和 block_id 部分，禁止漏掉任何一个链接！
+    ? `1. wiki 链接硬性要求${linkCountHint}：每一个 [[...]] 链接都必须原样保留在你的回复中。禁止修改其路径 and block_id 部分，禁止漏掉任何一个链接！
 2. 别名自然嵌入句中：把别名作为主语、宾语或定语融入句子，使其读起来像一个通顺自然的句子，禁止链接孤立地放在句尾或放在括号内。`
-    : `1. wiki 链接硬性要求${linkCountHint}：每一个 [[...]] 链接都必须原样保留在你的回复中。禁止修改其路径和 block_id 部分，禁止漏掉任何一个链接！
+    : `1. wiki 链接硬性要求${linkCountHint}：每一个 [[...]] 链接都必须原样保留在你的回复中。禁止修改其路径 and block_id 部分，禁止漏掉任何一个链接！
 2. 别名自然嵌入句中：把别名作为主语、宾语或定语融入句子，使其读起来像一个通顺自然的句子，禁止链接孤立地放在句尾或放在括号内。`;
 
   return `<history>
@@ -118,7 +131,7 @@ ${historyText}
 <analysis>
 ${analysisResult || '(无分析结果)'}
 </analysis>
-${structureSection}${scopeSection}${retrievalSection}<book>${bookName}</book>
+${structureSection}${scopeSection}${notesSection}${retrievalSection}<book>${bookName}</book>
  
 用奚童的口吻分享你读后的理解。
  
