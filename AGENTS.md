@@ -51,6 +51,16 @@ Obsidian 插件，奚童，AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
 - 提交前将代码修改方案整理后告知用户审查，用户确认后提交代码
 - 每个重要功能都拉取.worktrees/目录下的独立worktree分支，完成后调用测试工程师代理进行测试
 
+### 跨平台兼容约束 (PC & Mobile)
+- **禁止顶层静态引入 Node.js 模块**：在 `main.ts` 或被其静态引入的传递闭包（如 `paths.ts`、搜索链等）中，禁止在顶层使用 `import * as fs from 'fs'` 或任何带 `node:` 前缀的静态 import。
+- **惰性 require**：需要使用 Node.js 专有 API（如 `fs/promises`、`child_process`）时，桌面端专用代码必须使用 `src/utils/node-fs.ts` 的 `nodeFs()` 惰性加载，或在函数内部动态 `require`/`await import()`。
+- **I/O 双轨机制**：文件读写优先使用 Vault API。非 UI CLI 脚本必须支持 `app ? vaultRead(...) : nodeFs().readFile(...)` 双轨兼容。
+- **UI 手势与定位兼容**：
+  - 移动端禁止注册自定义触摸滑动翻页（防与 Obsidian 原生滑动侧栏冲突），翻页应通过点击 UI 按钮或赋能 `scrollView.scrollLeft`。
+  - 选区工具栏在移动端应通过 `selectionchange` 结合 `range.getBoundingClientRect()` 精准定位，不得使用 mouseup 坐标。
+  - 尽量使用 `Platform.isMobile` 来处理特定平台样式（如阅读模式下通过 `toggleMobileNavbar` 隐藏底部导航栏，退出时还原）。
+- **提交前置卡点**：每次改动后必须运行 `node scripts/smoke/lib/mobile-load-trace.mjs`，确保加载阶段触发的 Node 模块集合为空（加载期零 Node 触达）。
+
 ## 部署陷阱
 - `manifest.json` 的 `id` 字段必须与插件目录名一致（`deepreader-dev/` → id=`deepreader-dev`），否则 Obsidian 静默加载失败
 - `community-plugins.json` 只能包含实际存在的插件 ID，空目录会导致加载冲突
