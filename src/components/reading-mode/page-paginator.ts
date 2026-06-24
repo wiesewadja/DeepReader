@@ -46,12 +46,6 @@ export class PagePaginator {
 	private chapterIndicator: HTMLElement | null = null;
 	private bookLabelEl: HTMLElement | null = null;
 
-	private touchStartX = 0;
-	private touchStartY = 0;
-	private touchStartTime = 0;
-	private touchHandlerStart: ((e: TouchEvent) => void) | null = null;
-	private touchHandlerEnd: ((e: TouchEvent) => void) | null = null;
-
 	private resizeObserver: ResizeObserver | null = null;
 	private resizeTimer: ReturnType<typeof setTimeout> | null = null;
 	private scrollHandler: ((e: Event) => void) | null = null;
@@ -819,15 +813,6 @@ export class PagePaginator {
 	}
 
 	private teardownTouchListeners(): void {
-		if (this.scrollView) {
-			if (this.touchHandlerStart) {
-				this.scrollView.removeEventListener('touchstart', this.touchHandlerStart);
-				this.touchHandlerStart = null;
-			}
-			if (this.touchHandlerEnd) {
-				this.scrollView.removeEventListener('touchend', this.touchHandlerEnd);
-				this.touchHandlerEnd = null;
-			}
-		}
+		// 移动端未注册触摸监听（见 setupTouchListeners），无需 teardown
 	}
 }
