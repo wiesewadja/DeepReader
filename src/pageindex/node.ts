@@ -43,15 +43,10 @@ export {
   type EpubChapter,
 } from "./parsers/epub";
 
-export {
-  pdfToImages,
-  pdfBufferToImages,
-  ocrImage,
-  ocrImages,
-  parsePdfWithOcr,
-  getPdfInfo,
-  type OcrOptions,
-} from "./parsers/ocr";
+// ocr 模块依赖 child_process（移动端 Capacitor 不可用）。
+// 不再 re-export ocr 的值函数——否则 node.ts 被加载时静态拖入 ocr → child_process，移动端加载即崩。
+// 需要 OCR 的代码请直接 `await import('./parsers/ocr')`（见 pageindex.ts parsePdfWithOcr）。
+// OcrOptions 类型请直接从 ./parsers/ocr 或 ./parsers/index 导入，不经此 re-export（避免拖入 ocr 模块）。
 
 export {
   mdToTree,

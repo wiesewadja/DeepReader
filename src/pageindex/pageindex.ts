@@ -121,7 +121,7 @@ import {
   DEFAULT_IMAGE_FORMAT,
   DEFAULT_OCR_CONCURRENCY,
 } from "./defaults.js";
-import { parsePdfWithOcr, type OcrOptions } from "./parsers/ocr";
+import type { OcrOptions } from "./parsers/ocr";
 import { indexObsidianVault as indexVault, getVaultIndexStatus as getVaultStatus, loadVaultIndex } from "./vault";
 import { searchVault as searchVaultFn } from "./vault/search";
 import type { ObsidianVaultIndexOptions, VaultIndexResult, SearchOptions, SearchResult } from "./vault/types";
@@ -288,6 +288,8 @@ export class PageIndex {
       imageDpi: this.options.imageDpi,
       concurrency: this.options.ocrConcurrency,
     };
+    // 动态 import：ocr 模块依赖 child_process（移动端不可用），仅 OCR 解析路径加载
+    const { parsePdfWithOcr } = await import("./parsers/ocr");
     const result = await parsePdfWithOcr(input, ocrOptions);
     const pages = result.pages;
     const pdfName = typeof input === "string" ? getPdfName(input) : "Untitled";
