@@ -43,9 +43,8 @@ export class ReadingTopbar extends Component {
         const container = document.createElement('div');
         container.className = 'deeppdf-reading-topbar';
 
-        // 左侧：奚童表情（固定）
+        // 奚童表情：作为 AI 伴读形象，不再固定于最左侧，而是作为默认的中间头像
         this.mascotFace = new MascotFace();
-        container.appendChild(this.mascotFace.getElement()!);
 
         // 中间：书籍信息 + 进度
         const centerSection = document.createElement('div');
@@ -56,7 +55,13 @@ export class ReadingTopbar extends Component {
 
         this.bookCoverEl = document.createElement('div');
         this.bookCoverEl.className = 'deeppdf-book-cover';
-        this.bookCoverEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
+        
+        // 默认将奚童头像作为中间的图标
+        const mascotEl = this.mascotFace.getElement();
+        if (mascotEl) {
+            this.bookCoverEl.appendChild(mascotEl);
+        }
+        
         this.bookCoverEl.addEventListener('click', () => {
             this.options.onCoverClick?.();
         });
@@ -127,10 +132,12 @@ export class ReadingTopbar extends Component {
         if (name) {
             this.bookTitleEl.textContent = name;
             this.bookTitleEl.classList.add('has-book');
+            this.el?.classList.add('has-book');
             this.bookAuthorEl.textContent = author || '';
         } else {
             this.bookTitleEl.textContent = '奚童 · AI 伴读';
             this.bookTitleEl.classList.remove('has-book');
+            this.el?.classList.remove('has-book');
             this.bookAuthorEl.textContent = '';
         }
     }
@@ -145,7 +152,13 @@ export class ReadingTopbar extends Component {
             this.bookCoverEl.innerHTML = `<img src="${coverUrl}" alt="书籍封面" />`;
             this.bookCoverEl.classList.add('has-cover');
         } else {
-            this.bookCoverEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
+            this.bookCoverEl.innerHTML = '';
+            if (this.mascotFace) {
+                const el = this.mascotFace.getElement();
+                if (el) {
+                    this.bookCoverEl.appendChild(el);
+                }
+            }
             this.bookCoverEl.classList.remove('has-cover');
         }
     }
@@ -159,6 +172,7 @@ export class ReadingTopbar extends Component {
         if (isCrossBook) {
             this.bookTitleEl.textContent = '跨书籍阅读';
             this.bookTitleEl.classList.add('has-book');
+            this.el?.classList.add('has-book');
             this.bookAuthorEl.textContent = '多本书籍';
         }
     }
@@ -171,6 +185,7 @@ export class ReadingTopbar extends Component {
 
         this.bookTitleEl.textContent = booklist.name || '主题阅读';
         this.bookTitleEl.classList.add('has-book');
+        this.el?.classList.add('has-book');
 
         const names = booklist.bookNames || [];
         this.bookAuthorEl.textContent = names.join('、');
@@ -360,8 +375,10 @@ export class ReadingTopbar extends Component {
         if (el.parentNode) {
             el.parentNode.removeChild(el);
         }
-        if (this.el) {
-            this.el.insertBefore(el, this.el.firstChild);
+        // 如果没有封面图片，将奚童头像重新放回 bookCoverEl 中
+        if (this.bookCoverEl && !this.bookCoverEl.classList.contains('has-cover')) {
+            this.bookCoverEl.innerHTML = '';
+            this.bookCoverEl.appendChild(el);
         }
     }
 

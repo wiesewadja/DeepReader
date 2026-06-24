@@ -749,6 +749,17 @@ export class ReadingModeService implements ScrollPatchService {
 				}
 			} else {
 				this.deactivate();
+				// 自动切回 edit 模式
+				if (file && file.extension === "md") {
+					const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+					if (view && view.getMode() !== "source") {
+						view.setState(
+							{ ...view.getState(), mode: "source" },
+							{ history: false },
+						);
+						serviceLog("[ReadingMode] Switched to edit view (not a chapter file)");
+					}
+				}
 			}
 		});
 
@@ -757,6 +768,16 @@ export class ReadingModeService implements ScrollPatchService {
 			const activeFile = this.app.workspace.getActiveFile();
 			if (activeFile && this.isChapterFile(activeFile) && this.autoEnable) {
 				this.activate(activeFile);
+			} else if (activeFile && activeFile.extension === "md") {
+				// 否则自动切回 edit 模式
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (view && view.getMode() !== "source") {
+					view.setState(
+						{ ...view.getState(), mode: "source" },
+						{ history: false },
+					);
+					serviceLog("[ReadingMode] Switched to edit view on startup");
+				}
 			}
 		};
 

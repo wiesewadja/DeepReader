@@ -69,8 +69,8 @@
 	box-sizing: border-box;
 }
 
-/* 空状态时隐藏 topbar —— 避免两个奚童头像同时出现 */
-.deeppdf-chat-container:has(.deeppdf-message-list.deeppdf-is-empty) .deeppdf-reading-topbar {
+/* 空状态且无书籍时隐藏 topbar —— 避免两个奚童头像同时出现 */
+.deeppdf-chat-container:has(.deeppdf-message-list.deeppdf-is-empty) .deeppdf-reading-topbar:not(.has-book) {
 	display: none;
 }
 
