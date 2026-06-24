@@ -1,6 +1,7 @@
 export interface VoiceRewriterConfig {
   apiKey: string;
   baseUrl: string;
+  model?: string;
 }
 
 export interface BookContext {
@@ -15,7 +16,7 @@ export class VoiceRewriter {
     this.config = config;
   }
 
-  async rewrite(rawText: string, bookContext?: BookContext): Promise<string> {
+  async *rewrite(rawText: string, bookContext?: BookContext): AsyncGenerator<string> {
     const prompt = this.buildPrompt(rawText, bookContext);
     const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -24,9 +25,9 @@ export class VoiceRewriter {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: this.config.model ?? 'deepseek-chat',
         messages: [{ role: 'user', content: prompt }],
-        stream: false,
+        stream: true,
       }),
     });
 
@@ -34,8 +35,36 @@ export class VoiceRewriter {
       throw new Error(`VoiceRewriter failed: ${response.status}`);
     }
 
-    const data = await response.json();
-    return data.choices[0].message.content.trim();
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('VoiceRewriter: no response body');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          if (data === '[DONE]') return;
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) yield content;
+          } catch {
+            // skip malformed chunks
+          }
+        }
+      }
+    }
   }
 
   private buildPrompt(rawText: string, bookContext?: BookContext): string {
@@ -43,9 +72,9 @@ export class VoiceRewriter {
       ? `当前书籍：${bookContext.title}。${bookContext.description || ''}\n\n`
       : '';
 
-    return `${bookInfo}你是文本优化助手。将用户口语化的表达转为书面语，保留原意但更正式。
+    return `你是文本优化助手。将用户口语化的表达转为书面语，保留原意但更正式。
 
-用户语音：${rawText}
+${bookInfo}用户语音：${rawText}
 
 请输出优化后的书面语：`;
   }
