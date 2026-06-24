@@ -11,7 +11,12 @@
  * - 新代码建议直接用 pageindexPaths(pluginId) 或 getPageindexDir() 显式函数
  */
 
-import { join } from 'node:path';
+// ⚠️ 必须用裸名 'path'，不能用 'node:path'：
+// Obsidian 移动端 Capacitor 的 Node polyfill 不识别 `node:` 前缀（仅匹配裸模块名），
+// 而 paths.ts 被 main.ts 的 setActivePluginId 与 agent 搜索链（PAGEINDEX_DIR）静态 import，
+// 插件加载阶段即初始化——若用 'node:path' 会在加载期 require 失败，导致移动端插件加载即崩。
+// 桌面端 Electron 两种写法均支持。详见 docs/specs/mobile-plugin-load-fix.md
+import { join } from 'path';
 
 /** 当前激活的 pluginId（main.ts 在 onload 中设置） */
 let _activePluginId: string = 'deepreader';
