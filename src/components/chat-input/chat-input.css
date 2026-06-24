@@ -509,17 +509,30 @@
 	color: transparent !important;
 }
 
-/* 语音 overlay（覆盖在 textarea 上方） */
+/* 语音 overlay（fixed 定位，覆盖输入框区域） */
 .deeppdf-voice-overlay {
-	position: absolute;
-	left: 12px;
-	top: 50%;
-	transform: translateY(-50%);
-	display: inline-flex;
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	height: 120px;
+	background: var(--background-primary);
+	border-top: 1px solid var(--background-modifier-border);
+	display: flex;
+	flex-direction: column;
 	align-items: center;
-	gap: 8px;
-	pointer-events: none;
-	z-index: 10;
+	justify-content: center;
+	z-index: 200;
+	box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.deeppdf-voice-overlay .deeppdf-voice-wave {
+	margin-bottom: 8px;
+}
+
+.deeppdf-voice-overlay .deeppdf-voice-label {
+	font-size: var(--font-smallest);
+	color: var(--text-muted);
 }
 
 /* 递增识别时的录音指示器（右上角红点 + 文字） */
