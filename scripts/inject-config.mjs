@@ -96,7 +96,7 @@ const data = {
 	langsmithApiKey: get('DEEPREADER_LANGSMITH_API_KEY'),
 	langsmithProject: get('DEEPREADER_LANGSMITH_PROJECT') || 'DeepReader',
 	langsmithEnabled: getBool('DEEPREADER_LANGSMITH_ENABLED'),
-	proactiveGuidanceEnabled: env['DEEPREADER_PROACTIVE_GUIDANCE'] ? getBool('DEEPREADER_PROACTIVE_GUIDANCE') : true,
+	proactiveGuidanceEnabled: env['DEEPREADER_PROACTIVE_GUIDANCE'] ? getBool('DEEPREADER_PROACTIVE_GUIDANCE') : false,
 	proactiveCooldownMinutes: getInt('DEEPREADER_PROACTIVE_COOLDOWN', 5),
 	journalDir: get('DEEPREADER_JOURNAL_DIR'),
 	profileDimensions: [],

@@ -30,7 +30,6 @@ export interface AgentChatControllerHost {
 	get messageList(): import('../../components/message-list/message-list.js').MessageList | null;
 	get chatInput(): import('../../components/chat-input/chat-input.js').ChatInput | null;
 	get frontendAgent(): import('../../agent/index.js').FrontendAgent | null;
-	get proactiveEngine(): import('../../agent/proactive/engine.js').ProactiveEngine | null;
 	get currentIndexId(): string | null;
 	get currentPdfName(): string | null;
 	get currentDocDescription(): string | null;
@@ -397,7 +396,6 @@ export class AgentChatController {
 				visual: undefined, // 图表生成已迁移到 Hermes
 				useLLMTreeSearch: this.host.useLLMTreeSearch,
 				quotes: quotes,
-				mode: this.host.proactiveEngine?.shouldEnableSocratic(indexId) ? 'socratic' as const : undefined,
 			};
 
 			let userMessage = query;
@@ -801,126 +799,7 @@ export class AgentChatController {
 		}
 	}
 
-	// ── Proactive guidance ──
 
-	async executeProactiveGuidance(params: import('../../agent/proactive/types.js').ProactiveParams): Promise<void> {
-		if (!this.host.frontendAgent || !this.host.messageList) return;
-		if (this.isProcessing || this.isAiStreaming) return;
-		this.host.proactiveEngine?.setProcessing(true);
-		this.isProcessing = true;
-		this.host.readingTopbar?.setMascotExpression('thinking');
-		const aiMessageId = `proactive-${Date.now()}`;
-		this.proactiveAbortController = new AbortController();
-		try {
-			const aiMessageData: MessageData = {
-				id: aiMessageId,
-				role: "assistant" as MessageRole,
-				content: "",
-				timestamp: new Date().toISOString(),
-				isStreaming: true,
-				isAgentMessage: true,
-				currentStatus: '思考中...',
-				pdfName: this.host.currentPdfName || undefined,
-				conversationId: this.host.sessionId || undefined,
-				bookCoverUrl: this.host.currentBookCoverUrl || undefined,
-				bookAuthor: this.host.currentBookAuthor || undefined,
-				isProactiveGuidance: true,
-			};
-			this.host.messageList.addMessage(aiMessageData);
-
-			const activeFile = this.host.app.workspace.getActiveFile();
-			let currentNodeId: string | undefined;
-			if (activeFile) {
-				const cache = this.host.app.metadataCache.getFileCache(activeFile);
-				const rawNodeId = cache?.frontmatter?.node_id;
-				if (rawNodeId) currentNodeId = String(rawNodeId);
-			}
-
-			const context: ToolContext = {
-				vault: {
-					app: this.host.app,
-					plugin: this.host.plugin,
-				},
-				book: {
-					indexId: this.host.currentIndexId || '',
-					pdfName: this.host.currentPdfName || '',
-					markdownFiles: this._currentMarkdownFiles,
-					currentNodeId,
-					documentMetadata: { title: this.host.currentPdfName || '未知文档' },
-					docDescription: this.host.currentDocDescription || undefined,
-				},
-				crossBook: this.host.currentBooklistBookIds ? {
-					booklistBookIds: this.host.currentBooklistBookIds,
-					crossBookMode: true,
-				} : undefined,
-				mode: 'proactive' as const,
-			};
-			const self = this;
-			const callbacks = {
-				onContent: (content: string) => {
-					self.host.messageList?.updateMessage(aiMessageId, { content });
-				},
-				onProgress: (msg: string) => {
-					self.host.messageList?.updateMessage(aiMessageId, { currentStatus: msg });
-				},
-				onComplete: () => {
-					self.host.readingTopbar?.setMascotExpression('happy');
-				},
-				onError: (msg: string) => {
-					self.host.readingTopbar?.setMascotExpression('idle');
-					self.host.messageList?.updateMessage(aiMessageId, {
-						isStreaming: false,
-						content: `引导生成失败: ${msg}`,
-					});
-				},
-				onContentComplete: async (content: string) => content,
-				onReasoning: () => {},
-				onHumanizedProgress: (progress: HumanizedProgress) => {
-					const expr = mapActionToExpression(progress.mainAction.type, progress.mainAction.detail);
-					self.host.readingTopbar?.setMascotExpression(expr);
-				},
-				abortSignal: self.proactiveAbortController?.signal,
-			};
-
-			const syntheticMessage = (params as any).syntheticMessage || (params as any).question || '';
-			const result = await this.host.frontendAgent.runGraphEngine(
-				syntheticMessage,
-				context,
-				callbacks,
-				this._agentChatHistory,
-			);
-
-			if (this.proactiveAbortController?.signal.aborted) {
-				this.host.messageList?.updateMessage(aiMessageId, {
-					isStreaming: false,
-					content: '引导生成被中断',
-				});
-				return;
-			}
-
-			const assistantContent = result.messages[0]?.content || '';
-			this._agentChatHistory = [
-				...this._agentChatHistory,
-				{ role: 'user', content: syntheticMessage },
-				{ role: 'assistant', content: assistantContent },
-			];
-			this.host.messageList?.updateMessage(aiMessageId, {
-				isStreaming: false,
-				content: assistantContent,
-			});
-			await this.host.saveToCache();
-		} catch (err) {
-			logError('[DeepPDF] 主动引导生成失败:', err);
-			this.host.messageList?.updateMessage(aiMessageId, {
-				isStreaming: false,
-				content: "引导生成失败: " + (err instanceof Error ? err.message : String(err)),
-			});
-		} finally {
-			this.host.proactiveEngine?.setProcessing(false);
-			this.isProcessing = false;
-			this.proactiveAbortController = null;
-		}
-	}
 
 	// ── HITL ──
 

@@ -26,9 +26,7 @@ import { inspectionalPrompt } from './core/inspectional.js';
 import { preSearchPrompt } from './core/pre-search.js';
 import { analyticalPrompt } from './core/analytical.js';
 import { syntopicalPrompt } from './core/syntopical.js';
-import { socraticPrompt } from './core/socratic.js';
 import { formatterPrompt } from './core/formatter.js';
-import { proactivePrompt } from './core/proactive.js';
 
 // 辅助模块
 import { advisorPrompt } from './auxiliary/advisor.js';
@@ -47,9 +45,7 @@ const ALL_MODULES = [
   preSearchPrompt,
   analyticalPrompt,
   syntopicalPrompt,
-  socraticPrompt,
   formatterPrompt,
-  proactivePrompt,
   advisorPrompt,
   diagramPrompt,
   consolidationPrompt,

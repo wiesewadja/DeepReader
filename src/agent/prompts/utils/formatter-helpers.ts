@@ -8,6 +8,7 @@ export function buildFormatterSystemPrompt(
   memoryContext?: string,
   userProfileSummary?: string,
   isReadingAdvisor?: boolean,
+  enableFollowUp?: boolean,
 ): string {
   const memorySection = memoryContext
     ? `\n<memory>\n${memoryContext}\n</memory>\n`
@@ -22,6 +23,25 @@ export function buildFormatterSystemPrompt(
 - 语气像老朋友在分享读书心得，不是咨询师在做分析
 - 不要强行关联，生硬比沉默更糟糕
 </profile_instruction>\n`
+    : '';
+
+  const notesInstructionSection = `
+<user_notes_instruction>
+若输入中存在 <current_chapter_user_notes>，表示用户在当前阅读章节做过的高亮划线与批注笔记：
+- 请优先在回答中以极度自然的方式融入或印证这些高亮划线内容，例如提及“关于你划线的这部分...”，或者结合用户的批注来展开分析。
+- 绝不要刻意机械地堆砌高亮内容。如果划线很多，应找出最贴合用户当下提问的一两处，将其点出作为回答的抓手。
+</user_notes_instruction>
+`;
+
+  const followUpSection = enableFollowUp
+    ? `\n<follow_up_instruction>
+在回复的最末尾，根据 <user_profile> 和 <memory>（如果存在）以及本次书籍分析，自然地提出**一个**个性化的追问：
+- 这个追问必须是为用户量身定制的，结合其经历、痛点、或者读书目标，引导用户将书中的智慧与自己的真实生活/工作行动进行关联（例如：“你之前提到在带团队，对于这一章提到的分权，你打算如何在下周的周会上实践一下？”）
+- 语气要自然、温和、充满探索欲，像真正的读书伙伴在聊天中随口一问。
+- 绝不要使用机械化、套路化或居高临下的模板式追问（如“你觉得呢？”、“这对你有什么启发？”）。
+- 如果没有可参考的用户画像/记忆信息，或者强行关联显得极其尴尬，则只提一个简短的、结合本章内容与用户当前困惑的高质量启发性问题即可。
+- 追问要极其克制，合并在最后一个段落中，或者单起一行，长度在一两句话以内。
+</follow_up_instruction>\n`
     : '';
 
   const now = new Date();
@@ -39,7 +59,7 @@ export function buildFormatterSystemPrompt(
 </advisor_mode>\n`
     : '';
 
-  return `${formatterPrompt.locales.zh.systemPrompt}${timeSection}${advisorSection}${memorySection}${profileSection}`;
+  return `${formatterPrompt.locales.zh.systemPrompt}${timeSection}${advisorSection}${memorySection}${profileSection}${notesInstructionSection}${followUpSection}`;
 }
 
 function countWikiLinks(text: string): number {
@@ -61,6 +81,7 @@ export function buildFormatterUserMessage(
     currentNodeId?: string;
     isCoverageGap: boolean;
   },
+  userNotesContext?: string,
 ): string {
   const historyText = recentHistory && recentHistory.length > 0
     ? formatHistoryBlock(summarizeRecentHistory(recentHistory, MAX_HISTORY_ROUNDS))
@@ -71,6 +92,10 @@ export function buildFormatterUserMessage(
 
   const scopeSection = coveredScope
     ? `\n${coveredScope}`
+    : '';
+
+  const notesSection = userNotesContext
+    ? `\n<current_chapter_user_notes>\n${userNotesContext}\n</current_chapter_user_notes>\n`
     : '';
 
   const retrievalSection = retrievalCoverage
@@ -92,9 +117,9 @@ ${retrievalCoverage.isCoverageGap
     : '';
 
   const bookInstruction = multiBook
-    ? `1. wiki 链接硬性要求${linkCountHint}：每一个 [[...]] 链接都必须原样保留在你的回复中。禁止修改其路径和 block_id 部分，禁止漏掉任何一个链接！
+    ? `1. wiki 链接硬性要求${linkCountHint}：每一个 [[...]] 链接都必须原样保留在你的回复中。禁止修改其路径 and block_id 部分，禁止漏掉任何一个链接！
 2. 别名自然嵌入句中：把别名作为主语、宾语或定语融入句子，使其读起来像一个通顺自然的句子，禁止链接孤立地放在句尾或放在括号内。`
-    : `1. wiki 链接硬性要求${linkCountHint}：每一个 [[...]] 链接都必须原样保留在你的回复中。禁止修改其路径和 block_id 部分，禁止漏掉任何一个链接！
+    : `1. wiki 链接硬性要求${linkCountHint}：每一个 [[...]] 链接都必须原样保留在你的回复中。禁止修改其路径 and block_id 部分，禁止漏掉任何一个链接！
 2. 别名自然嵌入句中：把别名作为主语、宾语或定语融入句子，使其读起来像一个通顺自然的句子，禁止链接孤立地放在句尾或放在括号内。`;
 
   return `<history>
@@ -106,7 +131,7 @@ ${historyText}
 <analysis>
 ${analysisResult || '(无分析结果)'}
 </analysis>
-${structureSection}${scopeSection}${retrievalSection}<book>${bookName}</book>
+${structureSection}${scopeSection}${notesSection}${retrievalSection}<book>${bookName}</book>
  
 用奚童的口吻分享你读后的理解。
  

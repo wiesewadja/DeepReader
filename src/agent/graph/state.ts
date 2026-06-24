@@ -31,7 +31,7 @@ export enum ReadingDepth {
  * 'proactive' — ask guiding questions instead of answering
  * 'socratic'  — dialogue mode with follow-up questions
  */
-export type EngineMode = 'normal' | 'proactive' | 'socratic';
+export type EngineMode = 'normal';
 
 /** Tool result snapshot for S2 → S4 self-verification */
 export interface ToolResultSnapshot {

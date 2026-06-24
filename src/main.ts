@@ -166,26 +166,44 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                     const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
                     if (sidebarLeaves.length > 0) {
                         const sidebarView = sidebarLeaves[0].view as SidebarView;
-                        sidebarView.selectIndex(indexId);
+                        if (sidebarView && typeof sidebarView.selectIndex === 'function') {
+                            sidebarView.selectIndex(indexId);
+                        }
                     }
                 },
                 onDeleteIndex: async (indexId) => {
                     const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
                     if (sidebarLeaves.length > 0) {
                         const sidebarView = sidebarLeaves[0].view as SidebarView;
-                        await sidebarView.handleDeleteIndex(indexId);
-                        return sidebarView.indexes;
+                        if (sidebarView && typeof sidebarView.handleDeleteIndex === 'function') {
+                            await sidebarView.handleDeleteIndex(indexId);
+                            return sidebarView.indexes || [];
+                        }
                     }
-                    return [];
+                    const { BookManager } = await import("./views/sidebar/book-manager.js");
+                    const tempBookMgr = new BookManager({
+                        app: this.app,
+                        plugin: this as unknown as DeepReaderPluginInterface
+                    } as any);
+                    await tempBookMgr.handleDeleteIndex(indexId);
+                    return tempBookMgr.indexes;
                 },
                 onRefresh: async () => {
                     const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
                     if (sidebarLeaves.length > 0) {
                         const sidebarView = sidebarLeaves[0].view as SidebarView;
-                        await sidebarView.loadIndexes();
-                        return sidebarView.indexes;
+                        if (sidebarView && typeof sidebarView.loadIndexes === 'function') {
+                            await sidebarView.loadIndexes();
+                            return sidebarView.indexes || [];
+                        }
                     }
-                    return [];
+                    const { BookManager } = await import("./views/sidebar/book-manager.js");
+                    const tempBookMgr = new BookManager({
+                        app: this.app,
+                        plugin: this as unknown as DeepReaderPluginInterface
+                    } as any);
+                    await tempBookMgr.loadIndexes();
+                    return tempBookMgr.indexes;
                 },
                 onDownloadCover: async (indexId: string, pdfName: string) => {
                     // 封面已由 book-indexer.ts 在索引过程中自动保存，
@@ -196,10 +214,12 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                     const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
                     if (sidebarLeaves.length > 0) {
                         const sidebarView = sidebarLeaves[0].view as SidebarView;
-                        if (reenter) {
-                            sidebarView.reenterBooklist(booklist);
-                        } else {
-                            sidebarView.selectBooklist(booklist);
+                        if (sidebarView) {
+                            if (reenter && typeof sidebarView.reenterBooklist === 'function') {
+                                sidebarView.reenterBooklist(booklist);
+                            } else if (typeof sidebarView.selectBooklist === 'function') {
+                                sidebarView.selectBooklist(booklist);
+                            }
                         }
                     }
                 },
@@ -1068,13 +1088,32 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         let indexes: any[] = [];
         let selectedIndexId: string | null = null;
         let selectedBooklistId: string | null = null;
+        let loaded = false;
+
         if (sidebarLeaves.length > 0) {
             const sidebarView = sidebarLeaves[0].view as SidebarView;
-            await sidebarView.loadIndexes();
-            indexes = sidebarView.indexes;
-            selectedIndexId = sidebarView.getCurrentIndexId();
-            selectedBooklistId = sidebarView.getCurrentBooklistId();
-            if (selectedBooklistId) selectedIndexId = null;
+            if (sidebarView && typeof sidebarView.loadIndexes === 'function') {
+                await sidebarView.loadIndexes();
+                indexes = sidebarView.indexes || [];
+                if (typeof sidebarView.getCurrentIndexId === 'function') {
+                    selectedIndexId = sidebarView.getCurrentIndexId();
+                }
+                if (typeof sidebarView.getCurrentBooklistId === 'function') {
+                    selectedBooklistId = sidebarView.getCurrentBooklistId();
+                }
+                if (selectedBooklistId) selectedIndexId = null;
+                loaded = true;
+            }
+        }
+
+        if (!loaded) {
+            const { BookManager } = await import("./views/sidebar/book-manager.js");
+            const tempBookMgr = new BookManager({
+                app: this.app,
+                plugin: this as unknown as DeepReaderPluginInterface
+            } as any);
+            await tempBookMgr.loadIndexes();
+            indexes = tempBookMgr.indexes;
         }
 
         // 检查是否已有书库视图
@@ -1096,6 +1135,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             type: LIBRARY_VIEW_TYPE,
             state: { indexes, selectedIndexId, selectedBooklistId }
         });
+        this.app.workspace.revealLeaf(leaf);
     }
 
     /**

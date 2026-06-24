@@ -6,7 +6,6 @@
 
 import { Notice, TFile } from 'obsidian';
 import type { FrontendAgent } from '../../agent/index.js';
-import type { ProactiveEngine } from '../../agent/proactive/engine.js';
 import type { SessionStore } from '../../agent/session/index.js';
 import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
 import type { MessageList } from '../../components/message-list/message-list.js';
@@ -21,22 +20,21 @@ import { LIBRARY_VIEW_TYPE } from '../library-view.js';
 export interface BookManagerHost {
 	get app(): import('obsidian').App;
 	get plugin(): DeepReaderPluginInterface;
-	get messageList(): MessageList | null;
-	get readingTopbar(): ReadingTopbar | null;
-	get proactiveEngine(): ProactiveEngine | null;
-	get frontendAgent(): FrontendAgent | null;
+	get messageList(): MessageList | null | undefined;
+	get readingTopbar(): ReadingTopbar | null | undefined;
+	get frontendAgent(): FrontendAgent | null | undefined;
 
 	// Session delegation
-	startNewSession(indexId: string): Promise<void>;
-	restoreFromSessionStore(sessionId: string): Promise<boolean>;
-	get sessionId(): string | null;
-	set sessionId(id: string | null);
-	get sessionStore(): SessionStore | null;
-	ensureSessionStore(): Promise<void>;
+	startNewSession?(indexId: string): Promise<void>;
+	restoreFromSessionStore?(sessionId: string): Promise<boolean>;
+	get sessionId(): string | null | undefined;
+	set sessionId(id: string | null | undefined);
+	get sessionStore(): SessionStore | null | undefined;
+	ensureSessionStore?(): Promise<void>;
 
 	// Agent
-	cancelActiveStream(): void;
-	initializeFrontendAgent(): Promise<void>;
+	cancelActiveStream?(): void;
+	initializeFrontendAgent?(): Promise<void>;
 }
 
 export class BookManager {
@@ -102,6 +100,7 @@ export class BookManager {
 			type: LIBRARY_VIEW_TYPE,
 			state: { indexes: this._indexes, selectedIndexId: this._currentBooklist ? null : this._currentIndexId, selectedBooklistId: this._currentBooklist?.id ?? null }
 		});
+		this.host.app.workspace.revealLeaf(leaf);
 	}
 
 	// ── Bookshelf summary ──
@@ -296,9 +295,6 @@ export class BookManager {
 	async selectIndex(indexId: string): Promise<void> {
 		if (this._currentIndexId === indexId) {
 			log(`[DeepPDF] selectIndex: 已选中索引 ${indexId}，跳过`);
-			if (!this.host.proactiveEngine) {
-				await this.host.initializeFrontendAgent();
-			}
 			await this.syncTopbarBookName();
 			return;
 		}
@@ -397,9 +393,7 @@ export class BookManager {
 		this.host.messageList?.setCurrentPdfName(displayName);
 		this.host.readingTopbar?.setCurrentBook(displayName, author);
 
-		if (!this.host.proactiveEngine) {
-			await this.host.initializeFrontendAgent();
-		}
+
 
 		// 从本地书籍笔记读取全书摘要
 		try {
@@ -424,7 +418,7 @@ export class BookManager {
 			this._currentDocDescription = null;
 		}
 
-		this.host.cancelActiveStream();
+		this.host.cancelActiveStream?.();
 		this.host.messageList?.clear();
 
 		// 恢复会话
@@ -434,8 +428,8 @@ export class BookManager {
 
 		if (savedSessionId) {
 			try {
-				await this.host.ensureSessionStore();
-				const session = await this.host.sessionStore!.get(savedSessionId);
+				await this.host.ensureSessionStore?.();
+				const session = this.host.sessionStore ? await this.host.sessionStore.get(savedSessionId) : null;
 
 				if (session) {
 					const sessionIndexId = String(session.indexId);
@@ -450,25 +444,25 @@ export class BookManager {
 
 					if (!isMatch) {
 						log(`[DeepPDF] 会话不匹配: session.indexId="${sessionIndexId}", 当前 indexId="${indexId}", normalizedBookName="${normalizedBookName}"`);
-						this.host.startNewSession(indexId);
+						this.host.startNewSession?.(indexId);
 						return;
 					}
 
 					this.host.sessionId = savedSessionId;
-					const restored = await this.host.restoreFromSessionStore(savedSessionId);
+					const restored = this.host.restoreFromSessionStore ? await this.host.restoreFromSessionStore(savedSessionId) : false;
 					if (restored) {
 						log('[DeepPDF] 从 SessionStore 恢复会话成功，会话匹配');
 						return;
 					}
 				}
 
-				this.host.startNewSession(indexId);
+				this.host.startNewSession?.(indexId);
 			} catch (e) {
 				logError(`[DeepPDF] 恢复会话失败:`, e);
-				this.host.startNewSession(indexId);
+				this.host.startNewSession?.(indexId);
 			}
 		} else {
-			this.host.startNewSession(indexId);
+			this.host.startNewSession?.(indexId);
 		}
 	}
 
@@ -734,7 +728,7 @@ export class BookManager {
 		this._currentBookAuthor = null;
 		this._currentDocDescription = null;
 		this._currentBooklist = booklist;
-		this.host.cancelActiveStream();
+		this.host.cancelActiveStream?.();
 		this.host.messageList?.clear();
 		this.host.readingTopbar?.setCurrentBooklist(booklist);
 		this.host.messageList?.setCurrentPdfName(booklist.name);
@@ -849,14 +843,12 @@ export class BookManager {
 
 		this.host.messageList?.setCurrentPdfName(booklist.name);
 
-		if (!this.host.proactiveEngine) {
-			await this.host.initializeFrontendAgent();
-		}
 
-		this.host.cancelActiveStream();
+
+		this.host.cancelActiveStream?.();
 		this.host.messageList?.clear();
 
-		await this.host.startNewSession(booklist.id);
+		await this.host.startNewSession?.(booklist.id);
 
 		log(`[DeepPDF] selectBooklist 完成: session started for ${booklist.id}`);
 	}
@@ -865,7 +857,7 @@ export class BookManager {
 		if (!this._currentBooklist) return;
 		log(`[DeepPDF] clearBooklist: exiting booklist mode`);
 
-		this.host.cancelActiveStream();
+		this.host.cancelActiveStream?.();
 		this._currentBooklist = null;
 		this._currentDocDescription = null;
 

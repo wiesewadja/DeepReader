@@ -27,9 +27,7 @@ function userHasDiagramIntent(state: CognitiveEngineState): boolean {
  * - otherwise: go directly to inspectional (which handles routing & chapter selection)
  */
 export function routeFromStart(state: CognitiveEngineState): string {
-  const mode = resolveMode(state);
   if (!state.pdfName && !state.crossBookMode) {
-    if (mode === 'socratic') return NODE_NAMES.FORMATTER;
     if (state.wereadAvailable) return NODE_NAMES.ADVISOR;
     return NODE_NAMES.FORMATTER;
   }
@@ -39,8 +37,6 @@ export function routeFromStart(state: CognitiveEngineState): string {
 /**
  * Route after S1 Inspectional.
  *
- * - mode=proactive → visualizer or formatter (ask Socratic question)
- * - mode=socratic → formatter (dialogue mode, skip S2, reuse chatHistory)
  * - depth=0 (casual) → formatter
  * - depth=3 → S3 (syntopical)
  * - depth=1 + diagram intent → visualizer (use S1's structural analysis)
@@ -49,16 +45,6 @@ export function routeFromStart(state: CognitiveEngineState): string {
  */
 export function routeAfterInspectional(state: CognitiveEngineState): string {
   const mode = resolveMode(state);
-
-  // Proactive: 直接完成（图表生成已迁移到 Hermes）
-  if (mode === 'proactive') {
-    return EDGE_KEYS.DONE;
-  }
-
-  // Socratic: skip S2, go to formatter with dialogue mode (reuses chatHistory)
-  if (mode === 'socratic') {
-    return EDGE_KEYS.DONE;
-  }
 
   if (state.depth === ReadingDepth.CASUAL) {
     return EDGE_KEYS.DONE;

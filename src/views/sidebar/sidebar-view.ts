@@ -6,7 +6,6 @@
 import { ItemView, type WorkspaceLeaf, Notice } from "obsidian";
 import { type FrontendAgent } from "../../agent/index.js";
 import { MemoryStore } from "../../agent/memory/store.js";
-import { ProactiveEngine } from "../../agent/proactive/engine.js";
 import { SessionStore } from "../../agent/session/index.js";
 import type { DeepReaderPluginInterface } from "../../agent/tools/context/vault.js";
 import { ChatInput } from "../../components/chat-input/chat-input.js";
@@ -76,17 +75,6 @@ export class SidebarView extends ItemView {
 		| import("../../services/tts/tts-service.js").TTSService
 		| null = null;
 
-	// 主动阅读引导
-	private proactiveEngine:
-		| import("../../agent/proactive/engine.js").ProactiveEngine
-		| null = null;
-
-	// ContextManager 同步的文档内容（供 Agent 搜索）
-
-	/** 当前书籍的全书摘要（由后端生成，用于 Agent 系统提示） */
-
-	/** 前端 Agent 对话历史 */
-
 	// ── 子系统 controller ──
 	private quoteManager: QuoteManager;
 	private ttsCtrl: TTSController;
@@ -104,15 +92,6 @@ export class SidebarView extends ItemView {
 		const agent = await this.plugin.getFrontendAgent();
 		this.frontendAgent = agent;
 		log("[DeepPDF] FrontendAgent 初始化完成");
-
-		// 初始化主动阅读引导引擎
-		this.proactiveEngine = new ProactiveEngine(
-			this.app,
-			this.plugin,
-			async (params) => {
-				await this.agentChatCtrl.executeProactiveGuidance(params);
-			},
-		);
 	}
 
 	/**
@@ -363,9 +342,6 @@ export class SidebarView extends ItemView {
 			get frontendAgent() {
 				return self.frontendAgent;
 			},
-			get proactiveEngine() {
-				return self.proactiveEngine;
-			},
 			get currentIndexId() {
 				return self.bookMgr.currentIndexId;
 			},
@@ -457,9 +433,6 @@ export class SidebarView extends ItemView {
 			},
 			get readingTopbar() {
 				return self.readingTopbar;
-			},
-			get proactiveEngine() {
-				return self.proactiveEngine;
 			},
 			get frontendAgent() {
 				return self.frontendAgent;
@@ -690,18 +663,7 @@ export class SidebarView extends ItemView {
 	}
 
 	public async notifyHighlight(text: string): Promise<void> {
-		const activeFile = this.app.workspace.getActiveFile();
-		if (!activeFile || !this.bookMgr.currentIndexId) return;
-		const cache = this.app.metadataCache.getFileCache(activeFile);
-		const chapterId = cache?.frontmatter?.node_id
-			? String(cache.frontmatter.node_id)
-			: activeFile.basename;
-		if (!chapterId) return;
-		await this.proactiveEngine?.onHighlight(
-			this.bookMgr.currentIndexId,
-			chapterId,
-			text,
-		);
+		// Proactive engine removed
 	}
 
 	/**
@@ -1357,15 +1319,7 @@ export class SidebarView extends ItemView {
 				this.voiceInputCtrl = null;
 			}
 
-			// 清理主动引导引擎
-			if (this.proactiveEngine) {
-				try {
-					this.proactiveEngine.destroy();
-				} catch (e) {
-					warn("[DeepPDF] Error destroying proactiveEngine:", e);
-				}
-				this.proactiveEngine = null;
-			}
+
 
 			// 清理任务卡片
 			try {

@@ -26,7 +26,7 @@ export function resolveCurrentChapterName(
  * Resolve engine mode from state.
  */
 export function resolveMode(state: CognitiveEngineState): EngineMode {
-  return state.mode || 'normal';
+  return 'normal';
 }
 
 /**
