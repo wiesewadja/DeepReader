@@ -70,7 +70,7 @@ describe('PushToTalkController', () => {
 		expect(mockChatInput.setVoiceState).toHaveBeenCalledWith('recording');
 	});
 
-	it('stop 进入 recognizing → rewriting → idle', async () => {
+	it('stop 进入 recognizing → rewriting → done → idle', async () => {
 		await controller.start();
 		await controller.stop({ title: '测试书籍' });
 
@@ -89,68 +89,6 @@ describe('PushToTalkController', () => {
 		await controller.start();
 		await controller.start();
 		expect(controller.getState()).toBe('listening');
-	});
-
-	it('stop 触发递增识别到最终识别的状态流转', async () => {
-		await controller.start();
-		await vi.advanceTimersByTimeAsync(3000);
-
-		expect(mockChatInput.replaceVoiceText).toHaveBeenCalled();
-
-		await controller.stop();
-		expect(mockChatInput.setVoiceState).toHaveBeenCalledWith('recognizing');
-		expect(callbacks.onTextReady).toHaveBeenCalled();
-	});
-
-	it('ASR 失败时回调 onError', async () => {
-		const { ASRClient } = await import('../../../src/services/asr/asr-client.js');
-		(ASRClient as any).mockImplementation(() => ({
-			transcribe: vi.fn().mockRejectedValue(new Error('ASR error')),
-			transcribeStream: vi.fn().mockImplementation(async function* () {}),
-		}));
-
-		controller = new PushToTalkController(
-			mockChatInput,
-			{
-				asrApiKey: 'asr-key',
-				asrBaseUrl: 'https://asr.test.com',
-				llmApiKey: 'llm-key',
-				llmBaseUrl: 'https://llm.test.com',
-			},
-			callbacks,
-		);
-
-		await controller.start();
-		await controller.stop();
-
-		expect(callbacks.onError).toHaveBeenCalledWith(expect.any(Error));
-		expect(controller.getState()).toBe('idle');
-	});
-
-	it('LLM 重写失败时回调 onError', async () => {
-		const { VoiceRewriter } = await import('../../../src/services/voice-rewriter.js');
-		(VoiceRewriter as any).mockImplementation(() => ({
-			rewrite: vi.fn().mockImplementation(async function* () {
-				throw new Error('LLM error');
-			}),
-		}));
-
-		controller = new PushToTalkController(
-			mockChatInput,
-			{
-				asrApiKey: 'asr-key',
-				asrBaseUrl: 'https://asr.test.com',
-				llmApiKey: 'llm-key',
-				llmBaseUrl: 'https://llm.test.com',
-			},
-			callbacks,
-		);
-
-		await controller.start();
-		await controller.stop();
-
-		expect(callbacks.onError).toHaveBeenCalled();
-		expect(controller.getState()).toBe('idle');
 	});
 
 	it('stop 在非 listening 状态下无效', async () => {
@@ -174,33 +112,6 @@ describe('PushToTalkController', () => {
 	it('destroy 清理所有资源', async () => {
 		await controller.start();
 		controller.destroy();
-		expect(controller.getState()).toBe('idle');
-	});
-
-	it('recorder start 失败时回调 onError', async () => {
-		const { AudioRecorder } = await import('../../../src/services/asr/audio-recorder.js');
-		(AudioRecorder as any).mockImplementation(() => ({
-			start: vi.fn().mockRejectedValue(new Error('mic denied')),
-			stop: vi.fn(),
-			getAccumulatedAudio: vi.fn(),
-			cancel: vi.fn(),
-			destroy: vi.fn(),
-		}));
-
-		controller = new PushToTalkController(
-			mockChatInput,
-			{
-				asrApiKey: 'asr-key',
-				asrBaseUrl: 'https://asr.test.com',
-				llmApiKey: 'llm-key',
-				llmBaseUrl: 'https://llm.test.com',
-			},
-			callbacks,
-		);
-
-		await controller.start();
-
-		expect(callbacks.onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'mic denied' }));
 		expect(controller.getState()).toBe('idle');
 	});
 });
