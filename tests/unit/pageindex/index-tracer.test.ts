@@ -1,13 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import * as fs from "node:fs/promises";
 import { IndexTracer } from "@/pageindex/index-tracer";
 import type { TraceConfig } from "@/pageindex/index-tracer";
 
-vi.mock("node:fs/promises", () => ({
-	mkdir: vi.fn().mockResolvedValue(undefined),
-	writeFile: vi.fn().mockResolvedValue(undefined),
-	appendFile: vi.fn().mockResolvedValue(undefined),
+// nodeFs 惰性 require fs/promises，无法直接 vi.mock 内置模块路径；
+// 改为 mock @/utils/node-fs 模块本身，nodeFs() 返回下面的 mockFs。
+const { mockFs } = vi.hoisted(() => ({
+	mockFs: {
+		mkdir: vi.fn().mockResolvedValue(undefined),
+		writeFile: vi.fn().mockResolvedValue(undefined),
+		appendFile: vi.fn().mockResolvedValue(undefined),
+	},
 }));
+vi.mock("@/utils/node-fs", () => ({ nodeFs: () => mockFs }));
 
 vi.mock("../paths.js", () => ({
 	getPageindexRoot: vi.fn().mockReturnValue("/vault/.obsidian/plugins/deepreader/pageindex"),
@@ -28,14 +32,14 @@ async function flush(): Promise<void> {
 /** 获取所有 appendFile 写入的行 */
 async function getLogLines(): Promise<any[]> {
 	await flush();
-	const calls = vi.mocked(fs.appendFile).mock.calls;
+	const calls = mockFs.appendFile.mock.calls;
 	return calls.map((call) => JSON.parse(call[1] as string));
 }
 
 /** 获取最后一次 writeFile 的内容（.json 兼容摘要） */
 async function getLastJsonTrace(): Promise<any> {
 	await flush();
-	const calls = vi.mocked(fs.writeFile).mock.calls;
+	const calls = mockFs.writeFile.mock.calls;
 	const last = calls[calls.length - 1];
 	return JSON.parse(last[1] as string);
 }
@@ -249,7 +253,7 @@ describe("IndexTracer", () => {
 	});
 
 	it("should not throw on appendFile failure", async () => {
-		vi.mocked(fs.appendFile).mockRejectedValueOnce(new Error("disk full"));
+		mockFs.appendFile.mockRejectedValueOnce(new Error("disk full"));
 
 		tracer.startPhase("validate");
 		tracer.endPhase();
