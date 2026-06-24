@@ -8,7 +8,6 @@ import { Notice, TFile, TFolder } from 'obsidian';
 import { resolveRoleConfig } from '../../config/providers.js';
 import { toEmbeddingOptions, toPropositionConfig } from '../../config/role-adapters.js';
 import type { DeepPDFSettings } from '../../config/settings.js';
-import { indexBook, generateBookId } from '../../pageindex/book-indexer.js';
 import type { BookIndexProgress } from '../../pageindex/book-types.js';
 import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../../pageindex/defaults.js';
 import type { IndexListItem } from '../../types/index.js';
@@ -187,6 +186,7 @@ export class IndexLifecycle {
 
 				// Use content-based bookId from the start to avoid prelimId→bookId mismatch
 				// which causes polling to see two different IDs and create duplicate cards
+				const { generateBookId } = require('../../pageindex/book-indexer.js');
 				bookId = await generateBookId(filePath);
 
 				const newIndex: IndexListItem = {
@@ -227,6 +227,7 @@ export class IndexLifecycle {
 					? toPropositionConfig(propositionRole, settings.propositionCardsPer500Words)
 					: undefined;
 
+				const { indexBook } = require('../../pageindex/book-indexer.js');
 				const result = await indexBook({
 					filePath,
 					fileType,

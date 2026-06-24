@@ -55,13 +55,16 @@ if (!fs.existsSync(MAIN_JS)) {
 const originalSrc = fs.readFileSync(MAIN_JS, 'utf8');
 let src = originalSrc;
 let blockedCount = 0;
-src = src.replace(/require\("node:([a-z/]+)"\)/g, (_, m) => {
-	blockedCount++;
-	return `require("__mobile_blocked__:node:${m}")`;
-});
-src = src.replace(/require\("child_process"\)/g, () => {
-	blockedCount++;
-	return `require("__mobile_blocked__:child_process")`;
+const nodeBuiltins = [
+	'fs', 'fs/promises', 'path', 'crypto', 'os', 'child_process', 'stream', 'events', 'zlib', 'timers', 'util', 'http', 'https', 'url', 'querystring'
+];
+
+src = src.replace(/require\((['"])(node:)?([a-zA-Z0-9_\-\/]+)\1\)/g, (match, quote, prefix, name) => {
+	if (prefix || nodeBuiltins.includes(name)) {
+		blockedCount++;
+		return `require("__mobile_blocked__:${prefix || ''}${name}")`;
+	}
+	return match;
 });
 fs.writeFileSync(TRACE_FILE, src);
 

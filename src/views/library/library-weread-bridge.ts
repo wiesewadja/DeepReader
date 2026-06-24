@@ -10,7 +10,7 @@ import { ZLIBRARY_ENABLED } from '../../config/features.js';
 import { resolveRoleConfig } from '../../config/providers.js';
 import { toEmbeddingOptions } from '../../config/role-adapters.js';
 import type { DeepPDFSettings } from '../../config/settings.js';
-import { indexBook, isBookIndexed, generateBookId } from '../../pageindex/book-indexer.js';
+
 import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../../pageindex/defaults.js';
 import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
 import type { IndexListItem } from '../../types/index.js';
@@ -294,6 +294,7 @@ export class WereadBridge {
 		}
 
 		let bookId: string;
+		const { isBookIndexed, generateBookId, indexBook } = require('../../pageindex/book-indexer.js');
 		const alreadyIndexed = await isBookIndexed(filePath, vaultBase);
 
 		if (alreadyIndexed) {
@@ -314,7 +315,7 @@ export class WereadBridge {
 					apiKey: pageindexRole?.apiKey || '',
 					baseUrl: pageindexRole?.baseUrl || '',
 					addNodeSummary: settings.ifAddNodeSummary,
-					onProgress: (p) => {
+					onProgress: (p: any) => {
 						this.callbacks.onUpdateCardProgress(wereadIndex.id, p.percent, 'processing', p.stepLabel);
 					},
 				});
@@ -398,6 +399,7 @@ export class WereadBridge {
 
 		let bookId: string;
 		try {
+			const { indexBook } = require('../../pageindex/book-indexer.js');
 			const result = await indexBook({
 				filePath: downloadPath,
 				fileType: (zlibBook.extension || 'pdf') as 'pdf' | 'epub',
@@ -407,7 +409,7 @@ export class WereadBridge {
 				apiKey: pageindexRole?.apiKey || '',
 				baseUrl: pageindexRole?.baseUrl || '',
 				addNodeSummary: settings.ifAddNodeSummary,
-				onProgress: (p) => {
+				onProgress: (p: any) => {
 					this.callbacks.onUpdateCardProgress(wereadIndex.id, p.percent, 'processing', p.stepLabel);
 				},
 			});

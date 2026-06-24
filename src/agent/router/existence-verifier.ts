@@ -15,7 +15,6 @@
  */
 
 import type { App } from 'obsidian';
-import { searchBookV2 } from '../../pageindex/book-search-v2.js';
 import { agentLog as log } from '../../utils/logger.js';
 import { ReadingDepth } from '../graph/state.js';
 
@@ -89,8 +88,9 @@ export async function verifyExistence(
 	}
 
 	try {
-		const results = await searchBookV2({ query: cleanQuery, bookId, app, topK: 3, filePath: '' });
-		const hasStrongMatch = results.some(r => {
+		const { searchBookV2 } = require('../../pageindex/book-search-v2.js');
+		const results = (await searchBookV2({ query: cleanQuery, bookId, app, topK: 3, filePath: '' })) as import('../../pageindex/book-types.js').BookSearchResultV2[];
+		const hasStrongMatch = results.some((r: import('../../pageindex/book-types.js').BookSearchResultV2) => {
 			const score = r.score ?? 0;
 			if (score < HIGHER_THRESHOLD) return false;
 			const content = r.matchedBlocks?.map((b: { content: string }) => b.content).join(' ') || '';

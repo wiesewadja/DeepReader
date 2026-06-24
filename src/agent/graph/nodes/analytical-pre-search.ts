@@ -11,7 +11,6 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import { RunnableLambda } from '@langchain/core/runnables';
 import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
-import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import type { BookSearchResultV2, BookSearchOptionsV2 } from '../../../pageindex/book-types.js';
 import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 import { agentLog as log } from '../../../utils/logger.js';
@@ -27,7 +26,6 @@ import {
 import { resolveCurrentChapterName, extractHumanMessageContents } from '../utils/engine-helpers.js';
 import { enforceScopeHardGuard, formatGuardInjectedLog } from '../utils/scope-guard.js';
 import { verifyAndCleanContent } from '../utils/self-verification.js';
-import { getOrGenerateEmbedding } from '../../../pageindex/vault/embedding-cache.js';
 import { tokenize } from '../../../pageindex/bm25.js';
 
 
@@ -303,6 +301,7 @@ export async function preSearchNode(
 
     // 辅助函数：针对指定选项和关键词并发检索并合并
     async function runSearchAndFusion(opts: BookSearchOptionsV2): Promise<BookSearchResultV2[]> {
+      const { searchBookV2 } = require('../../../pageindex/book-search-v2.js');
       const subResults = await Promise.all(
         limitedKeywords.map(async (kw) => {
           try {
@@ -370,6 +369,7 @@ export async function preSearchNode(
           try {
             const queryText = stateBetterQuestion || stateQuery || ctx?.rawUserQuery || '';
             const embOpts = toEmbeddingOptions(embeddingRole);
+            const { getOrGenerateEmbedding } = require('../../../pageindex/vault/embedding-cache.js');
             queryVector = await getOrGenerateEmbedding(queryText, embOpts);
           } catch (embErr) {
             log(`[S2-Pre] 动态生成 Query 向量失败:`, embErr);

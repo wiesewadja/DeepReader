@@ -19,7 +19,7 @@
  * 写入策略：debounced 200ms（避免每页都触发 fs I/O）。
  */
 
-import * as fs from 'fs/promises';
+import { nodeFs } from '../utils/node-fs.js';
 import { pageindexPaths } from './paths';
 
 const MAX_ENTRIES = 500;  // 与 pageMemory 容量匹配
@@ -57,7 +57,7 @@ export async function loadLastPages(vaultPath: string, pluginId: string): Promis
 	const filePath = paths.lastPages(vaultPath);
 	let parsed: any;
 	try {
-		const content = await fs.readFile(filePath, 'utf-8');
+		const content = await nodeFs().readFile(filePath, 'utf-8');
 		parsed = JSON.parse(content);
 	} catch {
 		return empty;
@@ -131,11 +131,11 @@ export async function saveLastPages(
 	// 原子写入：先写临时文件再 rename
 	const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
 	try {
-		await fs.mkdir(/* dirname */ filePath.replace(/[^/]+$/, ''), { recursive: true });
-		await fs.writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
-		await fs.rename(tmpPath, filePath);
+		await nodeFs().mkdir(/* dirname */ filePath.replace(/[^/]+$/, ''), { recursive: true });
+		await nodeFs().writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+		await nodeFs().rename(tmpPath, filePath);
 	} catch (err) {
-		await fs.unlink(tmpPath).catch(() => {});
+		await nodeFs().unlink(tmpPath).catch(() => {});
 		throw err;
 	}
 }

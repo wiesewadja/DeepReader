@@ -4,7 +4,6 @@
 
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { JournalSearchService, getJournalIndexDir } from '../../../services/journal-search.js';
 import type { ToolContext } from '../types.js';
 import type { ToolFactory } from './types.js';
 
@@ -16,9 +15,12 @@ const searchJournalSchema = z.object({
 export const createSearchJournalTool: ToolFactory = (ctx: ToolContext) => {
 	const journalDir = ctx.visual?.journalDir;
 	const settings = ctx.vault?.plugin?.settings;
-	const searchService = (journalDir && settings)
-		? new JournalSearchService(ctx.vault.app!, settings, getJournalIndexDir(journalDir))
-		: null;
+	
+	let searchService: any = null;
+	if (journalDir && settings) {
+		const { JournalSearchService, getJournalIndexDir } = require('../../../services/journal-search.js');
+		searchService = new JournalSearchService(ctx.vault.app!, settings, getJournalIndexDir(journalDir));
+	}
 
 	return tool(
 		async (args) => {

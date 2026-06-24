@@ -8,7 +8,11 @@
  * 4. Apply corrections to output
  */
 
-import * as path from 'path';
+const path = new Proxy({}, {
+  get(target, prop) {
+    return require('path')[prop];
+  }
+}) as any;
 import type { App } from 'obsidian';
 import { agentLog as log } from '../../utils/logger.js';
 import type { ToolResultEntry } from '../graph/utils/self-verification.js';

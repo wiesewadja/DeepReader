@@ -8,10 +8,64 @@
  * 与 library-view.ts 中 fs I/O 的模式一致。
  */
 
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { getCatalogPath } from './paths';
-import type { CatalogMeta } from './vault/types';
+import { nodeFs } from '../utils/node-fs.js';
+import { normalizePath } from 'obsidian';
+import { getCatalogPath } from './paths.js';
+import type { CatalogMeta } from './vault/types.js';
+
+const path = new Proxy({}, {
+  get(target, prop) {
+    return require('path')[prop];
+  }
+}) as any;
+
+function getApp(): any {
+	return (typeof window !== 'undefined' && (window as any).app) || null;
+}
+
+async function readFileCompat(filePath: string): Promise<string> {
+	const app = getApp();
+	if (app) {
+		return await app.vault.adapter.read(normalizePath(filePath));
+	}
+	return await nodeFs().readFile(filePath, 'utf-8');
+}
+
+async function writeFileCompat(filePath: string, content: string): Promise<void> {
+	const app = getApp();
+	if (app) {
+		await app.vault.adapter.write(normalizePath(filePath), content);
+		return;
+	}
+	await nodeFs().writeFile(filePath, content, 'utf-8');
+}
+
+async function mkdirCompat(dirPath: string): Promise<void> {
+	const app = getApp();
+	if (app) {
+		await app.vault.adapter.mkdir(normalizePath(dirPath));
+		return;
+	}
+	await nodeFs().mkdir(dirPath, { recursive: true });
+}
+
+async function renameCompat(oldPath: string, newPath: string): Promise<void> {
+	const app = getApp();
+	if (app) {
+		await app.vault.adapter.rename(normalizePath(oldPath), normalizePath(newPath));
+		return;
+	}
+	await nodeFs().rename(oldPath, newPath);
+}
+
+async function unlinkCompat(filePath: string): Promise<void> {
+	const app = getApp();
+	if (app) {
+		await app.vault.adapter.remove(normalizePath(filePath));
+		return;
+	}
+	await nodeFs().unlink(filePath);
+}
 
 /**
  * 加载所有已归档的书籍 ID
@@ -19,7 +73,7 @@ import type { CatalogMeta } from './vault/types';
 export async function loadArchivedBookIds(vaultPath: string): Promise<Set<string>> {
 	try {
 		const catalogPath = getCatalogPath(vaultPath);
-		const content = await fs.readFile(catalogPath, 'utf-8');
+		const content = await readFileCompat(catalogPath);
 		const catalog = JSON.parse(content) as CatalogMeta;
 		const archived = new Set<string>();
 		for (const [bookId, entry] of Object.entries(catalog.books)) {
@@ -43,7 +97,7 @@ export async function toggleArchive(vaultPath: string, bookId: string): Promise<
 
 	let catalog: CatalogMeta;
 	try {
-		const content = await fs.readFile(catalogPath, 'utf-8');
+		const content = await readFileCompat(catalogPath);
 		catalog = JSON.parse(content) as CatalogMeta;
 	} catch {
 		catalog = { version: 1, books: {} };
@@ -77,7 +131,7 @@ export async function toggleArchive(vaultPath: string, bookId: string): Promise<
 export async function removeFromCatalog(vaultPath: string, bookId: string): Promise<void> {
 	const catalogPath = getCatalogPath(vaultPath);
 	try {
-		const content = await fs.readFile(catalogPath, 'utf-8');
+		const content = await readFileCompat(catalogPath);
 		const catalog = JSON.parse(content) as CatalogMeta;
 		delete catalog.books[bookId];
 		await writeCatalog(catalogPath, catalog);
@@ -101,7 +155,7 @@ export async function batchToggleArchive(
 
 	let catalog: CatalogMeta;
 	try {
-		const content = await fs.readFile(catalogPath, 'utf-8');
+		const content = await readFileCompat(catalogPath);
 		catalog = JSON.parse(content) as CatalogMeta;
 	} catch {
 		catalog = { version: 1, books: {} };
@@ -124,15 +178,15 @@ export async function batchToggleArchive(
 }
 
 async function writeCatalog(catalogPath: string, catalog: CatalogMeta): Promise<void> {
-	await fs.mkdir(path.dirname(catalogPath), { recursive: true });
+	await mkdirCompat(path.dirname(catalogPath));
 	// 原子写入：先写临时文件再 rename，避免进程被 kill 时部分写入导致 catalog.json 损坏
 	const tmpPath = `${catalogPath}.tmp.${process.pid}.${Date.now()}`;
 	try {
-		await fs.writeFile(tmpPath, JSON.stringify(catalog, null, 2), 'utf-8');
-		await fs.rename(tmpPath, catalogPath);
+		await writeFileCompat(tmpPath, JSON.stringify(catalog, null, 2));
+		await renameCompat(tmpPath, catalogPath);
 	} catch (err) {
 		// 清理临时文件（rename 失败或 writeFile 失败）
-		await fs.unlink(tmpPath).catch(() => {});
+		await unlinkCompat(tmpPath).catch(() => {});
 		throw err;
 	}
 }

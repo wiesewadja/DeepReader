@@ -3,7 +3,7 @@
  * 负责封面查找、加载、缓存和占位符生成
  */
 
-import * as fs from 'fs/promises';
+import { nodeFs } from '../../utils/node-fs.js';
 import { TFile, type App } from 'obsidian';
 import { getBookFile } from '../../pageindex/paths.js';
 import type { IndexListItem } from '../../types/index.js';
@@ -59,7 +59,7 @@ export class CoverManager {
 		// 1. 从 book-meta.json 读取 exportName
 		try {
 			const vaultPath = getVaultPath(this.app);
-			const metaRaw = await fs.readFile(getBookFile(vaultPath, indexId, 'book-meta.json'), 'utf-8');
+			const metaRaw = await nodeFs().readFile(getBookFile(vaultPath, indexId, 'book-meta.json'), 'utf-8');
 			const meta = JSON.parse(metaRaw) as { exportName?: string };
 			if (meta.exportName) possibleNames.push(meta.exportName);
 		} catch { /* ignore */ }

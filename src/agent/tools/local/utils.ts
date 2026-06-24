@@ -6,7 +6,6 @@
  */
 
 import type { App } from 'obsidian';
-import { resolveBookIdFromPdf } from '../../../pageindex/book-resolver.js';
 import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 import { toolsLog } from '../../../utils/logger.js';
 import type { ToolContext } from '../types.js';
@@ -52,6 +51,7 @@ async function buildLocalCache(context: ToolContext): Promise<LocalToolCache> {
     let bookId = indexId;
 
     if (!bookId) {
+      const { resolveBookIdFromPdf } = require('../../../pageindex/book-resolver.js');
       const resolved = await resolveBookIdFromPdf(app, pdfName);
       if (!resolved) {
         toolsLog.log('[buildLocalCache] Book file not found for:', pdfName);

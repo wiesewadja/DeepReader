@@ -1,8 +1,8 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
 import type { App } from 'obsidian';
 import { PAGEINDEX_DIR, getPageindexDir } from '../../pageindex/paths.js';
 import { vaultRead, vaultWrite, vaultMkdir, vaultExists, joinPath } from '../../utils/mobile-fs.js';
+import { nodeFs } from '../../utils/node-fs.js';
+
 
 export interface BookGenre {
   /** 主类型 */
@@ -49,7 +49,7 @@ export class BookGenreDetector {
     llmClient: LLMClient;
     app?: App;
   }) {
-    this.cacheDir = options.app ? PAGEINDEX_DIR : path.join(options.vaultPath!, getPageindexDir());
+    this.cacheDir = options.app ? PAGEINDEX_DIR : require('path').join(options.vaultPath!, getPageindexDir());
     this.llmClient = options.llmClient;
     this.app = options.app;
   }
@@ -90,11 +90,11 @@ export class BookGenreDetector {
   private async loadTree(bookId: string): Promise<BookTree | null> {
     const treePath = this.app
       ? joinPath(this.cacheDir, bookId, 'tree.json')
-      : path.join(this.cacheDir, bookId, 'tree.json');
+      : require('path').join(this.cacheDir, bookId, 'tree.json');
     try {
       const data = this.app
         ? await vaultRead(this.app, treePath)
-        : await fs.readFile(treePath, 'utf-8');
+        : await nodeFs().readFile(treePath, 'utf-8');
       return JSON.parse(data);
     } catch {
       return null;
@@ -217,11 +217,11 @@ ${treeText}
   private async loadCachedGenre(bookId: string): Promise<BookGenre | null> {
     const cachePath = this.app
       ? joinPath(this.cacheDir, bookId, 'genre.json')
-      : path.join(this.cacheDir, bookId, 'genre.json');
+      : require('path').join(this.cacheDir, bookId, 'genre.json');
     try {
       const data = this.app
         ? await vaultRead(this.app, cachePath)
-        : await fs.readFile(cachePath, 'utf-8');
+        : await nodeFs().readFile(cachePath, 'utf-8');
       return JSON.parse(data);
     } catch {
       return null;
@@ -231,7 +231,7 @@ ${treeText}
   private async cacheGenre(bookId: string, genre: BookGenre): Promise<void> {
     const cachePath = this.app
       ? joinPath(this.cacheDir, bookId, 'genre.json')
-      : path.join(this.cacheDir, bookId, 'genre.json');
+      : require('path').join(this.cacheDir, bookId, 'genre.json');
     if (this.app) {
       const dirPath = joinPath(this.cacheDir, bookId);
       if (!(await vaultExists(this.app, dirPath))) {
@@ -239,8 +239,8 @@ ${treeText}
       }
       await vaultWrite(this.app, cachePath, JSON.stringify(genre, null, 2));
     } else {
-      await fs.mkdir(path.dirname(cachePath), { recursive: true });
-      await fs.writeFile(cachePath, JSON.stringify(genre, null, 2));
+      await nodeFs().mkdir(require('path').dirname(cachePath), { recursive: true });
+      await nodeFs().writeFile(cachePath, JSON.stringify(genre, null, 2));
     }
   }
 }

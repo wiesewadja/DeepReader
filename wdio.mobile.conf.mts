@@ -38,7 +38,6 @@ export const config: WebdriverIO.Config = {
 	}],
 
 	services: [
-		[path.resolve("./tests/mobile/mobile-compat-service.js")],
 		"obsidian",
 		["appium", {
 			args: { allowInsecure: "*:chromedriver_autodownload,*:adb_shell" },

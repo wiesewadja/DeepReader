@@ -5,14 +5,10 @@
  * search, returns top results per book for LLM fusion analysis.
  */
 
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import { nodeFs } from '../../utils/node-fs.js';
 import type { App } from 'obsidian';
-import { searchBookV2 } from '../../pageindex/book-search-v2.js';
 import type { BookSearchResultV2, PropositionMatch } from '../../pageindex/book-types.js';
 import { PAGEINDEX_DIR, getPageindexDir } from '../../pageindex/paths.js';
-import { searchPropositions } from '../../pageindex/proposition-search.js';
-import { getOrGenerateEmbedding } from '../../pageindex/vault/embedding-cache.js';
 import type { EmbeddingOptions } from '../../pageindex/vault/types.js';
 import { agentLog as log } from '../../utils/logger.js';
 import { vaultRead, vaultExists, vaultList, joinPath } from '../../utils/mobile-fs.js';
@@ -77,18 +73,18 @@ async function scanIndexedBooks(vaultPath: string, app?: App): Promise<{ id: str
     }
   } else {
     // Desktop: absolute paths
-    const pageindexDir = path.join(vaultPath, getPageindexDir());
+    const pageindexDir = require('path').join(vaultPath, getPageindexDir());
     try {
-      await fs.access(pageindexDir);
+      await nodeFs().access(pageindexDir);
     } catch {
       log('[syntopical-search] No pageindex directory found');
       return [];
     }
-    const dirs = await fs.readdir(pageindexDir);
+    const dirs = await nodeFs().readdir(pageindexDir);
     for (const bookId of dirs) {
-      const metaPath = path.join(pageindexDir, bookId, 'book-meta.json');
+      const metaPath = require('path').join(pageindexDir, bookId, 'book-meta.json');
       try {
-        const metaContent = await fs.readFile(metaPath, 'utf-8');
+        const metaContent = await nodeFs().readFile(metaPath, 'utf-8');
         const meta = JSON.parse(metaContent);
         if (meta.title) books.push({ id: bookId, name: meta.title });
       } catch { continue; }
@@ -116,7 +112,7 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
         const mappingRel = joinPath(PAGEINDEX_DIR, 'weread', 'mapping.json');
         const mappingRaw = app
           ? await vaultRead(app, mappingRel)
-          : await fs.readFile(path.join(vaultPath, getPageindexDir(), 'weread', 'mapping.json'), 'utf-8');
+          : await nodeFs().readFile(require('path').join(vaultPath, getPageindexDir(), 'weread', 'mapping.json'), 'utf-8');
         const parsed = JSON.parse(mappingRaw);
         const mapping = parsed.mappings || parsed; // support both {mappings:{...}} and flat {...}
         for (const wereadId of unresolved) {
@@ -137,9 +133,11 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
   }
 
   // 2. Pre-compute query embedding (shared across all books)
-  const queryEmbedding = embedding && embedding.provider !== 'local'
-    ? await getOrGenerateEmbedding(query, embedding).catch(() => null)
-    : null;
+  let queryEmbedding = null;
+  if (embedding && embedding.provider !== 'local') {
+    const { getOrGenerateEmbedding } = require('../../pageindex/vault/embedding-cache.js');
+    queryEmbedding = await getOrGenerateEmbedding(query, embedding).catch(() => null);
+  }
 
   // 3. Parallel search across all books
   const searchPromises = indexedBooks.map(async (book) => {
@@ -155,12 +153,14 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
         ...(app ? { app } : {}),
       };
 
-      const results = await searchBookV2(searchOpts);
+      const { searchBookV2 } = require('../../pageindex/book-search-v2.js');
+      const results = (await searchBookV2(searchOpts)) as BookSearchResultV2[];
 
       // Proposition search (optional, uses precomputed embedding if available)
       let propositionMatches: PropositionMatch[] = [];
       if (embedding && embedding.provider !== 'local') {
         try {
+          const { searchPropositions } = require('../../pageindex/proposition-search.js');
           propositionMatches = await searchPropositions(
             query,
             book.id,

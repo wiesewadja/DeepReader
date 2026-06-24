@@ -25,7 +25,6 @@
  *     can safely fall through to its default path.
  */
 
-import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import type { BookSearchResultV2 } from '../../../pageindex/book-types.js';
 import { agentLog as log } from '../../../utils/logger.js';
 
@@ -84,6 +83,7 @@ export async function verifyNegativeClaimWithFullBook(
 
   let results: BookSearchResultV2[];
   try {
+    const { searchBookV2 } = require('../../../pageindex/book-search-v2.js');
     results = await searchBookV2({
       query: rewrittenQuery,
       bookId,

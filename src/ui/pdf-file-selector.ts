@@ -4,7 +4,7 @@
  * 支持从系统上传文件
  */
 
-import { join } from "path";
+const join = (...args: string[]) => require('path').join(...args);
 import { type App, Modal, FuzzySuggestModal, type TFile, Notice } from "obsidian";
 import { getVaultPath } from "../utils/mobile-fs.js";
 

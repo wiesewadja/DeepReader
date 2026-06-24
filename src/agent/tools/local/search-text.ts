@@ -8,8 +8,6 @@
 
 import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
-import { resolveBookIdFromPdf } from '../../../pageindex/book-resolver.js';
-import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import type { BookSearchResultV2 } from '../../../pageindex/book-types.js';
 import { parseCallouts } from '../../../utils/callout-parser.js';
 import { bookExcerptDir } from '../../../utils/book-paths.js';
@@ -172,6 +170,8 @@ export const searchBookTool: ToolExecutor = {
     }
 
     try {
+      const { resolveBookIdFromPdf } = require('../../../pageindex/book-resolver.js');
+      const { searchBookV2 } = require('../../../pageindex/book-search-v2.js');
       toolsLog.log('[search_book] indexId:', indexId, 'keywords:', keywords, 'scope:', scopeNodeIds?.length ?? 0);
 
       const settings = context.vault.plugin?.settings;

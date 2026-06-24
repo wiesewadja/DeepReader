@@ -9,15 +9,13 @@
 
 import { evalObsidian } from '../../lib/obsidian-cli.mjs';
 
-const EXPECTED_MODULE_COUNT = 17;
+const EXPECTED_MODULE_COUNT = 15;
 const EXPECTED_MODULE_PREFIXES = [
   'inspectional',
   'pre-search',
   'analytical',
   'syntopical',
-  'socratic',
   'formatter',
-  'proactive',
   'advisor',
   'diagram',
   'memory.consolidation',

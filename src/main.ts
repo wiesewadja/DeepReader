@@ -13,12 +13,8 @@ import { WereadService } from './weread/index.js';
 import { WereadScheduledSync } from './weread/sync/scheduled-sync.js';
 import { UnmatchedModal } from './weread/auth/unmatched-modal.js';
 
-// PageIndex - 核心功能导入（Node.js 兼容）
-import { PageIndex, type PageIndexResult, type ProgressInfo } from './pageindex/node.js';
-import { indexBook, isBookIndexed, deleteBookIndex, generateBookId, migrateBookIndexes } from './pageindex/book-indexer.js';
-import { parseEpub } from './pageindex/parsers/epub.js';
-import { parsePdf } from './pageindex/parsers/pdf.js';
-import { exportToObsidian } from './pageindex/exporters/epub-to-obsidian.js';
+// PageIndex - 核心功能导入（Node.js 兼容类型）
+import type { PageIndex, PageIndexResult, ProgressInfo } from './pageindex/node.js';
 import { setActivePluginId } from './pageindex/paths.js';
 import { ExcerptService } from './services/excerpt-service.js';
 import { HighlightService } from './services/highlight-service.js';
@@ -50,23 +46,25 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
     private wereadService: WereadService | null = null;
     private wereadScheduledSync: WereadScheduledSync | null = null;
 
-    readonly api = {
-        indexBook,
-        isBookIndexed,
-        deleteBookIndex,
-        generateBookId,
-        parsePdf,
-        parseEpub,
-        exportToObsidian,
-        PageIndex,
-        promptRegistry,
-        sanitizeHumanizedHtml,
-        createProfileBuilder: () => {
-            const { ProfileBuilder } = require('./services/profile-builder');
-            this.profileBuilder = new ProfileBuilder(this.app, this.settings);
-            return this.profileBuilder;
-        },
-    };
+    get api() {
+        return {
+            indexBook: (...args: any[]) => require('./pageindex/book-indexer.js').indexBook(...args),
+            isBookIndexed: (...args: any[]) => require('./pageindex/book-indexer.js').isBookIndexed(...args),
+            deleteBookIndex: (...args: any[]) => require('./pageindex/book-indexer.js').deleteBookIndex(...args),
+            generateBookId: (...args: any[]) => require('./pageindex/book-indexer.js').generateBookId(...args),
+            parsePdf: (...args: any[]) => require('./pageindex/parsers/pdf.js').parsePdf(...args),
+            parseEpub: (...args: any[]) => require('./pageindex/parsers/epub.js').parseEpub(...args),
+            exportToObsidian: (...args: any[]) => require('./pageindex/exporters/epub-to-obsidian.js').exportToObsidian(...args),
+            PageIndex: require('./pageindex/node.js').PageIndex,
+            promptRegistry,
+            sanitizeHumanizedHtml,
+            createProfileBuilder: () => {
+                const { ProfileBuilder } = require('./services/profile-builder');
+                this.profileBuilder = new ProfileBuilder(this.app, this.settings);
+                return this.profileBuilder;
+            },
+        };
+    }
 
     async onload() {
         // ── 移动端 adapter/vault polyfill ──
@@ -131,6 +129,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             }
 
             try {
+                const { migrateBookIndexes } = require('./pageindex/book-indexer.js');
                 const count = await migrateBookIndexes(vaultPath);
                 if (count > 0) log(`[DeepReader] Migrated ${count} book index(es) to content-based IDs`);
             } catch (e) {
@@ -628,6 +627,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                     log('[PageIndex] Testing core features...');
 
                     // 创建 PageIndex 实例
+                    const { PageIndex } = require('./pageindex/node.js');
                     const pageIndex = new PageIndex({
                         model: 'gpt-4o',
                         addNodeId: true,
@@ -1154,6 +1154,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             const model = pageindexConfig?.model || 'deepseek-chat';
 
             // 创建 PageIndex 实例
+            const { PageIndex } = require('./pageindex/node.js');
             const pageIndex = new PageIndex({
                 model: model,
                 apiKey: apiKey,
