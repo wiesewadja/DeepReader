@@ -81,6 +81,8 @@ export interface ChatInputOptions {
 	onVoiceToggle?: () => void;
 	/** 是否显示语音按钮（默认 false） */
 	showVoiceButton?: boolean;
+	/** 长按触发回调（移动端 push-to-talk） */
+	onLongPress?: () => void;
 }
 
 /**
@@ -128,6 +130,11 @@ export class ChatInput {
 	private loadDocClickHandler: (() => void) | null = null;
 	private containerClickHandler: ((event: MouseEvent) => void) | null = null;
 	private voiceClickHandler: (() => void) | null = null;
+
+	// 长按相关状态
+	private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+	private longPressStartPos = { x: 0, y: 0 };
+	private longPressCancelled = false;
 
 	constructor(options: ChatInputOptions) {
 		this.options = {
@@ -464,6 +471,11 @@ export class ChatInput {
 
 		// 点击其他地方时隐藏文件建议
 		document.addEventListener('click', this.handleDocumentClick);
+
+		// 移动端长按事件（push-to-talk）
+		if (this.options.onLongPress) {
+			this.setupLongPress();
+		}
 	}
 
 	/**
@@ -478,6 +490,48 @@ export class ChatInput {
 			}
 		}
 	};
+
+	/**
+	 * 设置移动端长按事件监听
+	 */
+	private setupLongPress(): void {
+		if (!this.textarea) return;
+
+		const LONG_PRESS_THRESHOLD = 500;
+		const SWIPE_CANCEL_THRESHOLD = 50;
+
+		this.textarea.addEventListener('touchstart', (e) => {
+			this.longPressCancelled = false;
+			this.longPressStartPos = {
+				x: e.touches[0].clientX,
+				y: e.touches[0].clientY,
+			};
+			this.longPressTimer = setTimeout(() => {
+				if (!this.longPressCancelled) {
+					e.preventDefault();
+					this.options.onLongPress?.();
+				}
+			}, LONG_PRESS_THRESHOLD);
+		}, { passive: false });
+
+		this.textarea.addEventListener('touchmove', (e) => {
+			if (this.longPressTimer) {
+				const dy = e.touches[0].clientY - this.longPressStartPos.y;
+				if (dy < -SWIPE_CANCEL_THRESHOLD) {
+					clearTimeout(this.longPressTimer);
+					this.longPressTimer = null;
+					this.longPressCancelled = true;
+				}
+			}
+		}, { passive: true });
+
+		this.textarea.addEventListener('touchend', () => {
+			if (this.longPressTimer) {
+				clearTimeout(this.longPressTimer);
+				this.longPressTimer = null;
+			}
+		}, { passive: true });
+	}
 
 	/**
 	 * 处理键盘事件
@@ -888,6 +942,12 @@ export class ChatInput {
 		if (this.voiceButton && this.voiceClickHandler) {
 			this.voiceButton.removeEventListener('click', this.voiceClickHandler);
 			this.voiceClickHandler = null;
+		}
+
+		// 清理长按计时器
+		if (this.longPressTimer) {
+			clearTimeout(this.longPressTimer);
+			this.longPressTimer = null;
 		}
 
 		if (this.inputContainer && this.containerClickHandler) {
