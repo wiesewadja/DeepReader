@@ -32,6 +32,7 @@ import bookSearch from './book-search.spec.mjs';
 import indexIntegrity from './index-integrity.spec.mjs';
 import selectionQuote from './selection-quote.spec.mjs';
 import excalidrawVisual from './excalidraw-visual.spec.mjs';
+import pushToTalk from './push-to-talk.spec.mjs';
 
 export const e2eLightSpecs = [
 	readingModePagination,
@@ -62,4 +63,5 @@ export const e2eLightSpecs = [
 	indexIntegrity,
 	selectionQuote,
 	excalidrawVisual,
+	pushToTalk,
 ];
