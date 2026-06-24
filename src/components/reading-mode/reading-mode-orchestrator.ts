@@ -151,23 +151,62 @@ export class ReadingModeService implements ScrollPatchService {
 
 	/**
 	 * 获取指定或当前页的段落列表（元素 + 文本），供逐段 TTS 朗读
+	 * 分页模式：委托 paginator 按页码过滤
+	 * 滚动模式：降级为获取当前视口内可见段落
 	 */
 	getPageParagraphs(pageNumber?: number): { element: HTMLElement; text: string }[] {
-		return this.paginator?.getPageParagraphs(pageNumber) || [];
+		if (this.paginator?.isActive()) {
+			return this.paginator.getPageParagraphs(pageNumber);
+		}
+		// 滚动模式：获取当前视口内可见段落
+		if (!this.activeContainerEl) return [];
+		const sizer = this.activeContainerEl.querySelector('.markdown-preview-sizer') as HTMLElement;
+		if (!sizer) return [];
+		const allParagraphs = Array.from(
+			sizer.querySelectorAll<HTMLElement>('p, h1, h2, h3, h4, h5, h6, li'),
+		);
+		const viewTop = 0;
+		const viewBottom = window.innerHeight;
+		return allParagraphs
+			.filter(el => {
+				const rect = el.getBoundingClientRect();
+				const text = el.textContent?.trim() || '';
+				if (!text) return false;
+				// 段落与视口有交集
+				return rect.bottom > viewTop && rect.top < viewBottom;
+			})
+			.map(el => ({ element: el, text: el.textContent?.trim() || '' }));
 	}
 
 	/**
 	 * 高亮指定的段落元素
+	 * 分页模式：委托 paginator
+	 * 滚动模式：直接高亮 + 滚动到可见区域
 	 */
 	highlightElement(el: HTMLElement): void {
-		this.paginator?.highlightElement(el);
+		if (this.paginator?.isActive()) {
+			this.paginator.highlightElement(el);
+		} else {
+			// 滚动模式：清除旧高亮，添加新高亮，滚动到视口
+			this.clearHighlight();
+			el.classList.add('deeppdf-tts-reading-paragraph');
+			el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		}
 	}
 
 	/**
 	 * 清除所有高亮
+	 * 分页模式：委托 paginator
+	 * 滚动模式：直接移除高亮 class
 	 */
 	clearHighlight(): void {
-		this.paginator?.clearHighlight();
+		if (this.paginator?.isActive()) {
+			this.paginator.clearHighlight();
+		} else if (this.activeContainerEl) {
+			this.activeContainerEl
+				.querySelectorAll('.deeppdf-tts-reading-paragraph')
+				.forEach(el => el.classList.remove('deeppdf-tts-reading-paragraph'));
+		}
 	}
 
 	/**
@@ -395,6 +434,9 @@ export class ReadingModeService implements ScrollPatchService {
 		// 初始化/显示桌面端提问悬浮球
 		this.updateXitongWidgetVisibility();
 
+		// 隐藏 Obsidian 移动端底部导航栏，最大化阅读区域
+		this.toggleMobileNavbar(false);
+
 		serviceLog("[ReadingMode] Activated for:", file.path);
 	}
 
@@ -436,6 +478,18 @@ export class ReadingModeService implements ScrollPatchService {
 		}
 	}
 
+	/**
+	 * 显示/隐藏 Obsidian 移动端底部导航栏
+	 * 阅读模式下隐藏以最大化阅读区域，退出时恢复
+	 */
+	private toggleMobileNavbar(visible: boolean): void {
+		if (!Platform.isMobile) return;
+		const navbar = document.querySelector('.mobile-navbar') as HTMLElement | null;
+		if (navbar) {
+			navbar.style.display = visible ? '' : 'none';
+		}
+	}
+
 	private initMobileFab(): void {
 		if (!Platform.isMobile) return;
 		this.mobileFab = new MobileReadingFab(() => {
@@ -470,26 +524,35 @@ export class ReadingModeService implements ScrollPatchService {
 			return;
 		}
 
-		// 检查右边栏是否打开
-		const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
-		const rightSplit = this.app.workspace.rightSplit;
-		const isSidebarOpen = leaves.length > 0 && rightSplit.collapsed === false;
+		// 移动端：只要阅读模式激活就显示奚童（移动端阅读/右边栏是独立视图，不会同时显示）
+		// 桌面端：右边栏在视口中时隐藏奚童，不在时显示
+		let shouldShow = true;
 
-		// 仅在状态翻转时执行 DOM 操作与日志，避免 layout-change/resize 高频触发刷屏
-		if (isSidebarOpen === this.lastSidebarOpen) return;
-		this.lastSidebarOpen = isSidebarOpen;
+		if (!Platform.isMobile) {
+			const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+			if (leaves.length > 0) {
+				const sidebarEl = (leaves[0].view as any)?.containerEl;
+				if (sidebarEl) {
+					const rect = sidebarEl.getBoundingClientRect();
+					const isSidebarVisible = rect.width > 0 && rect.right > 0;
+					shouldShow = !isSidebarVisible;
+				}
+			}
+		}
 
-		serviceLog("[ReadingMode] updateXitongWidgetVisibility: isSidebarOpen=" + isSidebarOpen);
+		// 仅在状态翻转时执行 DOM 操作与日志
+		if (shouldShow === this.lastSidebarOpen) return;
+		this.lastSidebarOpen = shouldShow;
 
-		if (isSidebarOpen) {
-			// 如果右边栏已打开，隐藏浮动提问图标并标记为已读
+		serviceLog("[ReadingMode] updateXitongWidgetVisibility: shouldShow=" + shouldShow);
+
+		if (!shouldShow) {
 			this.hasUnreadChatReply = false;
 			if (this.xitongWidget) {
 				this.xitongWidget.hide();
 				this.xitongWidget = null;
 			}
 		} else {
-			// 如果右边栏未打开，显示浮动提问图标
 			if (!this.xitongWidget) {
 				this.xitongWidget = new XitongFloatWidget(
 					this.app,
@@ -620,6 +683,10 @@ export class ReadingModeService implements ScrollPatchService {
 		document.body.classList.remove("deeppdf-reading-mode");
 		document.body.classList.remove("deeppdf-paginated");
 		this.chapterNav?.hide();
+
+		// 恢复 Obsidian 移动端底部导航栏
+		this.toggleMobileNavbar(true);
+
 		this.isActive = false;
 		this.currentFile = null;
 

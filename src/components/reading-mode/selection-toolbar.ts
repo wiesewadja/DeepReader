@@ -3,7 +3,7 @@
  * 选中文字后显示引用/摘录/高亮操作（极简图标模式）
  */
 
-import { type App, Notice } from 'obsidian';
+import { type App, Notice, Platform } from 'obsidian';
 import { HIGHLIGHT_COLORS } from '../../types/highlight.js';
 import type { HighlightColorId } from '../../types/highlight.js';
 import type { QuoteMetadata } from '../../types/quote.js';
@@ -101,8 +101,10 @@ export class SelectionToolbar {
 
         // 监听鼠标移动（记录光标位置）
         document.addEventListener('mousemove', this.handleMouseMove);
-        // 监听选中事件
+        // 监听选中事件（桌面端）
         document.addEventListener('mouseup', this.handleMouseUp);
+        // 监听选中事件（移动端：selectionchange 更可靠）
+        document.addEventListener('selectionchange', this.handleSelectionChange);
         document.addEventListener('keydown', this.handleKeyDown);
         // 点击其他区域关闭颜色选择器
         document.addEventListener('click', this.handleOutsideClick);
@@ -128,6 +130,32 @@ export class SelectionToolbar {
         setTimeout(() => {
             this.checkSelection();
         }, 10);
+    };
+
+    /**
+     * 处理选区变化事件（移动端：selectionchange 比 mouseup 更可靠）
+     */
+    private handleSelectionChange = (): void => {
+        // 桌面端由 mouseup 处理，这里只处理移动端
+        if (!Platform.isMobile) return;
+
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed || !selection.toString().trim()) {
+            // 无选区时延迟隐藏（避免点击工具栏按钮时误隐藏）
+            setTimeout(() => {
+                const sel = window.getSelection();
+                if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+                    this.hide();
+                    this.hideColorPicker();
+                }
+            }, 200);
+            return;
+        }
+
+        // 延迟检查选中（等待选中完成）
+        setTimeout(() => {
+            this.checkSelection();
+        }, 100);
     };
 
     /**
@@ -354,27 +382,50 @@ export class SelectionToolbar {
         }
 
 
-        // 使用鼠标光标位置定位
+        // 定位工具栏
         const toolbarRect = this.toolbarEl.getBoundingClientRect();
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
 
-        // 基于鼠标位置计算
-        let left = this.lastMousePosition.x - toolbarRect.width / 2;
-        let top = this.lastMousePosition.y - toolbarRect.height - 12;
+        if (Platform.isMobile) {
+            // 移动端：显示在选区下方，避免被 Obsidian 系统弹窗遮挡
+            const selRect = range.getBoundingClientRect();
+            let left = selRect.left + selRect.width / 2 - toolbarRect.width / 2;
+            let top = selRect.bottom + 8;
 
-        // 边界检查
-        if (left < 10) left = 10;
-        if (left + toolbarRect.width > viewportWidth - 10) {
-            left = viewportWidth - toolbarRect.width - 10;
-        }
-        if (top < 10) {
-            // 显示在鼠标下方
-            top = this.lastMousePosition.y + 16;
+            // 边界检查
+            if (left < 10) left = 10;
+            if (left + toolbarRect.width > viewportWidth - 10) {
+                left = viewportWidth - toolbarRect.width - 10;
+            }
+            if (top + toolbarRect.height > viewportHeight - 10) {
+                // 下方放不下则放到上方
+                top = selRect.top - toolbarRect.height - 8;
+            }
+            if (top < 60) top = 60;
+
+            this.toolbarEl.style.left = `${left}px`;
+            this.toolbarEl.style.top = `${top}px`;
+            this.toolbarEl.style.transform = '';
+        } else {
+            // 桌面端：使用鼠标光标位置定位
+            let left = this.lastMousePosition.x - toolbarRect.width / 2;
+            let top = this.lastMousePosition.y - toolbarRect.height - 12;
+
+            // 边界检查
+            if (left < 10) left = 10;
+            if (left + toolbarRect.width > viewportWidth - 10) {
+                left = viewportWidth - toolbarRect.width - 10;
+            }
+            if (top < 10) {
+                top = this.lastMousePosition.y + 16;
+            }
+
+            this.toolbarEl.style.left = `${left}px`;
+            this.toolbarEl.style.top = `${top + window.scrollY}px`;
+            this.toolbarEl.style.transform = '';
         }
 
-        this.toolbarEl.style.left = `${left}px`;
-        this.toolbarEl.style.top = `${top + window.scrollY}px`;
         this.toolbarEl.classList.add('visible');
     }
 
@@ -518,6 +569,7 @@ export class SelectionToolbar {
     destroy(): void {
         document.removeEventListener('mousemove', this.handleMouseMove);
         document.removeEventListener('mouseup', this.handleMouseUp);
+        document.removeEventListener('selectionchange', this.handleSelectionChange);
         document.removeEventListener('keydown', this.handleKeyDown);
         document.removeEventListener('click', this.handleOutsideClick);
         this.toolbarEl?.remove();

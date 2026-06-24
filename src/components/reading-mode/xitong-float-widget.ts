@@ -52,6 +52,51 @@ export class XitongFloatWidget {
 				this.toggleInputPopup();
 			}
 		});
+
+		// 长按事件（移动端：长按打开右边栏）
+		let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+		let isLongPress = false;
+		let touchStartPos = { x: 0, y: 0 };
+
+		this.widgetEl.addEventListener('touchstart', (e) => {
+			isLongPress = false;
+			touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+			longPressTimer = setTimeout(() => {
+				isLongPress = true;
+				this.onRevealSidebar();
+			}, 600);
+		}, { passive: true });
+
+		this.widgetEl.addEventListener('touchmove', (e) => {
+			// 手指移动超过 10px 则取消长按
+			if (longPressTimer) {
+				const dx = e.touches[0].clientX - touchStartPos.x;
+				const dy = e.touches[0].clientY - touchStartPos.y;
+				if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+					clearTimeout(longPressTimer);
+					longPressTimer = null;
+				}
+			}
+		}, { passive: true });
+
+		this.widgetEl.addEventListener('touchend', (e) => {
+			if (longPressTimer) {
+				clearTimeout(longPressTimer);
+				longPressTimer = null;
+			}
+			// 长按触发后阻止 click 事件
+			if (isLongPress) {
+				e.preventDefault();
+				isLongPress = false;
+			}
+		}, { passive: false });
+
+		this.widgetEl.addEventListener('touchcancel', () => {
+			if (longPressTimer) {
+				clearTimeout(longPressTimer);
+				longPressTimer = null;
+			}
+		});
 	}
 
 	hide(): void {

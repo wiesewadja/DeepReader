@@ -1,4 +1,4 @@
-import { Plugin, type WorkspaceLeaf, Notice } from "obsidian";
+import { Plugin, type WorkspaceLeaf, Notice, TFile } from "obsidian";
 import { FrontendAgent } from './agent/index.js';
 import type { DeepReaderPluginInterface } from "./agent/tools/context/vault.js";
 import type { QuoteMetadata } from './components/chat-input/chat-input.js';
@@ -280,6 +280,38 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             }, 300);
         });
 
+        // 注册移动端选区菜单（原生弹窗中添加 DeepReader 操作）
+        this.registerEvent(
+            this.app.workspace.on("editor-menu", (menu, editor, view) => {
+                // 仅在阅读模式下添加菜单项
+                const containerEl = (view as any)?.containerEl;
+                if (!containerEl?.classList?.contains("deeppdf-reading-mode")) return;
+
+                const selectedText = editor.getSelection();
+                if (!selectedText?.trim()) return;
+
+                const file = (view as any)?.file;
+
+                menu.addItem((item) => {
+                    item.setTitle("引用到对话").setIcon("quote").onClick(() => {
+                        this.handleQuoteFromSelection(selectedText, file);
+                    });
+                });
+
+                menu.addItem((item) => {
+                    item.setTitle("摘录").setIcon("bookmark").onClick(() => {
+                        this.handleExcerptFromSelection(selectedText);
+                    });
+                });
+
+                menu.addItem((item) => {
+                    item.setTitle("高亮").setIcon("highlight").onClick(() => {
+                        this.handleHighlightFromSelection(selectedText);
+                    });
+                });
+            })
+        );
+
         // 初始化阅读模式服务
         const readingModeCallbacks: ReadingModeCallbacks = {
             onQuote: (metadata: QuoteMetadata) => {
@@ -344,6 +376,17 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             },
             onRevealSidebar: () => {
                 this.activateView();
+                // 自动选中当前阅读的书籍
+                const currentIndexId = this.readingModeService?.getCurrentIndexId?.();
+                if (currentIndexId) {
+                    setTimeout(() => {
+                        const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                        if (leaves.length > 0) {
+                            const view = leaves[0].view as SidebarView;
+                            view.selectIndex(currentIndexId);
+                        }
+                    }, 200);
+                }
             },
         };
         this.readingModeService = new ReadingModeService(this.app, readingModeCallbacks, this.manifest.id);
@@ -719,6 +762,40 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         this.clearWereadScheduledSync();
         this.setupWereadScheduledSync();
     }
+
+    /**
+     * 处理从选区引用到对话
+     */
+    private handleQuoteFromSelection(text: string, file: TFile | null): void {
+        if (!file) return;
+        const metadata: QuoteMetadata = {
+            text,
+            sourcePath: file.path,
+            source: file.basename,
+        };
+        // 打开侧边栏并发送引用
+        this.activateView();
+        setTimeout(() => {
+            this.app.workspace.trigger("deeppdf:quote", metadata);
+        }, 300);
+    }
+
+    /**
+     * 处理从选区摘录
+     */
+    private handleExcerptFromSelection(text: string): void {
+        // 摘录功能暂未实现，提示用户
+        new Notice("摘录功能开发中");
+    }
+
+    /**
+     * 处理从选区高亮
+     */
+    private handleHighlightFromSelection(text: string): void {
+        // 高亮功能暂未实现，提示用户
+        new Notice("高亮功能开发中");
+    }
+
     /**
      * 确保初始化完成：创建 DeepReader 目录
      */

@@ -321,9 +321,6 @@ export class PagePaginator {
 		if (!this._isActive || !this.scrollView) return false;
 
 		if (this.isAtLastPage()) {
-			// At last page: navigate to next chapter.
-			// After navigation, paginator is destroyed and re-created for the new chapter,
-			// so the caller should not try to continue paging.
 			this.onNavigateNext();
 			return false;
 		}
@@ -334,10 +331,13 @@ export class PagePaginator {
 		}
 		
 		this.isProgrammaticScrolling = true;
-		this.scrollView.scrollBy({ left: stepWidth, behavior: 'smooth' });
+		// 移动端 overflow-x: hidden 时 scrollBy 不生效，改用 scrollLeft 赋值
+		if (Platform?.isMobile) {
+			this.scrollView.scrollLeft += stepWidth;
+		} else {
+			this.scrollView.scrollBy({ left: stepWidth, behavior: 'smooth' });
+		}
 		
-		// 同步更新 _currentPage，确保 getPageParagraphs 等依赖它的方法
-		// 在 scroll 事件触发前也能读到正确的页码
 		const step = this.isDualPageMode ? 2 : 1;
 		this._currentPage = Math.min(this._currentPage + step, this._totalPages);
 		this.options.onPageChange?.(this._currentPage, this._totalPages);
@@ -355,7 +355,6 @@ export class PagePaginator {
 		if (!this._isActive || !this.scrollView) return false;
 
 		if (this.isAtFirstPage()) {
-			// At first page: navigate to previous chapter (opens at last remembered page).
 			this.onNavigatePrev();
 			return false;
 		}
@@ -366,7 +365,11 @@ export class PagePaginator {
 		}
 		
 		this.isProgrammaticScrolling = true;
-		this.scrollView.scrollBy({ left: -stepWidth, behavior: 'smooth' });
+		if (Platform?.isMobile) {
+			this.scrollView.scrollLeft -= stepWidth;
+		} else {
+			this.scrollView.scrollBy({ left: -stepWidth, behavior: 'smooth' });
+		}
 		
 		const step = this.isDualPageMode ? 2 : 1;
 		this._currentPage = Math.max(1, this._currentPage - step);
@@ -811,40 +814,8 @@ export class PagePaginator {
 	}
 
 	private setupTouchListeners(): void {
-		if (!this.scrollView || !Platform.isMobile) return;
-
-		this.touchHandlerStart = (e: TouchEvent) => {
-			if (e.touches.length !== 1) return;
-			this.touchStartX = e.touches[0].clientX;
-			this.touchStartY = e.touches[0].clientY;
-			this.touchStartTime = Date.now();
-		};
-
-		this.touchHandlerEnd = (e: TouchEvent) => {
-			if (e.changedTouches.length !== 1) return;
-			const deltaX = e.changedTouches[0].clientX - this.touchStartX;
-			const deltaY = e.changedTouches[0].clientY - this.touchStartY;
-			const deltaTime = Date.now() - this.touchStartTime;
-
-			// 识别为滑动手势的阈值：
-			// 1. 水平滑动距离必须大于 50px
-			// 2. 垂直偏角不可太大 (deltaY 的绝对值小于 deltaX 的绝对值的 60%)
-			// 3. 时间在 400ms 以内（快速滑动）
-			if (
-				Math.abs(deltaX) > 50 &&
-				Math.abs(deltaY) < Math.abs(deltaX) * 0.6 &&
-				deltaTime < 400
-			) {
-				if (deltaX < 0) {
-					this.nextPage();
-				} else {
-					this.prevPage();
-				}
-			}
-		};
-
-		this.scrollView.addEventListener('touchstart', this.touchHandlerStart, { passive: true });
-		this.scrollView.addEventListener('touchend', this.touchHandlerEnd, { passive: true });
+		// 移动端不注册触摸监听：让 Obsidian 原生左右滑动（打开/关闭边栏）正常工作
+		// 翻页通过左右箭头按钮操作
 	}
 
 	private teardownTouchListeners(): void {

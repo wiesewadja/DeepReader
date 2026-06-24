@@ -106,7 +106,7 @@ export class ReadingTopbar extends Component {
         this.ttsBtn = document.createElement('button');
         this.ttsBtn.className = 'deeppdf-topbar-action-btn deeppdf-tts-reading-btn';
         this.ttsBtn.title = '朗读原文';
-        this.ttsBtn.innerHTML = Icons.volumeX;
+        this.ttsBtn.innerHTML = Icons.volume2;
         this.ttsBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.options.onToggleReadingTTS?.();

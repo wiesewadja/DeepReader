@@ -556,29 +556,26 @@
     height: 64px;
     border-radius: 14px;
     background: transparent;
-    border: 0px solid transparent;
+    border: none;
     color: var(--text-faint);
-    opacity: 0.25;
+    opacity: 0;
     cursor: pointer;
     z-index: 100;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
-    /* 离开时延迟 500ms 再隐藏边框 */
-    transition: opacity 0.15s ease 0.5s, background 0.2s ease 0.5s, border-color 0.2s ease 0.5s;
+    transition: opacity 0.2s ease;
 }
 
 .deeppdf-page-btn.left  { left: 4px; }
 .deeppdf-page-btn.right { right: 4px; }
 
 .deeppdf-page-btn:hover:not(.deeppdf-page-btn-disabled) {
-    opacity: 0.9;
+    opacity: 0.8;
     background: var(--background-secondary);
-    border-color: var(--background-modifier-border);
     color: var(--text-normal);
-    /* hover 时立即显示，无延迟 */
-    transition: opacity 0.15s ease 0s, background 0.15s ease 0s, border-color 0.15s ease 0s;
+    transition: opacity 0.15s ease, background 0.15s ease;
 }
 
 .deeppdf-page-btn-disabled {
@@ -653,23 +650,19 @@
         line-height: 2.0;
     }
 
-    /* 禁用多列分页，改为连续滚动 */
-    .deeppdf-paginated .markdown-preview-view {
-        column-width: auto !important;
-        column-fill: auto !important;
+    /* 移动端增加顶部留白，避免 title 遮挡正文 */
+    .deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view {
+        padding-top: 100px !important;
+        /* 禁用横向触摸滚动，保留按钮翻页（JS scrollLeft 仍生效） */
         overflow-x: hidden !important;
     }
 
-    /* 移动端选词工具栏 — 固定底部胶囊 */
+    /* 移动端选词工具栏 — 跟随选区定位 */
     .deeppdf-selection-toolbar {
-        position: fixed;
-        bottom: 16px;
-        left: 50%;
-        transform: translateX(-50%);
-        top: auto;
-        border-radius: 24px;
+        border-radius: 12px;
         padding: 6px 12px;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        max-height: 44px;
     }
 
     /* 章节导航 — 更大的触摸区域 */
@@ -687,6 +680,17 @@
     .deeppdf-page-nav-btn {
         width: 44px;
         height: 44px;
+    }
+
+    /* 翻页按钮 — 移动端更大的触摸区域 */
+    .deeppdf-page-btn {
+        width: 44px;
+        height: 64px;
+    }
+
+    /* 隐藏底部页码浮层，移动端屏幕宝贵 */
+    .deeppdf-page-controls {
+        display: none !important;
     }
 }
 
