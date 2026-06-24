@@ -721,6 +721,12 @@ export async function parseEpub(
     zip = new AdmZip(input);
   }
 
+  // Auto-infer strategy if not provided
+  if (!strategy) {
+    const { inferStrategyFromZip } = await import("./epub-structure-sampler");
+    strategy = inferStrategyFromZip(zip);
+  }
+
   // Find container.xml
   const containerEntry = zip.getEntry("META-INF/container.xml");
   if (!containerEntry) {
