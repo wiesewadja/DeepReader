@@ -10,20 +10,20 @@ import {
 	MarkdownView,
 	Platform,
 } from "obsidian";
+import type { DeepPDFSettings } from "../../config/settings.js";
 import {
 	loadLastPages,
 	saveLastPages,
 } from "../../pageindex/last-page-store.js";
 import type { HighlightColorId } from "../../types/highlight.js";
 import type { QuoteMetadata } from "../../types/quote.js";
-import type { DeepPDFSettings } from "../../config/settings.js";
 import { serviceLog } from "../../utils/logger.js";
 import { getVaultPath } from "../../utils/mobile-fs.js";
+import { SIDEBAR_VIEW_TYPE } from "../../views/sidebar/sidebar-view.js";
 import { ChapterNav } from "./chapter-nav.js";
 import type { ChapterNavOptions } from "./chapter-nav.js";
 import { MobileReadingFab } from "./mobile-reading-fab.js";
 import { PagePaginator } from "./page-paginator.js";
-import { getDualPageMetrics } from "./viewport-state.js";
 import {
 	installScrollPatch,
 	uninstallScrollPatch,
@@ -31,8 +31,8 @@ import {
 } from "./scroll-patch.js";
 import { SelectionToolbar } from "./selection-toolbar.js";
 import type { SelectionToolbarOptions } from "./selection-toolbar.js";
+import { getDualPageMetrics } from "./viewport-state.js";
 import { XitongFloatWidget } from "./xitong-float-widget.js";
-import { SIDEBAR_VIEW_TYPE } from "../../views/sidebar/sidebar-view.js";
 
 export interface ReadingModeCallbacks {
 	onQuote: (metadata: QuoteMetadata) => void;
@@ -1034,6 +1034,21 @@ export class ReadingModeService implements ScrollPatchService {
 			}
 		}
 		return bestPath;
+	}
+
+	/**
+	 * 获取指定文件夹下最近阅读的时间戳。
+	 * 用于书库按最近阅读时间排序。
+	 * @param folderPath 书籍章节文件夹路径（如 "DeepReader/书名"）
+	 * @returns 最近阅读的时间戳，如果没有阅读记录返回 0
+	 */	getBookLastReadTime(folderPath: string): number {
+		let bestTime = 0;
+		for (const [path, time] of this.lastReadAt) {
+			if (path.startsWith(folderPath + "/") && time > bestTime) {
+				bestTime = time;
+			}
+		}
+		return bestTime;
 	}
 
 	/**

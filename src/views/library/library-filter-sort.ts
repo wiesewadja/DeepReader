@@ -12,12 +12,12 @@ export interface FilterSortCallbacks {
 }
 
 export type FilterType = 'all' | 'pdf' | 'epub' | 'weread';
-export type SortKey = 'time-desc' | 'time-asc' | 'name-asc' | 'name-desc' | 'author-asc' | 'author-desc' | 'status';
+export type SortKey = 'time-desc' | 'time-asc' | 'name-asc' | 'name-desc' | 'author-asc' | 'author-desc' | 'status' | 'recent-read';
 
 export class FilterSort {
 	private filterType: FilterType = 'all';
 	private filterAuthor: string | null = null;
-	private sortKey: SortKey = 'time-desc';
+	private sortKey: SortKey = 'recent-read';
 	private _filterBtnEl: HTMLElement | null = null;
 	private _activeDropdown: HTMLElement | null = null;
 
@@ -71,6 +71,7 @@ export class FilterSort {
 		// ── 排序 ──
 		panel.createDiv({ cls: 'deeppdf-lib-filter-section-title', text: '排序' });
 		const sortOptions: Array<{ key: SortKey; label: string }> = [
+			{ key: 'recent-read', label: '最近阅读（默认）' },
 			{ key: 'time-desc', label: '添加时间（最新优先）' },
 			{ key: 'time-asc', label: '添加时间（最早优先）' },
 			{ key: 'name-asc', label: '书名 A→Z' },
@@ -126,14 +127,14 @@ export class FilterSort {
 		}
 
 		// ── 底部重置 ──
-		if (this.filterType !== 'all' || this.filterAuthor !== null || this.sortKey !== 'time-desc') {
+		if (this.filterType !== 'all' || this.filterAuthor !== null || this.sortKey !== 'recent-read') {
 			const resetRow = panel.createDiv({ cls: 'deeppdf-lib-filter-reset-row' });
 			const resetBtn = resetRow.createEl('button', { cls: 'deeppdf-lib-filter-reset-btn', text: '重置筛选' });
 			resetBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				this.filterType = 'all';
 				this.filterAuthor = null;
-				this.sortKey = 'time-desc';
+				this.sortKey = 'recent-read';
 				this.updateFilterBtnLabel();
 				this.closeDropdown();
 				this.callbacks.onRenderGrid();
@@ -207,9 +208,15 @@ export class FilterSort {
 		);
 	}
 
-	applySort(indexes: IndexListItem[]): IndexListItem[] {
+	applySort(indexes: IndexListItem[], getLastReadTime?: (index: IndexListItem) => number): IndexListItem[] {
 		const sorted = [...indexes];
 		switch (this.sortKey) {
+			case 'recent-read':
+				return sorted.sort((a, b) => {
+					const timeA = getLastReadTime?.(a) ?? 0;
+					const timeB = getLastReadTime?.(b) ?? 0;
+					return timeB - timeA; // 最近阅读的在前
+				});
 			case 'time-desc':
 				return sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 			case 'time-asc':
