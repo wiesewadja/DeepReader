@@ -5,9 +5,9 @@
  * finalize() 追加 index_end + llm_summary 汇总行，同时写一份兼容的 .json 摘要。
  */
 
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
+import * as path from "path"; // 裸名（非 node:path）：移动端 Capacitor polyfill 不识别 node: 前缀
 import { INDEX_TRACE_ENABLED } from "../config/features.js";
+import { nodeFs } from "../utils/node-fs.js"; // 惰性 fs/promises（移动端加载期不触发，见 node-fs.ts）
 import { apiLog } from "../utils/logger.js";
 import { getPageindexRoot } from "./paths.js";
 
@@ -144,12 +144,12 @@ export class IndexTracer {
 	}
 
 	private append(line: string): void {
-		const write = () => fs.appendFile(this.logPath, line + "\n", "utf-8");
+		const write = () => nodeFs().appendFile(this.logPath, line + "\n", "utf-8");
 		if (this.dirEnsured) {
 		write().catch((e) => { apiLog.error("[IndexTracer] append failed:", e); });
 		} else {
 			const dir = path.dirname(this.logPath);
-			fs.mkdir(dir, { recursive: true })
+			nodeFs().mkdir(dir, { recursive: true })
 				.then(() => { this.dirEnsured = true; return write(); })
 			.catch((e) => { apiLog.error("[IndexTracer] append failed:", e); });
 		}
@@ -325,8 +325,8 @@ export class IndexTracer {
 		};
 
 		const dir = path.dirname(this.jsonPath);
-		fs.mkdir(dir, { recursive: true })
-			.then(() => fs.writeFile(this.jsonPath, JSON.stringify(jsonTrace, null, 2), "utf-8"))
+		nodeFs().mkdir(dir, { recursive: true })
+			.then(() => nodeFs().writeFile(this.jsonPath, JSON.stringify(jsonTrace, null, 2), "utf-8"))
 		.catch((e) => { apiLog.error("[IndexTracer] json write failed:", e); });
 	}
 }

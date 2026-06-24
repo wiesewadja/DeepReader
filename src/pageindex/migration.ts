@@ -5,8 +5,8 @@
  * 一次性、幂等：旧目录存在就迁移，不存在就跳过。
  */
 
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import { LEGACY_PAGEINDEX_DIR, PAGEINDEX_DIR, getPageindexDir } from './paths.js';
 
 /**
