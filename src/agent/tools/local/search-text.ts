@@ -14,6 +14,7 @@ import type { BookSearchResultV2 } from '../../../pageindex/book-types.js';
 import { parseCallouts } from '../../../utils/callout-parser.js';
 import { bookExcerptDir } from '../../../utils/book-paths.js';
 import { toolsLog } from '../../../utils/logger.js';
+import { Notice } from 'obsidian';
 import { sanitizeFileName } from '../../../weread/utils/file.js';
 import type { ToolExecutor, ToolContext } from '../types.js';
 
@@ -204,11 +205,14 @@ export const searchBookTool: ToolExecutor = {
       }
 
       // 多查询并行检索：每个关键词独立搜索
+      let indexMissing = false; // 索引未同步（移动端常见）标志，命中则 Notice 提示
       const subResults: BookSearchResultV2[][] = await Promise.all(
         keywords.map(async (kw) => {
           try {
             return await searchBookV2({ ...baseOptions, query: kw });
-          } catch {
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : '';
+            if (/索引|index/i.test(msg)) indexMissing = true;
             return [];
           }
         })
@@ -240,6 +244,13 @@ export const searchBookTool: ToolExecutor = {
       }
 
       const hits = fusionToHits(fusedEntries, topK);
+
+      // 索引未同步（移动端对未从 PC 同步索引的书对话）：Notice 提示，Agent 仍基于通用知识继续
+      if (indexMissing && hits.length === 0) {
+        try {
+          new Notice(`《${pdfName}》索引未同步，请在桌面端建立。本次基于通用知识回答。`, 6000);
+        } catch { /* Notice 不可用时忽略 */ }
+      }
 
       return JSON.stringify({
         status: 'SUCCESS',
