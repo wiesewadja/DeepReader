@@ -3,7 +3,7 @@
  * ChatGPT 风格的对话界面
  */
 
-import { ItemView, type WorkspaceLeaf, Notice } from "obsidian";
+import { ItemView, type WorkspaceLeaf, Notice, Platform } from "obsidian";
 import { type FrontendAgent } from "../../agent/index.js";
 import { MemoryStore } from "../../agent/memory/store.js";
 import { SessionStore } from "../../agent/session/index.js";
@@ -49,6 +49,7 @@ import { copyToClipboard as _copyToClipboard } from "./search-utils.js";
 import { SessionManager } from "./session-manager.js";
 import { TTSController } from "./tts-controller.js";
 import { VoiceInputController } from "../../services/asr/voice-input-controller.js";
+import { PushToTalkController } from "../../services/push-to-talk.js";
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -82,6 +83,11 @@ export class SidebarView extends ItemView {
 	private agentChatCtrl: AgentChatController;
 	private bookMgr: BookManager;
 	private voiceInputCtrl: VoiceInputController | null = null;
+	private pushToTalkCtrl: PushToTalkController | null = null;
+
+	// 移动端键盘适配
+	private chatContainerEl: HTMLElement | null = null;
+	private mobileKeyboardCleanup: (() => void) | null = null;
 
 	/**
 	 * 初始化前端 Agent
@@ -739,6 +745,7 @@ export class SidebarView extends ItemView {
 	 */
 	private async renderMainUI(container: HTMLElement): Promise<void> {
 		container.empty();
+		this.chatContainerEl = container;
 
 		// 初始化上下文管理器（章节辅助阅读）
 		this.contextManager = new ContextManager({
@@ -786,6 +793,9 @@ export class SidebarView extends ItemView {
 
 		// 创建输入区
 		this.createChatInputSection(container);
+
+		// 移动端键盘适配：键盘弹起时收缩容器高度，避免输入框被遮挡
+		this.setupMobileKeyboardAdaptation();
 
 		// 加载索引列表
 		await this.loadIndexes();
@@ -1052,7 +1062,8 @@ export class SidebarView extends ItemView {
 		// 创建聊天输入组件（在最上方）
 		// 检查是否可启用语音输入（需要 MiMo API Key）
 		const ttsConfig = resolveRoleConfig("tts", this.plugin.settings);
-		const showVoiceButton = !!ttsConfig;
+		const chatConfig = resolveRoleConfig("chat", this.plugin.settings);
+		const showVoiceButton = !!ttsConfig && !Platform.isMobile; // 移动端隐藏麦克风按钮
 
 		// 创建聊天输入组件（在最上方）
 		this.chatInput = new ChatInput({
@@ -1088,6 +1099,10 @@ export class SidebarView extends ItemView {
 						this.voiceInputCtrl.toggle();
 					}
 				: undefined,
+			// 移动端长按触发 Push-to-Talk
+			onLongPress: Platform.isMobile && ttsConfig && chatConfig
+				? () => this.startPushToTalk()
+				: undefined,
 		});
 
 		// 创建引用卡片容器（在输入框上方）
@@ -1103,6 +1118,93 @@ export class SidebarView extends ItemView {
 		if (chatInputEl) {
 			section.appendChild(chatInputEl);
 		}
+	}
+
+	/**
+	 * 移动端长按触发 Push-to-Talk
+	 * 长按时 start 录音，touchend 时 stop 识别+重写
+	 */
+	private startPushToTalk(): void {
+		const ttsConfig = resolveRoleConfig("tts", this.plugin.settings);
+		const chatConfig = resolveRoleConfig("chat", this.plugin.settings);
+		if (!ttsConfig || !chatConfig || !this.chatInput) return;
+
+		if (!this.pushToTalkCtrl) {
+			this.pushToTalkCtrl = new PushToTalkController(
+				this.chatInput,
+				{
+					asrApiKey: ttsConfig.apiKey,
+					asrBaseUrl: ttsConfig.baseUrl,
+					llmApiKey: chatConfig.apiKey,
+					llmBaseUrl: chatConfig.baseUrl,
+				},
+				{
+					onStateChange: (state) => {
+						// 状态变化由 ChatInput.setVoiceState 处理
+					},
+					onTextReady: (text) => {
+						// 文本已通过 chatInput.setValue 填入
+					},
+					onError: (error) => {
+						new Notice(`语音输入失败: ${error.message}`);
+					},
+				},
+			);
+		}
+
+		// 长按触发时直接 start
+		this.pushToTalkCtrl.start();
+
+		// 监听 touchend 触发 stop
+		const textarea = this.chatInput.getElement()?.querySelector('textarea');
+		if (textarea) {
+			const handleTouchEnd = () => {
+				textarea.removeEventListener('touchend', handleTouchEnd);
+				const bookInfo = this.bookMgr.getCurrentBookInfo();
+				this.pushToTalkCtrl?.stop(bookInfo ? {
+					title: bookInfo.title || '未知书籍',
+					description: bookInfo.docDescription || undefined,
+				} : undefined);
+			};
+			textarea.addEventListener('touchend', handleTouchEnd, { once: true });
+		}
+	}
+
+	/**
+	 * 移动端键盘适配
+	 * 监听 visualViewport，键盘弹起时收缩聊天容器高度，
+	 * 使钉底的输入框自然位于键盘上方，避免被遮挡。
+	 * 仅移动端启用，桌面端为空操作。
+	 */
+	private setupMobileKeyboardAdaptation(): void {
+		if (!Platform.isMobile) return;
+		if (!this.chatContainerEl) return;
+		const vv = window.visualViewport;
+		if (!vv) return;
+
+		const container = this.chatContainerEl;
+		// 视口高度差超过此阈值视为键盘弹起（过滤地址栏伸缩等微小变化）
+		const KEYBOARD_THRESHOLD = 100;
+		let lastApplied = "__init__";
+
+		const update = () => {
+			const keyboardHeight = window.innerHeight - vv.height;
+			const raised = keyboardHeight > KEYBOARD_THRESHOLD;
+			const target = raised ? `${vv.height}px` : "";
+			if (target === lastApplied) return;
+			container.style.height = target;
+			lastApplied = target;
+		};
+
+		vv.addEventListener("resize", update);
+		vv.addEventListener("scroll", update);
+		update();
+
+		this.mobileKeyboardCleanup = () => {
+			vv.removeEventListener("resize", update);
+			vv.removeEventListener("scroll", update);
+			container.style.height = "";
+		};
 	}
 
 	/**
@@ -1276,6 +1378,13 @@ export class SidebarView extends ItemView {
 
 	async onClose() {
 		try {
+			// 清理移动端键盘适配监听
+			if (this.mobileKeyboardCleanup) {
+				this.mobileKeyboardCleanup();
+				this.mobileKeyboardCleanup = null;
+			}
+			this.chatContainerEl = null;
+
 			if (this.agentChatCtrl.currentStreamController) {
 				this.agentChatCtrl.cancelActiveStream();
 			}
@@ -1317,6 +1426,16 @@ export class SidebarView extends ItemView {
 					warn("[DeepPDF] Error destroying voiceInputCtrl:", e);
 				}
 				this.voiceInputCtrl = null;
+			}
+
+			// 清理 Push-to-Talk 控制器
+			if (this.pushToTalkCtrl) {
+				try {
+					this.pushToTalkCtrl.destroy();
+				} catch (e) {
+					warn("[DeepPDF] Error destroying pushToTalkCtrl:", e);
+				}
+				this.pushToTalkCtrl = null;
 			}
 
 
