@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import type { DirectoryScan, ReorgPlan } from "./compiler-types";
 

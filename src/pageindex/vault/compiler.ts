@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, renameSync } from "fs";
 import { join } from "path";
 import { log as piLog } from "../core/logger";
 import { getPageindexRoot } from '../paths.js';

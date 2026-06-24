@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { getPageindexRoot } from '../paths.js';
 import type { SearchResultV2 } from "./compiler-types";

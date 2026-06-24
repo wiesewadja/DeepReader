@@ -5,8 +5,8 @@
  * Node.js compatible version
  */
 
-import * as fs from "node:fs/promises";
 import * as path from "path";
+import { nodeFs } from "../../utils/node-fs.js";
 import type { App } from "obsidian";
 import { vaultRead } from "../../utils/mobile-fs.js";
 import { safeRequest } from "../../utils/safe-request.js";
@@ -26,8 +26,8 @@ import type {
  */
 async function atomicWriteText(filePath: string, content: string): Promise<void> {
   const tmpPath = filePath + ".tmp";
-  await fs.writeFile(tmpPath, content, "utf-8");
-  await fs.rename(tmpPath, filePath);
+  await nodeFs().writeFile(tmpPath, content, "utf-8");
+  await nodeFs().rename(tmpPath, filePath);
 }
 
 /**
@@ -68,7 +68,7 @@ export async function readVectorJsonl(
     try {
       const content = app
         ? await vaultRead(app, filePath)
-        : await fs.readFile(filePath, "utf-8");
+        : await nodeFs().readFile(filePath, "utf-8");
       const records: VectorRecord[] = [];
       for (const line of content.trim().split("\n")) {
         if (!line.trim()) continue;
@@ -136,7 +136,7 @@ export async function readChunkTexts(
   try {
     const content = app
       ? await vaultRead(app, filePath)
-      : await fs.readFile(filePath, "utf-8");
+      : await nodeFs().readFile(filePath, "utf-8");
     const records: ChunkTextRecord[] = [];
     for (const line of content.trim().split("\n")) {
       if (!line.trim()) continue;
@@ -161,7 +161,7 @@ export async function loadCatalog(
 ): Promise<CatalogMeta> {
   const catalogPath = path.join(pageindexPath, CATALOG_FILE);
   try {
-    const content = await fs.readFile(catalogPath, "utf-8");
+    const content = await nodeFs().readFile(catalogPath, "utf-8");
     return JSON.parse(content) as CatalogMeta;
   } catch {
     return { version: 1, books: {} };
@@ -179,7 +179,7 @@ export async function updateCatalogEntry(
   const catalog = await loadCatalog(pageindexPath);
   catalog.books[bookId] = entry;
   const catalogPath = path.join(pageindexPath, CATALOG_FILE);
-  await fs.mkdir(pageindexPath, { recursive: true });
+  await nodeFs().mkdir(pageindexPath, { recursive: true });
   await atomicWriteText(catalogPath, JSON.stringify(catalog, null, 2));
 }
 

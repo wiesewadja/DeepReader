@@ -5,9 +5,8 @@
  * Node.js compatible version
  */
 
-import * as fs from "node:fs/promises";
-import { mkdir } from "node:fs/promises";
 import * as path from "path";
+import { nodeFs } from "../../utils/node-fs.js";
 import { log as piLog } from "../core/logger";
 import { countTokens } from "../core/utils";
 import { getPageindexRoot } from '../paths.js';
@@ -161,7 +160,7 @@ async function buildOrUpdateVectors(
   changedFiles: Array<{ relativePath: string }>,
   options: ObsidianVaultIndexOptions
 ): Promise<void> {
-  await mkdir(indexPath, { recursive: true });
+  await nodeFs().mkdir(indexPath, { recursive: true });
 
   const changedPaths = new Set(changedFiles.map((f) => f.relativePath));
 
@@ -231,7 +230,7 @@ function collectChildNodes(
 async function loadMeta(indexPath: string): Promise<VaultIndexMeta | null> {
   try {
     const metaPath = path.join(indexPath, "meta.json");
-    const content = await fs.readFile(metaPath, "utf-8");
+    const content = await nodeFs().readFile(metaPath, "utf-8");
     return JSON.parse(content);
   } catch {
     return null;
@@ -262,6 +261,6 @@ export async function loadVaultIndex(vaultPath: string): Promise<VaultIndexResul
 }
 
 async function saveMeta(indexPath: string, meta: VaultIndexMeta): Promise<void> {
-  await mkdir(indexPath, { recursive: true });
-  await fs.writeFile(path.join(indexPath, "meta.json"), JSON.stringify(meta, null, 2), "utf-8");
+  await nodeFs().mkdir(indexPath, { recursive: true });
+  await nodeFs().writeFile(path.join(indexPath, "meta.json"), JSON.stringify(meta, null, 2), "utf-8");
 }

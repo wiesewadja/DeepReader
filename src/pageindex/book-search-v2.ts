@@ -12,8 +12,8 @@
  * Stage 8: Matched block location (block_id level)
  */
 
-import * as fs from "fs/promises";
 import * as path from "path";
+import { nodeFs } from "../utils/node-fs.js";
 import type { App } from "obsidian";
 import { vaultRead, vaultExists, vaultList, joinPath } from "../utils/mobile-fs.js";
 import { safeRequest } from "../utils/safe-request.js";
@@ -136,7 +136,7 @@ export async function searchBookV2(
     if (app) {
       await vaultExists(app, indexDir);
     } else {
-      await fs.access(indexDir);
+      await nodeFs().access(indexDir);
     }
   } catch {
     throw new IndexError(
@@ -165,7 +165,7 @@ export async function searchBookV2(
     const bm25Path = app ? joinPath(indexDir, "bm25.json") : path.join(indexDir, "bm25.json");
     const bm25Content = app
       ? await vaultRead(app, bm25Path)
-      : await fs.readFile(bm25Path, "utf-8");
+      : await nodeFs().readFile(bm25Path, "utf-8");
     return JSON.parse(bm25Content) as BM25Data;
   });
 
@@ -417,7 +417,7 @@ export async function loadTreeJson(indexDir: string, app?: App): Promise<TreeDat
     const treePath = app ? joinPath(indexDir, "tree.json") : path.join(indexDir, "tree.json");
     const content = app
       ? await vaultRead(app, treePath)
-      : await fs.readFile(treePath, "utf-8");
+      : await nodeFs().readFile(treePath, "utf-8");
     return JSON.parse(content) as TreeData;
   } catch {
     return null;
@@ -662,7 +662,7 @@ async function resolveExportDirName(
   if (staticName) {
     const staticPath = path.join(deepReaderPath, staticName);
     try {
-      await fs.access(staticPath);
+      await nodeFs().access(staticPath);
       return staticName;
     } catch { /* 目录不存在或被重命名，继续扫描 */ }
   }
@@ -671,12 +671,12 @@ async function resolveExportDirName(
   if (!sampleFileName) return null;
 
   try {
-    const entries = await fs.readdir(deepReaderPath, { withFileTypes: true });
+    const entries = await nodeFs().readdir(deepReaderPath, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const candidatePath = path.join(deepReaderPath, entry.name, sampleFileName);
       try {
-        await fs.access(candidatePath);
+        await nodeFs().access(candidatePath);
         piLog(`[book-search-v2] 目录重命名检测: "${staticName}" → "${entry.name}"`);
         return entry.name;
       } catch { /* 该目录不包含目标文件 */ }
@@ -718,7 +718,7 @@ async function crossEncoderRerank(
         content = await vaultRead(app, fileRel);
       } else if (vaultPath) {
         const fullPath = path.join(vaultPath, "DeepReader", exportDir, fileName);
-        content = await fs.readFile(fullPath, "utf-8");
+        content = await nodeFs().readFile(fullPath, "utf-8");
       } else {
         continue;
       }

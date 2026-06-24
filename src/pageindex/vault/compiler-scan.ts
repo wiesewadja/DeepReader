@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "fs";
 import { join, basename } from "path";
 import type { DirectoryScan, ScannedFile } from "./compiler-types";
 
