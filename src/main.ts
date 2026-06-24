@@ -69,6 +69,30 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
     };
 
     async onload() {
+        // ── 移动端 adapter/vault polyfill ──
+        // Capacitor 环境的 adapter/vault 可能缺少 DataAdapter 标准方法，
+        // 用 stat 做 fallback 补齐。
+        const adapter = this.app.vault.adapter as any;
+        if (typeof adapter.exists !== 'function') {
+            adapter.exists = async (normalizedPath: string): Promise<boolean> => {
+                try { return (await adapter.stat(normalizedPath)) != null; }
+                catch { return false; }
+            };
+        }
+        if (typeof adapter.list !== 'function') {
+            adapter.list = async (_normalizedPath: string): Promise<{ files: string[]; folders: string[] }> => {
+                return { files: [], folders: [] };
+            };
+        }
+        const vault = this.app.vault as any;
+        if (typeof vault.createFolder !== 'function') {
+            vault.createFolder = async (path: string) => {
+                // 尝试通过 adapter.mkdir 创建，忽略已存在错误
+                try { await adapter.mkdir(path); } catch {}
+                return vault.getFolderByPath?.(path) ?? { path };
+            };
+        }
+
         await this.loadSettings();
 
         // 设置 pageindex 路径模块的当前 pluginId（dev/daily 隔离）
