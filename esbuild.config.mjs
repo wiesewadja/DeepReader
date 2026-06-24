@@ -1,6 +1,6 @@
 import esbuild from "esbuild";
 import process from "process";
-import builtins from "builtin-modules";
+import { nodeModulesPolyfillPlugin } from "esbuild-plugins-node-modules-polyfill";
 
 const banner =
 `/*
@@ -18,13 +18,175 @@ try{if(typeof require!=='undefined'&&typeof require.ensure==='undefined'){requir
 
 const prod = (process.argv[2] === "production");
 
-// 内部命令（微信读书快捷入口 + 调试/测试命令）剥离开关。
-// 值为字符串 'true' | 'false'（非 boolean），经 JSON.stringify 注入为 esbuild define 字面量：
-// - INTERNAL_COMMANDS 显式优先（deploy.js 按 target 注入：dev=保留 / daily=剥离）
-// - 未设时 fail-safe：production 构建剥离（正式版语义），dev watch 保留
 const internalCommandsFlag = process.env.INTERNAL_COMMANDS !== undefined
     ? process.env.INTERNAL_COMMANDS
     : (prod ? 'false' : 'true');
+
+const isMobileBuild = process.env.MOBILE_BUILD === 'true';
+
+// 移动端 Node 模块 polyfill 插件 - 统一拦截所有 Node 核心模块
+const mobileNodeLazyPlugin = {
+  name: 'mobile-node-lazy',
+  setup(build) {
+    const nodeModules = /^(fs|path|crypto|stream|events|os|zlib|timers|util|buffer|querystring|url|http|https|net|tls|dgram|dns|cluster|child_process|vm|readline|repl|v8|perf_hooks|assert|console|constants|domain|punycode|string_decoder|sys|tty|worker_threads|fs\/promises|path\/posix|path\/win32)$/;
+
+    build.onResolve({ filter: nodeModules }, args => {
+      if (isMobileBuild) {
+        return { path: args.path, namespace: 'mobile-node', pluginData: { originalPath: args.path } };
+      }
+      return null;
+    });
+
+    build.onLoad({ filter: /.*/, namespace: 'mobile-node' }, async (args) => {
+      const moduleName = args.path;
+      const polyfills = {
+        'fs': `
+          module.exports = {
+            readFile: async (p, enc) => { throw new Error('移动端 fs polyfill: readFile 未实现'); },
+            writeFile: async (p, d, enc) => { throw new Error('移动端 fs polyfill: writeFile 未实现'); },
+            appendFile: async (p, d, enc) => { throw new Error('移动端 fs polyfill: appendFile 未实现'); },
+            unlink: async (p) => { throw new Error('移动端 fs polyfill: unlink 未实现'); },
+            access: async (p) => { throw new Error('移动端 fs polyfill: access 未实现'); },
+            mkdir: async (p, opts) => { throw new Error('移动端 fs polyfill: mkdir 未实现'); },
+            readdir: async (p, opts) => { throw new Error('移动端 fs polyfill: readdir 未实现'); },
+            stat: async (p) => { throw new Error('移动端 fs polyfill: stat 未实现'); },
+            readFileSync: (p, enc) => { throw new Error('移动端 fs polyfill: readFileSync 未实现'); },
+            writeFileSync: (p, d, enc) => { throw new Error('移动端 fs polyfill: writeFileSync 未实现'); },
+            existsSync: (p) => { throw new Error('移动端 fs polyfill: existsSync 未实现'); },
+            mkdirSync: (p, opts) => { throw new Error('移动端 fs polyfill: mkdirSync 未实现'); },
+            readdirSync: (p, opts) => { throw new Error('移动端 fs polyfill: readdirSync 未实现'); },
+            statSync: (p) => { throw new Error('移动端 fs polyfill: statSync 未实现'); },
+            copyFileSync: (s, d) => { throw new Error('移动端 fs polyfill: copyFileSync 未实现'); },
+            renameSync: (s, d) => { throw new Error('移动端 fs polyfill: renameSync 未实现'); },
+            createReadStream: (p) => { throw new Error('移动端 fs polyfill: createReadStream 未实现'); },
+            createWriteStream: (p) => { throw new Error('移动端 fs polyfill: createWriteStream 未实现'); },
+          };
+        `,
+        'fs/promises': `
+          module.exports = {
+            readFile: async (p, enc) => { throw new Error('移动端 fs/promises polyfill: readFile 未实现'); },
+            writeFile: async (p, d, enc) => { throw new Error('移动端 fs/promises polyfill: writeFile 未实现'); },
+            appendFile: async (p, d, enc) => { throw new Error('移动端 fs/promises polyfill: appendFile 未实现'); },
+            unlink: async (p) => { throw new Error('移动端 fs/promises polyfill: unlink 未实现'); },
+            access: async (p) => { throw new Error('移动端 fs/promises polyfill: access 未实现'); },
+            mkdir: async (p, opts) => { throw new Error('移动端 fs/promises polyfill: mkdir 未实现'); },
+            readdir: async (p, opts) => { throw new Error('移动端 fs/promises polyfill: readdir 未实现'); },
+            stat: async (p) => { throw new Error('移动端 fs/promises polyfill: stat 未实现'); },
+          };
+        `,
+        'path': `
+          const sep = '/';
+          module.exports = {
+            sep,
+            join: (...paths) => paths.join(sep),
+            resolve: (...paths) => paths.join(sep),
+            basename: (p, ext) => {
+              const base = p.split(sep).pop() || '';
+              return ext && base.endsWith(ext) ? base.slice(0, -ext.length) : base;
+            },
+            dirname: (p) => { const parts = p.split(sep); parts.pop(); return parts.join(sep) || '.'; },
+            extname: (p) => { const base = p.split(sep).pop() || ''; const dot = base.lastIndexOf('.'); return dot >= 0 ? base.slice(dot) : ''; },
+            normalize: (p) => p.replace(/\\\\+/g, sep),
+            isAbsolute: (p) => p.startsWith(sep) || /^[a-z]:\\\\/i.test(p),
+            relative: (from, to) => to,
+            parse: (p) => {
+              const base = p.split(sep).pop() || '';
+              const ext = module.exports.extname(p);
+              return { root: sep, dir: module.exports.dirname(p), base, ext, name: base.slice(0, -ext.length) || base };
+            },
+          };
+        `,
+        'crypto': `
+          module.exports = {
+            subtle: {
+              digest: async (algo, data) => {
+                const encoder = new TextEncoder();
+                const buf = typeof data === 'string' ? encoder.encode(data) : data;
+                return await window.crypto.subtle.digest(algo, buf);
+              },
+            },
+            getRandomValues: (arr) => window.crypto.getRandomValues(arr),
+            createHmac: () => ({ update: () => ({}), digest: () => '' }),
+            randomBytes: (size) => { const a = new Uint8Array(size); window.crypto.getRandomValues(a); return a; },
+          };
+        `,
+        'stream': `
+          class Stream { on() { return this; } pipe() { return this; } destroy() {} }
+          module.exports = { Stream, Readable: Stream, Writable: Stream, Transform: Stream, PassThrough: Stream };
+        `,
+        'events': `
+          class EventEmitter {
+            constructor() { this._listeners = new Map(); }
+            on(e, fn) { if (!this._listeners.has(e)) this._listeners.set(e, []); this._listeners.get(e).push(fn); return this; }
+            off(e, fn) { const arr = this._listeners.get(e); if (arr) { const i = arr.indexOf(fn); if (i > -1) arr.splice(i, 1); } return this; }
+            emit(e, ...args) { const arr = this._listeners.get(e); if (arr) { arr.forEach(fn => fn(...args)); return true; } return false; }
+            once(e, fn) { const w = (...a) => { fn(...a); this.off(e, w); }; return this.on(e, w); }
+            removeAllListeners(e) { this._listeners.delete(e); return this; }
+          }
+          module.exports = { EventEmitter };
+        `,
+        'os': `
+          module.exports = {
+            type: () => 'Android', platform: () => 'android', arch: () => 'arm',
+            version: () => 'unknown', hostname: () => 'mobile-device', pid: () => 0,
+            homedir: () => '/sdcard', tmpdir: () => '/tmp',
+            totalmem: () => 0, freemem: () => 0, cpus: () => [], loadavg: () => [0, 0, 0],
+          };
+        `,
+        'zlib': `
+          module.exports = {
+            createGzip: () => ({ on: () => ({}), pipe: () => ({}), end: () => {} }),
+            createGunzip: () => ({ on: () => ({}), pipe: () => ({}), end: () => {} }),
+            gzip: (d, cb) => cb(null, d), gunzip: (d, cb) => cb(null, d),
+            deflate: (d, cb) => cb(null, d), inflate: (d, cb) => cb(null, d),
+          };
+        `,
+        'timers': `
+          module.exports = {
+            setTimeout: globalThis.setTimeout.bind(globalThis),
+            clearTimeout: globalThis.clearTimeout.bind(globalThis),
+            setInterval: globalThis.setInterval.bind(globalThis),
+            clearInterval: globalThis.clearInterval.bind(globalThis),
+          };
+        `,
+        'util': `
+          module.exports = {
+            inherits: (c, s) => { c.prototype = Object.create(s.prototype); c.prototype.constructor = c; },
+            format: (f, ...a) => f.replace(/%s/g, () => a.shift()) || f,
+            debug: (...a) => console.log('[DEBUG]', ...a),
+            isError: (v) => v instanceof Error,
+            promisify: (fn) => (...a) => new Promise((res, rej) => { fn(...a, (e, r) => e ? rej(e) : res(r)); }),
+          };
+        `,
+        'buffer': `
+          module.exports = {
+            Buffer: {
+              from: (d, enc) => new TextEncoder().encode(typeof d === 'string' ? d : d),
+              alloc: (size) => new Uint8Array(size),
+              concat: (list) => { const total = list.reduce((s, b) => s + b.length, 0); const result = new Uint8Array(total); let offset = 0; list.forEach(b => { result.set(b, offset); offset += b.length; }); return result; },
+              isBuffer: (b) => b instanceof Uint8Array,
+            },
+          };
+        `,
+      };
+
+      const code = polyfills[moduleName] || `module.exports = {};`;
+      return { contents: code, loader: 'js' };
+    });
+  },
+};
+
+const getPlugins = () => {
+  if (isMobileBuild) {
+    return [mobileNodeLazyPlugin];
+  } else {
+    return [
+      nodeModulesPolyfillPlugin({
+        globals: { process: false, Buffer: true, global: 'globalThis' },
+      }),
+    ];
+  }
+};
 
 const context = await esbuild.context({
     banner: {
@@ -32,9 +194,11 @@ const context = await esbuild.context({
     },
     define: {
         'process.env.DEV_COMMANDS': JSON.stringify(internalCommandsFlag),
+        'process.env.MOBILE_BUILD': JSON.stringify(isMobileBuild),
     },
     entryPoints: ["src/main.ts"],
     bundle: true,
+    plugins: getPlugins(),
     external: [
         "obsidian",
         "electron",
@@ -49,22 +213,12 @@ const context = await esbuild.context({
         "@lezer/common",
         "@lezer/highlight",
         "@lezer/lr",
-        ...builtins,
-        // Node.js built-in modules with node: prefix
-        "node:fs",
-        "node:fs/promises",
-        "node:path",
-        "node:crypto",
-        "node:os",
-        "node:util",
-        "node:stream",
-        "node:events",
-        // Dynamic imports - loaded at runtime
         "./pageindex/vault/*",
-        "./pageindex/parsers/pdf-to-markdown"],
+        "./pageindex/parsers/pdf-to-markdown",
+    ],
     format: "cjs",
-    target: "es2018",
-    loader: { ".jpg": "dataurl" },
+    target: isMobileBuild ? "es2015" : "es2020",
+    loader: {".jpg": "dataurl"},
     logLevel: "info",
     sourcemap: prod ? false : "inline",
     treeShaking: true,
