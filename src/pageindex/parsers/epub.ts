@@ -591,13 +591,15 @@ function parseNcxToc(zip: AdmZip, basePath: string): NcxTocEntry[] {
   if (ncxFiles.length === 0) return [];
   const ncxXml = ncxFiles[0].getData().toString("utf-8");
 
-  const textMatches = [...ncxXml.matchAll(/<text>([^<]+)<\/text>/g)];
-  const srcMatches = [...ncxXml.matchAll(/<content\s+src="([^"]+)"/g)];
+  // Match <navLabel><text>...</text></navLabel> followed by <content src="..."/>
+  // This avoids matching <docTitle><text> which causes offset issues
+  const labelSrcRegex = /<navLabel>\s*<text>([^<]+)<\/text>\s*<\/navLabel>\s*<content\s+src="([^"]+)"/g;
 
   const entries: NcxTocEntry[] = [];
-  for (let i = 0; i < Math.min(textMatches.length, srcMatches.length); i++) {
-    const text = textMatches[i][1].trim();
-    const src = srcMatches[i][1];
+  let match;
+  while ((match = labelSrcRegex.exec(ncxXml)) !== null) {
+    const text = match[1].trim();
+    const src = match[2];
     if (text) entries.push({ text, src });
   }
   return entries;
@@ -891,11 +893,20 @@ export async function parseEpub(
   const chapters: EpubChapter[] = [];
   let order = 0;
 
+  // ─── Load NCX TOC for title mapping ───
+  // Build href → first-title mapping from NCX TOC, used for all parsing paths.
+  // Uses groupNcxEntriesByFile to avoid docTitle <text> tag offset issue.
+  const ncxEntries = parseNcxToc(zip, basePath);
+  const ncxByFile = groupNcxEntriesByFile(ncxEntries, basePath);
+  const ncxTitleMap = new Map<string, string>();
+  for (const [fileHref, entries] of ncxByFile) {
+    if (entries.length > 0 && entries[0].text) {
+      ncxTitleMap.set(fileHref, entries[0].text);
+    }
+  }
+
   // ─── Strategy-driven path: NCX anchor splitting ───
   if (strategy?.splitStrategy === "ncxAnchors") {
-    // Parse NCX TOC and group entries by source file
-    const ncxEntries = parseNcxToc(zip, basePath);
-    const ncxByFile = groupNcxEntriesByFile(ncxEntries, basePath);
 
     for (const id of readingOrder) {
       const href = manifestMap.get(id);
@@ -976,87 +987,99 @@ export async function parseEpub(
     const html = entry.getData().toString("utf-8");
     const result = extractTextFromHTMLWithBlocks(html, order, strategy);
 
+    // Skip noise pages (书名页, 版权页, etc.) based on NCX title or content
+    const ncxTitle = ncxTitleMap.get(href);
+    const noiseKeywords = ["书名页", "版权页", "扉页", "目录",
+      "版权信息", "图书在版编目", "CIP", "献给"];
+    if (ncxTitle && noiseKeywords.some(kw => ncxTitle.includes(kw))) {
+      order++;
+      continue;
+    }
+
     // Extract chapter title
-    // Strategy: 1) Try <h1> first, then <h2>, etc. (strip inner HTML tags),
-    //           2) Fall back to first non-empty line of markdown
-    // Use [\s\S]*? to match content with nested tags, then strip HTML to get plain text
-    // Kobo EPUBs often have h1 as chapter title and h5/h6 as sub-sections within the same
-    // XHTML file. We must NOT pick sub-section headings as the chapter title.
+    // Priority: 1) NCX TOC title (most reliable), 2) <h1>-<h6> tags, 3) first line
     let chapterTitle: string;
-    const headingLevelMatches = html.match(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi);
 
-    if (headingLevelMatches && headingLevelMatches.length > 0) {
-      // Group by heading level to prefer higher-level headings (h1 > h2 > ...)
-      const byLevel: Record<string, string[]> = {};
-      for (const m of headingLevelMatches) {
-        const levelMatch = m.match(/^<h([1-6])/i);
-        const level = levelMatch ? levelMatch[1] : "6";
-        let text = cleanTitle(m.replace(/<[^>]+>/g, "").trim());
-        // If heading text is empty (e.g. <h1><img/></h1>), try title attribute
-        if (text.length === 0) {
-          const titleAttr = m.match(/title=["']([^"']+)["']/i);
-          if (titleAttr) {
-            text = cleanTitle(titleAttr[1].trim());
-          }
-        }
-        if (text.length > 0) {
-          if (!byLevel[level]) byLevel[level] = [];
-          byLevel[level].push(text);
-        }
-      }
-
-      // Pick the first available level (h1 -> h2 -> ...)
-      let pickedTitle = "";
-      for (let lvl = 1; lvl <= 6; lvl++) {
-        const texts = byLevel[String(lvl)];
-        if (texts && texts.length > 0) {
-          // If multiple headings at same level, use the first one (usually the chapter title)
-          // or combine short + long if first is very short (e.g. "第1章" + "标题")
-          if (texts.length > 1) {
-            const first = texts[0];
-            // Combine chapter number + subtitle (e.g. "第1章" + "导言" → "第1章 导言")
-            if (first.length <= 8) {
-              pickedTitle = texts.slice(0, 2).join(" ");
-            } else {
-              const longest = texts.reduce((a, b) => a.length >= b.length ? a : b);
-              if (first !== longest && first.length <= 5 && longest.length > first.length) {
-                pickedTitle = `${first} ${longest}`;
-              } else {
-                pickedTitle = first;
-              }
-            }
-          } else {
-            pickedTitle = texts[0];
-          }
-          break;
-        }
-      }
-      chapterTitle = pickedTitle || `Chapter ${order + 1}`;
+    // 1. Try NCX title first
+    if (ncxTitle) {
+      chapterTitle = cleanTitle(ncxTitle);
     } else {
-      // No heading tag: use first non-empty line of markdown as title
-      const firstLine = result.content.split("\n").find(l => l.trim().length > 0);
-      // Strip block ID marker from the end
-      let rawTitle = firstLine
-        ? firstLine.replace(/\s*\^[a-zA-Z0-9_-]+\s*$/, "").trim()
-        : "";
-      // If the line contains links, extract only the text BEFORE the first link.
-      // This handles TOC pages where first line is "目录[[link1|text1]][[link2|text2]]"
-      if (rawTitle.includes("[[") || /\]\(/.test(rawTitle)) {
-        const beforeFirstLink = rawTitle.split(/\[\[/)[0].trim();
-        if (beforeFirstLink.length > 0) {
-          rawTitle = beforeFirstLink;
-        } else {
-          // If no text before links, extract alias from first wiki link
-          const aliasMatch = rawTitle.match(/\[\[[^\]|]*\|([^\]]*)\]\]/);
-          if (aliasMatch) {
-            rawTitle = aliasMatch[1];
+      // 2. Try <h1>-<h6> tags
+      const headingLevelMatches = html.match(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi);
+
+      if (headingLevelMatches && headingLevelMatches.length > 0) {
+        // Group by heading level to prefer higher-level headings (h1 > h2 > ...)
+        const byLevel: Record<string, string[]> = {};
+        for (const m of headingLevelMatches) {
+          const levelMatch = m.match(/^<h([1-6])/i);
+          const level = levelMatch ? levelMatch[1] : "6";
+          let text = cleanTitle(m.replace(/<[^>]+>/g, "").trim());
+          // If heading text is empty (e.g. <h1><img/></h1>), try title attribute
+          if (text.length === 0) {
+            const titleAttr = m.match(/title=["']([^"']+)["']/i);
+            if (titleAttr) {
+              text = cleanTitle(titleAttr[1].trim());
+            }
+          }
+          if (text.length > 0) {
+            if (!byLevel[level]) byLevel[level] = [];
+            byLevel[level].push(text);
           }
         }
-      }
-      chapterTitle = cleanTitle(rawTitle) || `Chapter ${order + 1}`;
-      // Truncate overly long titles
-      if (chapterTitle.length > 50) {
-        chapterTitle = chapterTitle.substring(0, 20).trim();
+
+        // Pick the first available level (h1 -> h2 -> ...)
+        let pickedTitle = "";
+        for (let lvl = 1; lvl <= 6; lvl++) {
+          const texts = byLevel[String(lvl)];
+          if (texts && texts.length > 0) {
+            // If multiple headings at same level, use the first one (usually the chapter title)
+            // or combine short + long if first is very short (e.g. "第1章" + "标题")
+            if (texts.length > 1) {
+              const first = texts[0];
+              // Combine chapter number + subtitle (e.g. "第1章" + "导言" → "第1章 导言")
+              if (first.length <= 8) {
+                pickedTitle = texts.slice(0, 2).join(" ");
+              } else {
+                const longest = texts.reduce((a, b) => a.length >= b.length ? a : b);
+                if (first !== longest && first.length <= 5 && longest.length > first.length) {
+                  pickedTitle = `${first} ${longest}`;
+                } else {
+                  pickedTitle = first;
+                }
+              }
+            } else {
+              pickedTitle = texts[0];
+            }
+            break;
+          }
+        }
+        chapterTitle = pickedTitle || `Chapter ${order + 1}`;
+      } else {
+        // 3. No heading tag: use first non-empty line of markdown as title
+        const firstLine = result.content.split("\n").find(l => l.trim().length > 0);
+        // Strip block ID marker from the end
+        let rawTitle = firstLine
+          ? firstLine.replace(/\s*\^[a-zA-Z0-9_-]+\s*$/, "").trim()
+          : "";
+        // If the line contains links, extract only the text BEFORE the first link.
+        // This handles TOC pages where first line is "目录[[link1|text1]][[link2|text2]]"
+        if (rawTitle.includes("[[") || /\]\(/.test(rawTitle)) {
+          const beforeFirstLink = rawTitle.split(/\[\[/)[0].trim();
+          if (beforeFirstLink.length > 0) {
+            rawTitle = beforeFirstLink;
+          } else {
+            // If no text before links, extract alias from first wiki link
+            const aliasMatch = rawTitle.match(/\[\[[^\]|]*\|([^\]]*)\]\]/);
+            if (aliasMatch) {
+              rawTitle = aliasMatch[1];
+            }
+          }
+        }
+        chapterTitle = cleanTitle(rawTitle) || `Chapter ${order + 1}`;
+        // Truncate overly long titles
+        if (chapterTitle.length > 50) {
+          chapterTitle = chapterTitle.substring(0, 20).trim();
+        }
       }
     }
 
