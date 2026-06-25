@@ -1086,6 +1086,12 @@ export class SidebarView extends ItemView {
 			onUnloadCurrentDoc: async () => {
 				await this.unloadCurrentDocument();
 			},
+			onVoiceStart: ttsConfig && chatConfig
+				? () => this.startVoiceRecording()
+				: undefined,
+			onVoiceStop: ttsConfig && chatConfig
+				? () => this.stopVoiceRecording()
+				: undefined,
 		});
 
 		// 创建引用卡片容器（在输入框上方）
@@ -1105,6 +1111,53 @@ export class SidebarView extends ItemView {
 
 	/**
 	 * 移动端长按触发 Push-to-Talk
+	 * 开始语音录音
+	 */
+	private startVoiceRecording(): void {
+		const ttsConfig = resolveRoleConfig("tts", this.plugin.settings);
+		const chatConfig = resolveRoleConfig("chat", this.plugin.settings);
+		if (!ttsConfig || !chatConfig || !this.chatInput) return;
+
+		if (!this.pushToTalkCtrl) {
+			this.pushToTalkCtrl = new PushToTalkController(
+				this.chatInput,
+				{
+					asrApiKey: ttsConfig.apiKey,
+					asrBaseUrl: ttsConfig.baseUrl,
+					llmApiKey: chatConfig.apiKey,
+					llmBaseUrl: chatConfig.baseUrl,
+				},
+				{
+					onStateChange: (state) => {
+						// 状态变化由 ChatInput.setVoiceState 处理
+					},
+					onTextReady: (text) => {
+						// 文本已通过 chatInput.setValue 填入
+					},
+					onError: (error) => {
+						new Notice(`语音输入失败: ${error.message}`);
+					},
+				},
+			);
+		}
+
+		this.pushToTalkCtrl.start();
+	}
+
+	/**
+	 * 停止语音录音
+	 */
+	private stopVoiceRecording(): void {
+		if (!this.pushToTalkCtrl) return;
+
+		const bookContext = this.bookMgr.getCurrentBookInfo();
+		this.pushToTalkCtrl.stop(bookContext ? {
+			title: bookContext.title || '未知书籍',
+			description: bookContext.docDescription || undefined,
+		} : undefined);
+	}
+
+	/**
 	 * 长按时 start 录音，touchend 时 stop 识别+重写
 	 */
 	private startPushToTalk(): void {
