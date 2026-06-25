@@ -1067,7 +1067,7 @@ export class SidebarView extends ItemView {
 
 		// 创建聊天输入组件（在最上方）
 		this.chatInput = new ChatInput({
-			placeholder: "输入以开始对话...",
+			placeholder: Platform.isMobile ? "长按说话，或输入文字" : "输入以开始对话...",
 			onSend: (message: string, _chatInputQuotes) => {
 				// 使用 sidebar 自己管理的引用列表（而非 ChatInput 内部的空数组）
 				this.agentChatCtrl.sendMessage(message, this.quoteManager.getQuotes());
