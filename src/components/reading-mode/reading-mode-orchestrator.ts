@@ -42,6 +42,9 @@ export interface ReadingModeCallbacks {
 	onBookDetected?: (indexId: string, bookName: string) => void; // 检测到书籍章节时回调
 	onDeactivate?: () => void; // 阅读模式停用时回调
 	onStopReadingTTS?: () => void; // 翻页/切章/关闭时停止原文朗读
+	isReadingTTs?: () => boolean; // 查询 TTS 是否正在朗读
+	getReadingTTsStartPage?: () => number; // 获取朗读开始时的页码
+	getReadingTTsHighlightIndex?: () => number; // 获取当前朗读高亮的段落索引
 	onQuickQuestion?: (question: string) => Promise<void>;
 	onRevealSidebar?: () => void;
 }
@@ -90,6 +93,8 @@ export class ReadingModeService implements ScrollPatchService {
 	private _pluginId: string;
 	/** 跨章回退标记：从后一章按 ← 时，前一章应恢复到最后一页 */
 	private _jumpToLastPage: boolean = false;
+	/** "回到朗读页"按钮 */
+	private returnReadingBtn: HTMLElement | null = null;
 
 	private xitongWidget: XitongFloatWidget | null = null;
 	private isChatThinking: boolean = false;
@@ -886,6 +891,9 @@ export class ReadingModeService implements ScrollPatchService {
 				});
 				this.paginator.paginateAndShow();
 
+				// 添加"回到朗读页"按钮
+				this.setupReturnToReadingButton(container);
+
 				// 恢复页码（双 rAF 确保 paginator 布局完成）
 				if (this.currentFile) {
 					// 跨章回退：跳到最后一页（翻书语义）
@@ -976,6 +984,57 @@ export class ReadingModeService implements ScrollPatchService {
 			.catch((err) => {
 				serviceLog("[ReadingMode] loadLastPages failed:", err);
 			});
+	}
+
+	/**
+	 * 设置"回到朗读页"按钮
+	 */
+	private setupReturnToReadingButton(container: HTMLElement): void {
+		// 创建按钮
+		const returnBtn = container.createDiv({
+			cls: 'deeppdf-return-reading-btn',
+		});
+		returnBtn.innerHTML = '📍 回到朗读页';
+		returnBtn.style.display = 'none'; // 默认隐藏
+
+		// 点击事件
+		returnBtn.addEventListener('click', () => {
+			const startPage = this.callbacks?.getReadingTTsStartPage?.() ?? 0;
+			const highlightIndex = this.callbacks?.getReadingTTsHighlightIndex?.() ?? 0;
+
+			if (startPage > 0 && this.paginator) {
+				// 跳转到朗读页（通过多次 nextPage/prevPage）
+				const currentPage = this.paginator.getCurrentPage();
+				const pagesToMove = startPage - currentPage;
+				for (let i = 0; i < Math.abs(pagesToMove); i++) {
+					if (pagesToMove > 0) {
+						this.paginator.nextPage();
+					} else {
+						this.paginator.prevPage();
+					}
+				}
+			}
+		});
+
+		// 存储按钮引用
+		this.returnReadingBtn = returnBtn;
+	}
+
+	/**
+	 * 更新"回到朗读页"按钮的可见性
+	 */
+	private updateReturnReadingBtnVisibility(currentPage: number): void {
+		if (!this.returnReadingBtn || !this.callbacks?.isReadingTTs) return;
+
+		const isReading = this.callbacks.isReadingTTs();
+		const startPage = this.callbacks.getReadingTTsStartPage?.() ?? 0;
+
+		// 只有在朗读中且当前页不是朗读页时才显示按钮
+		if (isReading && startPage > 0 && currentPage !== startPage) {
+			this.returnReadingBtn.style.display = 'flex';
+		} else {
+			this.returnReadingBtn.style.display = 'none';
+		}
 	}
 
 	/**

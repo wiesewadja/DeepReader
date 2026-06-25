@@ -57,6 +57,10 @@ export class TTSController {
 	private lastReadParagraphIndex = 0;
 	/** 下一页首段音频合成的 Promise 预存 */
 	private nextPageFirstStreamPromise: Promise<AsyncGenerator<ArrayBuffer>> | null = null;
+	/** 朗读开始时的页码（用于"回到朗读页"功能） */
+	private readingStartPage: number = 0;
+	/** 当前朗读高亮的段落索引 */
+	private readingHighlightIndex: number = 0;
 
 	// ── 流式消息朗读状态 ──────────────────────────
 	private messageAbort: AbortController | null = null;
@@ -89,6 +93,21 @@ export class TTSController {
 	/** 是否正在进行程序化翻页（抑制 onStopReadingTTS 误触发） */
 	isAutoPageTurning(): boolean {
 		return this.isAutoPageTurn;
+	}
+
+	/** 是否正在朗读原文 */
+	isReading(): boolean {
+		return this.currentSource === 'reading';
+	}
+
+	/** 获取朗读开始时的页码 */
+	getReadingStartPage(): number {
+		return this.readingStartPage;
+	}
+
+	/** 获取当前朗读高亮的段落索引 */
+	getReadingHighlightIndex(): number {
+		return this.readingHighlightIndex;
 	}
 
 	/** 停止原文朗读（按钮点击 / 翻页 / 切章 / 关闭阅读模式） */
@@ -420,6 +439,10 @@ export class TTSController {
 		this.readingClient = this.initReadingClient();
 		this.emitReadingTTSState('tts_loading');
 
+		// 记录朗读开始时的页码
+		this.readingStartPage = this.host.getCurrentPage?.() ?? 1;
+		this.readingHighlightIndex = 0;
+
 		const player = new PCMStreamPlayer();
 		this.readingPlayer = player;
 
@@ -546,6 +569,7 @@ export class TTSController {
 					return;
 				}
 				this.lastReadParagraphIndex = i; // 记录当前正在读的段落索引，供暂停后恢复
+				this.readingHighlightIndex = i; // 更新朗读高亮索引
 
 				// 1. 记录本段音频的计划开始时间 (当前已调度的 endTime)
 				const paragraphStartTime = player.endTime;
