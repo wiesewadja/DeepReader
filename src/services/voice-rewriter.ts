@@ -16,7 +16,7 @@ export class VoiceRewriter {
     this.config = config;
   }
 
-  async *rewrite(rawText: string, bookContext?: BookContext): AsyncGenerator<string> {
+  async *rewrite(rawText: string, bookContext?: BookContext, signal?: AbortSignal): AsyncGenerator<string> {
     const prompt = this.buildPrompt(rawText, bookContext);
     const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -29,6 +29,7 @@ export class VoiceRewriter {
         messages: [{ role: 'user', content: prompt }],
         stream: true,
       }),
+      signal,
     });
 
     if (!response.ok) {

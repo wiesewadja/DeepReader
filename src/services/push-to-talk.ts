@@ -3,7 +3,7 @@ import { ASRClient } from './asr/asr-client.js';
 import { VoiceRewriter, type BookContext } from './voice-rewriter.js';
 import type { ChatInput } from '../components/chat-input/chat-input.js';
 
-export type PushToTalkState = 'idle' | 'listening' | 'recognizing' | 'rewriting';
+export type PushToTalkState = 'idle' | 'listening' | 'recognizing' | 'rewriting' | 'done';
 
 export interface PushToTalkConfig {
 	asrApiKey: string;
@@ -28,6 +28,9 @@ export class PushToTalkController {
 	private callbacks: PushToTalkCallbacks;
 	private incrementalTimer: ReturnType<typeof setInterval> | null = null;
 	private lastIncrementalText = '';
+	private cancelled = false;
+	private abortCtrl: AbortController | null = null;
+	private rewriteTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
 	private config: PushToTalkConfig;
 
 	constructor(
@@ -57,6 +60,9 @@ export class PushToTalkController {
 		if (this.state !== 'idle') return;
 		this.setState('listening');
 		this.lastIncrementalText = '';
+		// 清除上一次会话残留的取消标志（cancel 后若未经过 stop 消费点，标志会残留，
+		// 会导致本次 stop 被误判为取消而丢弃结果）
+		this.cancelled = false;
 
 		try {
 			await this.recorder.start();
@@ -75,9 +81,20 @@ export class PushToTalkController {
 
 		try {
 			const { audioBase64, mimeType } = await this.recorder.stop();
+			if (this.cancelled) {
+				this.cancelled = false;
+				this.reset();
+				return;
+			}
+
 			const finalText = await this.asrClient.transcribe(audioBase64, mimeType, {
 				language: this.config.language,
 			});
+			if (this.cancelled) {
+				this.cancelled = false;
+				this.reset();
+				return;
+			}
 
 			const textToRewrite = finalText || this.lastIncrementalText;
 			if (!textToRewrite) {
@@ -88,23 +105,53 @@ export class PushToTalkController {
 			this.setState('rewriting');
 			this.chatInput.setVoiceState('recognizing');
 
+			this.abortCtrl = new AbortController();
+			this.rewriteTimeoutTimer = setTimeout(() => this.abortCtrl?.abort(), 30000);
 			let rewritten = '';
-			for await (const chunk of this.rewriter.rewrite(textToRewrite, bookContext)) {
-				rewritten += chunk;
+			try {
+				for await (const chunk of this.rewriter.rewrite(textToRewrite, bookContext, this.abortCtrl.signal)) {
+					if (this.cancelled) {
+						this.cancelled = false;
+						this.reset();
+						return;
+					}
+					rewritten += chunk;
+				}
+			} finally {
+				if (this.rewriteTimeoutTimer) {
+					clearTimeout(this.rewriteTimeoutTimer);
+					this.rewriteTimeoutTimer = null;
+				}
+			}
+
+			if (this.cancelled) {
+				this.cancelled = false;
+				this.reset();
+				return;
 			}
 
 			if (rewritten) {
 				this.callbacks.onTextReady(rewritten);
 				this.chatInput.setValue(rewritten);
 			}
+			this.setState('done');
 			this.reset();
 		} catch (error) {
-			this.handleError(error as Error);
+			if (this.cancelled) {
+				// 主动取消（cancel 触发 abort 抛 AbortError）：cancel() 已 reset，静默返回
+				this.cancelled = false;
+				return;
+			}
+			const e = error as Error;
+			const friendly = e.name === 'AbortError' ? new Error('语音优化超时，请重试') : e;
+			this.handleError(friendly);
 		}
 	}
 
 	cancel(): void {
+		this.cancelled = true;
 		this.stopIncrementalRecognition();
+		this.abortCtrl?.abort();
 		this.recorder.cancel();
 		this.reset();
 	}
@@ -122,6 +169,11 @@ export class PushToTalkController {
 	private reset(): void {
 		this.state = 'idle';
 		this.lastIncrementalText = '';
+		if (this.rewriteTimeoutTimer) {
+			clearTimeout(this.rewriteTimeoutTimer);
+			this.rewriteTimeoutTimer = null;
+		}
+		this.abortCtrl = null;
 		this.chatInput.setVoiceState('idle');
 		this.callbacks.onStateChange('idle');
 	}
@@ -133,14 +185,17 @@ export class PushToTalkController {
 
 	private startIncrementalRecognition(): void {
 		this.incrementalTimer = setInterval(async () => {
+			if (this.state !== 'listening' || this.cancelled) return;
 			try {
 				const { audioBase64, mimeType } = await this.recorder.getAccumulatedAudio();
+				if (this.state !== 'listening' || this.cancelled) return;
 				let text = '';
 				for await (const chunk of this.asrClient.transcribeStream(audioBase64, mimeType, {
 					language: this.config.language,
 				})) {
 					text += chunk;
 				}
+				if (this.state !== 'listening' || this.cancelled) return;
 
 				if (text) {
 					this.lastIncrementalText = text;

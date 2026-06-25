@@ -83,6 +83,8 @@ export interface ChatInputOptions {
 	showVoiceButton?: boolean;
 	/** 长按触发回调（移动端 push-to-talk） */
 	onLongPress?: () => void;
+	/** 长按录音中上滑取消回调（移动端 push-to-talk） */
+	onLongPressCancel?: () => void;
 }
 
 /**
@@ -135,6 +137,7 @@ export class ChatInput {
 	private longPressTimer: ReturnType<typeof setTimeout> | null = null;
 	private longPressStartPos = { x: 0, y: 0 };
 	private longPressCancelled = false;
+	private longPressTriggered = false;
 
 	constructor(options: ChatInputOptions) {
 		this.options = {
@@ -502,6 +505,7 @@ export class ChatInput {
 
 		this.textarea.addEventListener('touchstart', (e) => {
 			this.longPressCancelled = false;
+			this.longPressTriggered = false;
 			this.longPressStartPos = {
 				x: e.touches[0].clientX,
 				y: e.touches[0].clientY,
@@ -509,19 +513,25 @@ export class ChatInput {
 			this.longPressTimer = setTimeout(() => {
 				if (!this.longPressCancelled) {
 					e.preventDefault();
+					this.longPressTriggered = true;
 					this.options.onLongPress?.();
 				}
 			}, LONG_PRESS_THRESHOLD);
 		}, { passive: false });
 
 		this.textarea.addEventListener('touchmove', (e) => {
-			if (this.longPressTimer) {
-				const dy = e.touches[0].clientY - this.longPressStartPos.y;
-				if (dy < -SWIPE_CANCEL_THRESHOLD) {
-					clearTimeout(this.longPressTimer);
-					this.longPressTimer = null;
-					this.longPressCancelled = true;
-				}
+			const dy = e.touches[0].clientY - this.longPressStartPos.y;
+			if (dy >= -SWIPE_CANCEL_THRESHOLD) return;
+			// 上滑超过阈值
+			if (this.longPressTriggered) {
+				// 录音中上滑 → 取消录音
+				this.longPressTriggered = false;
+				this.options.onLongPressCancel?.();
+			} else if (this.longPressTimer) {
+				// 长按未触发前上滑 → 阻止启动
+				clearTimeout(this.longPressTimer);
+				this.longPressTimer = null;
+				this.longPressCancelled = true;
 			}
 		}, { passive: true });
 

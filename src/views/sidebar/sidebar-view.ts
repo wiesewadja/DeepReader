@@ -1103,6 +1103,10 @@ export class SidebarView extends ItemView {
 			onLongPress: Platform.isMobile && ttsConfig && chatConfig
 				? () => this.startPushToTalk()
 				: undefined,
+			// 移动端录音中上滑取消
+			onLongPressCancel: Platform.isMobile && ttsConfig && chatConfig
+				? () => this.pushToTalkCtrl?.cancel()
+				: undefined,
 		});
 
 		// 创建引用卡片容器（在输入框上方）
