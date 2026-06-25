@@ -124,7 +124,6 @@
 .deeppdf-load-doc-btn,
 .deeppdf-mode-toggle-btn,
 .deeppdf-deep-search-btn,
-.deeppdf-voice-btn,
 .deeppdf-chat-input-send-btn {
 	display: flex;
 	align-items: center;
@@ -149,7 +148,6 @@
 .deeppdf-load-doc-btn:hover,
 .deeppdf-mode-toggle-btn:hover,
 .deeppdf-deep-search-btn:hover,
-.deeppdf-voice-btn:hover,
 .deeppdf-chat-input-send-btn:hover {
 	background: var(--background-modifier-hover);
 	color: var(--text-normal);
@@ -158,7 +156,6 @@
 .deeppdf-load-doc-btn svg,
 .deeppdf-mode-toggle-btn svg,
 .deeppdf-deep-search-btn svg,
-.deeppdf-voice-btn svg,
 .deeppdf-chat-input-send-btn svg {
 	width: 16px;
 	height: 16px;
@@ -466,38 +463,6 @@
 
 /* ==================== 语音输入按钮 ==================== */
 
-/* 录音中 — 红色脉动 */
-.deeppdf-voice-btn.recording {
-	color: var(--text-error);
-	animation: deeppdf-mic-pulse 1.5s ease-in-out infinite;
-}
-
-.deeppdf-voice-btn.recording:hover {
-	background: var(--background-modifier-hover);
-	color: var(--text-error);
-}
-
-/* 识别中 — 旋转 */
-.deeppdf-voice-btn.recognizing {
-	color: var(--interactive-accent);
-	animation: deeppdf-mic-spin 1s linear infinite;
-}
-
-.deeppdf-voice-btn.recognizing:hover {
-	background: var(--background-modifier-hover);
-	color: var(--interactive-accent);
-}
-
-@keyframes deeppdf-mic-pulse {
-	0%, 100% { transform: scale(1); }
-	50% { transform: scale(1.15); }
-}
-
-@keyframes deeppdf-mic-spin {
-	from { transform: rotate(0deg); }
-	to { transform: rotate(360deg); }
-}
-
 /* ==================== 语音输入活跃态 ==================== */
 
 .deeppdf-voice-active .deeppdf-chat-input-textarea {
@@ -601,38 +566,9 @@
 /* ==================== 减少动画偏好 ==================== */
 
 @media (prefers-reduced-motion: reduce) {
-	.deeppdf-voice-btn.recording {
-		animation: none;
-		color: var(--text-error);
-	}
-	.deeppdf-voice-btn.recognizing {
-		animation: none;
-		color: var(--interactive-accent);
-		opacity: 0.7;
-	}
 	.deeppdf-voice-wave span {
 		animation: none;
 		height: 8px;
-	}
-}
-
-/* ==================== 移动端语音 overlay 覆盖 ==================== */
-
-@media (max-width: 768px) {
-	.deeppdf-voice-overlay {
-		position: fixed;
-		bottom: 0;
-		left: 0;
-		right: 0;
-		top: auto;
-		transform: none;
-		width: 100%;
-		height: 120px;
-		border-radius: 0;
-		border-top: 1px solid var(--background-modifier-border);
-		flex-direction: column;
-		justify-content: center;
-		z-index: 200;
 	}
 }
 
