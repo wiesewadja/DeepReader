@@ -79,8 +79,10 @@ export interface ChatInputOptions {
 	onQuoteRemoved?: (quoteId: string) => void;
 	/** 开始录音回调（点击麦克风按钮或移动端长按） */
 	onVoiceStart?: () => void;
-	/** 停止录音回调（点击停止按钮） */
+	/** 停止录音并识别（点击发送按钮） */
 	onVoiceStop?: () => void;
+	/** 取消语音录音（点击 X 按钮，直接丢弃） */
+	onVoiceCancel?: () => void;
 }
 
 /**
@@ -125,6 +127,12 @@ export class ChatInput {
 	private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
 	private clickHandler: (() => void) | null = null;
 	private pasteHandler: (() => void) | null = null;
+
+	// 移动端长按相关
+	private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+	private longPressStartPos = { x: 0, y: 0 };
+	private longPressCancelled = false;
+	private longPressTriggered = false;
 	private loadDocClickHandler: (() => void) | null = null;
 	private containerClickHandler: ((event: MouseEvent) => void) | null = null;
 
@@ -207,13 +215,12 @@ export class ChatInput {
 	}
 
 	private showVoiceOverlay(label: string, showWave: boolean): void {
-		const inputArea = this.textarea?.parentElement;
-		if (!inputArea) return;
+		if (!this.inputContainer) return;
 
 		// 首次使用时懒创建 VoiceOverlay
 		if (!this.voiceOverlay) {
-			this.voiceOverlay = new VoiceOverlay(inputArea, {
-				onStop: () => this.options.onVoiceStop?.(),
+			this.voiceOverlay = new VoiceOverlay(this.inputContainer, {
+				onCancel: () => this.options.onVoiceCancel?.(),
 				onSend: () => {
 					// 停止录音并直接发送
 					this.options.onVoiceStop?.();
@@ -466,6 +473,62 @@ export class ChatInput {
 
 		// 点击其他地方时隐藏文件建议
 		document.addEventListener('click', this.handleDocumentClick);
+
+		// 移动端长按事件（触发语音输入）
+		if (this.options.onVoiceStart) {
+			this.setupLongPress();
+		}
+	}
+	/**
+	 * 设置移动端长按事件监听
+	 */
+	private setupLongPress(): void {
+		if (!this.textarea) return;
+
+		const LONG_PRESS_THRESHOLD = 500;
+		const SWIPE_CANCEL_THRESHOLD = 50;
+
+		this.textarea.addEventListener('touchstart', (e) => {
+			// 如果有文字输入，不处理长按（让点击按钮处理）
+			if (this.getValue().trim().length > 0 || this.quotes.length > 0) return;
+
+			this.longPressCancelled = false;
+			this.longPressTriggered = false;
+			this.longPressStartPos = {
+				x: e.touches[0].clientX,
+				y: e.touches[0].clientY,
+			};
+			this.longPressTimer = setTimeout(() => {
+				if (!this.longPressCancelled) {
+					e.preventDefault();
+					this.longPressTriggered = true;
+					this.options.onVoiceStart?.();
+				}
+			}, LONG_PRESS_THRESHOLD);
+		}, { passive: false });
+
+		this.textarea.addEventListener('touchmove', (e) => {
+			const dy = e.touches[0].clientY - this.longPressStartPos.y;
+			if (dy >= -SWIPE_CANCEL_THRESHOLD) return;
+			// 上滑超过阈值
+			if (this.longPressTriggered) {
+				// 录音中上滑 → 取消录音
+				this.longPressTriggered = false;
+				this.options.onVoiceCancel?.();
+			} else if (this.longPressTimer) {
+				// 长按未触发前上滑 → 阻止启动
+				clearTimeout(this.longPressTimer);
+				this.longPressTimer = null;
+				this.longPressCancelled = true;
+			}
+		}, { passive: true });
+
+		this.textarea.addEventListener('touchend', () => {
+			if (this.longPressTimer) {
+				clearTimeout(this.longPressTimer);
+				this.longPressTimer = null;
+			}
+		}, { passive: true });
 	}
 
 	/**
@@ -931,6 +994,12 @@ export class ChatInput {
 		// 从 DOM 中移除元素
 		if (this.el && this.el.parentNode) {
 			this.el.parentNode.removeChild(this.el);
+		}
+
+		// 清理长按定时器
+		if (this.longPressTimer) {
+			clearTimeout(this.longPressTimer);
+			this.longPressTimer = null;
 		}
 
 		// 清理引用

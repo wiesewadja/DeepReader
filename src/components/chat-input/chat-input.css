@@ -578,63 +578,63 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 12px 16px;
-	background: var(--background-primary);
+	padding: 8px 16px;
+	background: var(--background-secondary-alt);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 12px;
-	margin: 1px 10px 3px 4px;
+	margin: 0 10px 8px 10px;
+	box-shadow: var(--shadow-s, 0 4px 12px rgba(0, 0, 0, 0.1));
+	height: 52px;
+	box-sizing: border-box;
 }
 
 .deeppdf-voice-stop-btn,
 .deeppdf-voice-send-btn {
-	width: 40px;
-	height: 40px;
+	width: 36px;
+	height: 36px;
 	border-radius: 50%;
-	border: none;
-	background: var(--background-modifier-border);
-	color: var(--text-normal);
-	font-size: 18px;
+	border: 1px solid var(--background-modifier-border, rgba(0, 0, 0, 0.05));
+	background: #ffffff;
+	color: #1a1a1a;
 	cursor: pointer;
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+	flex-shrink: 0;
+	padding: 0;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
-.deeppdf-voice-stop-btn:hover {
-	background: var(--background-modifier-hover);
+.deeppdf-voice-stop-btn svg,
+.deeppdf-voice-send-btn svg {
+	width: 16px;
+	height: 16px;
+	stroke-width: 2.5px;
 }
 
-.deeppdf-voice-send-btn {
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
-}
-
+.deeppdf-voice-stop-btn:hover,
 .deeppdf-voice-send-btn:hover {
-	opacity: 0.9;
+	background: #f4f4f4;
+	transform: scale(1.05);
+	box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
 }
 
-.deeppdf-voice-wave {
+.deeppdf-voice-wave-container {
 	display: flex;
 	align-items: center;
+	justify-content: center;
 	gap: 4px;
-	height: 40px;
+	height: 100%;
+	flex: 1;
+	padding: 0 24px;
 }
 
-.deeppdf-voice-wave span {
-	width: 4px;
-	height: 20px;
-	background: var(--interactive-accent);
-	border-radius: 2px;
-	animation: deeppdf-wave 1s ease-in-out infinite;
-}
-
-.deeppdf-voice-wave span:nth-child(1) { animation-delay: 0s; }
-.deeppdf-voice-wave span:nth-child(2) { animation-delay: 0.1s; }
-.deeppdf-voice-wave span:nth-child(3) { animation-delay: 0.2s; }
-.deeppdf-voice-wave span:nth-child(4) { animation-delay: 0.3s; }
-.deeppdf-voice-wave span:nth-child(5) { animation-delay: 0.4s; }
-
-@keyframes deeppdf-wave {
-	0%, 100% { height: 20px; }
-	50% { height: 40px; }
+.deeppdf-voice-wave-bar {
+	width: 3px;
+	height: 6px;
+	background: var(--text-muted);
+	border-radius: 1.5px;
+	transition: height 0.1s ease, opacity 0.1s ease;
+	opacity: 0.7;
 }

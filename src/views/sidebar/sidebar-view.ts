@@ -1092,6 +1092,9 @@ export class SidebarView extends ItemView {
 			onVoiceStop: ttsConfig && chatConfig
 				? () => this.stopVoiceRecording()
 				: undefined,
+			onVoiceCancel: ttsConfig && chatConfig
+				? () => this.cancelVoiceRecording()
+				: undefined,
 		});
 
 		// 创建引用卡片容器（在输入框上方）
@@ -1145,7 +1148,7 @@ export class SidebarView extends ItemView {
 	}
 
 	/**
-	 * 停止语音录音
+	 * 停止语音录音并识别发送
 	 */
 	private stopVoiceRecording(): void {
 		if (!this.pushToTalkCtrl) return;
@@ -1155,6 +1158,14 @@ export class SidebarView extends ItemView {
 			title: bookContext.title || '未知书籍',
 			description: bookContext.docDescription || undefined,
 		} : undefined);
+	}
+
+	/**
+	 * 取消语音录音（直接丢弃，不做识别）
+	 */
+	private cancelVoiceRecording(): void {
+		if (!this.pushToTalkCtrl) return;
+		this.pushToTalkCtrl.cancel();
 	}
 
 	/**
@@ -1226,10 +1237,25 @@ export class SidebarView extends ItemView {
 		const update = () => {
 			const keyboardHeight = window.innerHeight - vv.height;
 			const raised = keyboardHeight > KEYBOARD_THRESHOLD;
-			const target = raised ? `${vv.height}px` : "";
+			
+			let target = "";
+			if (raised) {
+				const containerRect = container.getBoundingClientRect();
+				const topOffset = Math.max(0, containerRect.top);
+				// 视口高度减去容器顶部的偏移，即为键盘弹起时容器实际可用的最大高度，避免输入框被遮挡
+				target = `${vv.height - topOffset}px`;
+			}
+
 			if (target === lastApplied) return;
 			container.style.height = target;
 			lastApplied = target;
+
+			// 当键盘弹起时，确保当前聚焦的输入框滚动到视口中
+			if (raised && document.activeElement && container.contains(document.activeElement)) {
+				setTimeout(() => {
+					document.activeElement?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+				}, 150);
+			}
 		};
 
 		vv.addEventListener("resize", update);

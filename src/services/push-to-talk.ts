@@ -96,55 +96,20 @@ export class PushToTalkController {
 				return;
 			}
 
-			const textToRewrite = finalText || this.lastIncrementalText;
-			if (!textToRewrite) {
+			const recognizedText = finalText || this.lastIncrementalText;
+			if (!recognizedText) {
 				this.reset();
 				return;
 			}
 
-			this.setState('rewriting');
-			this.chatInput.setVoiceState('recognizing');
-
-			this.abortCtrl = new AbortController();
-			this.rewriteTimeoutTimer = setTimeout(() => this.abortCtrl?.abort(), 30000);
-			let rewritten = '';
-			try {
-				for await (const chunk of this.rewriter.rewrite(textToRewrite, bookContext, this.abortCtrl.signal)) {
-					if (this.cancelled) {
-						this.cancelled = false;
-						this.reset();
-						return;
-					}
-					rewritten += chunk;
-				}
-			} finally {
-				if (this.rewriteTimeoutTimer) {
-					clearTimeout(this.rewriteTimeoutTimer);
-					this.rewriteTimeoutTimer = null;
-				}
-			}
-
-			if (this.cancelled) {
-				this.cancelled = false;
-				this.reset();
-				return;
-			}
-
-			if (rewritten) {
-				this.callbacks.onTextReady(rewritten);
-				this.chatInput.setValue(rewritten);
-			}
+			// 直接使用 ASR 识别结果，跳过 LLM 重写
+			this.callbacks.onTextReady(recognizedText);
+			this.chatInput.setValue(recognizedText);
 			this.setState('done');
-			this.reset();
+			// 调用 completeVoiceInput 让 ChatInput 处理发送逻辑
+			this.chatInput.completeVoiceInput();
 		} catch (error) {
-			if (this.cancelled) {
-				// 主动取消（cancel 触发 abort 抛 AbortError）：cancel() 已 reset，静默返回
-				this.cancelled = false;
-				return;
-			}
-			const e = error as Error;
-			const friendly = e.name === 'AbortError' ? new Error('语音优化超时，请重试') : e;
-			this.handleError(friendly);
+			this.handleError(error as Error);
 		}
 	}
 
@@ -153,6 +118,10 @@ export class PushToTalkController {
 		this.stopIncrementalRecognition();
 		this.abortCtrl?.abort();
 		this.recorder.cancel();
+		// 清除可能已写入的递增识别文字
+		if (this.chatInput) {
+			this.chatInput.setValue('');
+		}
 		this.reset();
 	}
 
