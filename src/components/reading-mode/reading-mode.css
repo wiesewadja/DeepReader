@@ -917,29 +917,5 @@
     padding-right: var(--deeppdf-side-padding, 50px) !important;
 }
 
-/* ==================== 回到朗读页按钮 ==================== */
 
-.deeppdf-return-reading-btn {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 8px 16px;
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border-radius: 20px;
-    font-size: 14px;
-    cursor: pointer;
-    z-index: 1000;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    transition: opacity 0.2s ease, transform 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.deeppdf-return-reading-btn:hover {
-    opacity: 0.9;
-    transform: translateX(-50%) translateY(-2px);
-}
 

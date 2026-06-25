@@ -136,28 +136,9 @@ export class SidebarView extends ItemView {
 		if (this.ttsCtrl.isAutoPageTurning()) {
 			return; // 程序翻页，朗读已在 readCurrentPage 内自然结束
 		}
-		// 翻页时不中断朗读（用户手动翻页）
-		if (this.ttsCtrl.isReading() && resetIndex) {
-			return;
-		}
 		this.ttsCtrl.stopReading(resetIndex);
 		this.readingTopbar?.setReadingTTSState('idle');
 		this.clearReadingHighlight();
-	}
-
-	/** 查询 TTS 是否正在朗读 */
-	isReadingTTS(): boolean {
-		return this.ttsCtrl.isReading();
-	}
-
-	/** 获取朗读开始时的页码 */
-	getReadingTTSStartPage(): number {
-		return this.ttsCtrl.getReadingStartPage();
-	}
-
-	/** 获取当前朗读高亮的段落索引 */
-	getReadingTTSHighlightIndex(): number {
-		return this.ttsCtrl.getReadingHighlightIndex();
 	}
 
 	/** 清除朗读高亮 */

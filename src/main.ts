@@ -369,37 +369,13 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                 // 阅读模式停用时不改变任何右边栏状态
                 // 顶栏书名始终跟随用户通过书库选中的书籍
             },
-			onStopReadingTTS: () => {
-				const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
-				if (sidebarLeaves.length > 0) {
-					const view = sidebarLeaves[0].view as SidebarView;
-					view.stopReadingTTS();
-				}
-			},
-			isReadingTTs: () => {
-				const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
-				if (sidebarLeaves.length > 0) {
-					const view = sidebarLeaves[0].view as SidebarView;
-					return view.isReadingTTS();
-				}
-				return false;
-			},
-			getReadingTTsStartPage: () => {
-				const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
-				if (sidebarLeaves.length > 0) {
-					const view = sidebarLeaves[0].view as SidebarView;
-					return view.getReadingTTSStartPage();
-				}
-				return 0;
-			},
-			getReadingTTsHighlightIndex: () => {
-				const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
-				if (sidebarLeaves.length > 0) {
-					const view = sidebarLeaves[0].view as SidebarView;
-					return view.getReadingTTSHighlightIndex();
-				}
-				return 0;
-			},
+            onStopReadingTTS: () => {
+                const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                if (sidebarLeaves.length > 0) {
+                    const view = sidebarLeaves[0].view as SidebarView;
+                    view.stopReadingTTS();
+                }
+            },
             onQuickQuestion: async (question: string) => {
                 let leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
                 if (leaves.length === 0) {
