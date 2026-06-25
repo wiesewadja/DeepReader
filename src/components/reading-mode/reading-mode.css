@@ -531,8 +531,7 @@
     border-left: 1px solid transparent;
 }
 
-/* 避免大块元素跨列断裂（仅分页模式） */
-.deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view p,
+/* 避免大块元素跨列断裂（仅分页模式，允许段落 p 自然跨列断开） */
 .deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view h1,
 .deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view h2,
 .deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view h3,
