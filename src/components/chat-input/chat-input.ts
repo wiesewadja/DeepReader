@@ -104,13 +104,13 @@ export class ChatInput {
 	private textarea: HTMLTextAreaElement | null = null;
 	private sendButton: HTMLButtonElement | null = null;
 	private loadDocButton: HTMLButtonElement | null = null;
-	private voiceButton: HTMLButtonElement | null = null;
 	private voiceOverlay: VoiceOverlay | null = null;
 	private options: ChatInputOptions;
 	private isStreaming: boolean = false;
 	private isDocLoaded: boolean = false;  // 文档是否已加载到上下文
 	private voiceState: VoiceState = 'idle';
 	private savedPlaceholder = '';
+	private pendingVoiceSend: boolean = false;
 
 	// 文件建议组件
 	private fileSuggest: FileSuggest | null = null;
@@ -212,9 +212,17 @@ export class ChatInput {
 
 		// 首次使用时懒创建 VoiceOverlay
 		if (!this.voiceOverlay) {
-			this.voiceOverlay = new VoiceOverlay(inputArea);
+			this.voiceOverlay = new VoiceOverlay(inputArea, {
+				onStop: () => this.options.onVoiceStop?.(),
+				onSend: () => {
+					// 停止录音并直接发送
+					this.options.onVoiceStop?.();
+					// 标记为直接发送
+					this.pendingVoiceSend = true;
+				},
+			});
 		}
-		this.voiceOverlay.show(label, showWave);
+		this.voiceOverlay.showRecording();
 	}
 
 	private removeVoiceOverlay(): void {
@@ -237,18 +245,9 @@ export class ChatInput {
 	 */
 	replaceVoiceText(text: string): void {
 		if (!this.textarea) return;
-		this.transitionToRecordingIndicator();
 		this.textarea.value = text;
 		this.autoResize();
 		this.updateSendButtonState();
-	}
-
-	/** 递增文本首次出现：wave overlay → 右上角小录音指示器（红点 + "录音中"） */
-	private transitionToRecordingIndicator(): void {
-		if (!this.voiceOverlay) return;
-		this.voiceOverlay.transitionToRecordingIndicator();
-		// 移除 voice-active（让 textarea 文字可见），但 voice button 的 recording 类仍保留（脉冲动画）
-		this.inputContainer?.removeClass('deeppdf-voice-active');
 	}
 
 	/** 首次写入语音文本时移除 overlay，恢复 textarea 可见 */
@@ -262,8 +261,16 @@ export class ChatInput {
 	 * 完成语音识别，启用编辑
 	 */
 	completeVoiceInput(): void {
+		const shouldSend = this.pendingVoiceSend;
+		this.pendingVoiceSend = false;
 		this.setVoiceState('idle');
-		this.textarea?.focus();
+
+		if (shouldSend) {
+			// 直接发送消息
+			this.handleSend();
+		} else {
+			this.textarea?.focus();
+		}
 	}
 
 	/**
@@ -931,6 +938,5 @@ export class ChatInput {
 		this.textarea = null;
 		this.sendButton = null;
 		this.loadDocButton = null;
-		this.voiceButton = null;
 	}
 }

@@ -509,21 +509,21 @@
 	color: transparent !important;
 }
 
-/* 语音 overlay（fixed 定位，覆盖输入框区域） */
+/* 语音 overlay — PC 端 absolute 跟随输入框，移动端 fixed 固定底部 */
 .deeppdf-voice-overlay {
-	position: fixed;
-	bottom: 0;
-	left: 0;
-	right: 0;
-	height: 120px;
-	background: var(--background-primary);
-	border-top: 1px solid var(--background-modifier-border);
-	display: flex;
-	flex-direction: column;
+	position: absolute;
+	left: 12px;
+	top: 50%;
+	transform: translateY(-50%);
+	display: inline-flex;
 	align-items: center;
-	justify-content: center;
-	z-index: 200;
-	box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+	gap: 8px;
+	pointer-events: none;
+	z-index: 10;
+	background: var(--background-primary);
+	border-radius: 8px;
+	padding: 6px 12px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .deeppdf-voice-overlay .deeppdf-voice-wave {
@@ -614,4 +614,91 @@
 		animation: none;
 		height: 8px;
 	}
+}
+
+/* ==================== 移动端语音 overlay 覆盖 ==================== */
+
+@media (max-width: 768px) {
+	.deeppdf-voice-overlay {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		top: auto;
+		transform: none;
+		width: 100%;
+		height: 120px;
+		border-radius: 0;
+		border-top: 1px solid var(--background-modifier-border);
+		flex-direction: column;
+		justify-content: center;
+		z-index: 200;
+	}
+}
+
+/* ==================== 语音录制界面 ==================== */
+
+.deeppdf-voice-recording-panel {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px 16px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 12px;
+	margin: 1px 10px 3px 4px;
+}
+
+.deeppdf-voice-stop-btn,
+.deeppdf-voice-send-btn {
+	width: 40px;
+	height: 40px;
+	border-radius: 50%;
+	border: none;
+	background: var(--background-modifier-border);
+	color: var(--text-normal);
+	font-size: 18px;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.deeppdf-voice-stop-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+.deeppdf-voice-send-btn {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.deeppdf-voice-send-btn:hover {
+	opacity: 0.9;
+}
+
+.deeppdf-voice-wave {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	height: 40px;
+}
+
+.deeppdf-voice-wave span {
+	width: 4px;
+	height: 20px;
+	background: var(--interactive-accent);
+	border-radius: 2px;
+	animation: deeppdf-wave 1s ease-in-out infinite;
+}
+
+.deeppdf-voice-wave span:nth-child(1) { animation-delay: 0s; }
+.deeppdf-voice-wave span:nth-child(2) { animation-delay: 0.1s; }
+.deeppdf-voice-wave span:nth-child(3) { animation-delay: 0.2s; }
+.deeppdf-voice-wave span:nth-child(4) { animation-delay: 0.3s; }
+.deeppdf-voice-wave span:nth-child(5) { animation-delay: 0.4s; }
+
+@keyframes deeppdf-wave {
+	0%, 100% { height: 20px; }
+	50% { height: 40px; }
 }

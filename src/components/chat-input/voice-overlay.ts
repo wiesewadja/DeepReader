@@ -1,75 +1,75 @@
 /**
- * VoiceOverlay — 语音输入态 UI 渲染（P1-7 部分拆分）
+ * VoiceOverlay — 语音录制界面
  *
- * 抽自 ChatInput 的内联方法 showVoiceOverlay / removeVoiceOverlay /
- * transitionToRecordingIndicator。负责：
- *  - "正在聆听..." 状态：wave 动画 + label
- *  - "正在识别..." 状态：label only
- *  - "录音中" 状态：右上角小红点 + 文字
- *
- * 与 ChatInput 解耦后：单测独立、行为可观察、可被其他聊天组件复用。
+ * 点击语音按钮后，替换输入框区域为录制界面：
+ * - 左侧：停止按钮
+ * - 中间：波形动画
+ * - 右侧：发送按钮
  */
 
+export interface VoiceOverlayCallbacks {
+  onStop: () => void;
+  onSend: () => void;
+}
+
 export class VoiceOverlay {
-    private inputArea: HTMLElement;
-    private current: HTMLElement | null = null;
+  private inputArea: HTMLElement;
+  private current: HTMLElement | null = null;
+  private callbacks: VoiceOverlayCallbacks;
 
-    constructor(inputArea: HTMLElement) {
-        this.inputArea = inputArea;
+  constructor(inputArea: HTMLElement, callbacks: VoiceOverlayCallbacks) {
+    this.inputArea = inputArea;
+    this.callbacks = callbacks;
+  }
+
+  /**
+   * 显示录制界面
+   */
+  showRecording(): void {
+    this.remove();
+
+    // 隐藏 textarea
+    this.inputArea.style.display = 'none';
+
+    // 创建录制界面
+    this.current = this.inputArea.parentElement!.createDiv({
+      cls: 'deeppdf-voice-recording-panel',
+    });
+
+    // 停止按钮
+    const stopBtn = this.current.createEl('button', {
+      cls: 'deeppdf-voice-stop-btn',
+    });
+    stopBtn.innerHTML = '✕';
+    stopBtn.setAttribute('aria-label', '停止录音');
+    stopBtn.addEventListener('click', () => this.callbacks.onStop());
+
+    // 波形动画
+    const wave = this.current.createDiv({
+      cls: 'deeppdf-voice-wave',
+    });
+    for (let i = 0; i < 5; i++) {
+      wave.createSpan();
     }
 
-    /**
-     * 显示带 wave / label 的 overlay
-     * @param label 显示文字（如 "正在聆听..." / "正在识别..."）
-     * @param showWave true 时显示 wave 动画（"正在聆听" 阶段）
-     */
-    show(label: string, showWave: boolean): void {
-        this.remove();
+    // 发送按钮
+    const sendBtn = this.current.createEl('button', {
+      cls: 'deeppdf-voice-send-btn',
+    });
+    sendBtn.innerHTML = '↑';
+    sendBtn.setAttribute('aria-label', '发送语音');
+    sendBtn.addEventListener('click', () => this.callbacks.onSend());
+  }
 
-        // 让 overlay 定位正确（absolute/fixed 的祖先需要非 static）
-        this.inputArea.style.position = 'relative';
-
-        this.current = this.inputArea.createDiv({
-            cls: 'deeppdf-voice-overlay',
-        });
-
-        if (showWave) {
-            const wave = this.current.createSpan({
-                cls: 'deeppdf-voice-wave',
-            });
-            for (let i = 0; i < 5; i++) {
-                wave.createSpan();
-            }
-        }
-
-        this.current.createSpan({
-            cls: 'deeppdf-voice-label',
-            text: label,
-        });
+  /**
+   * 移除录制界面（幂等）
+   */
+  remove(): void {
+    if (this.current) {
+      this.current.remove();
+      this.current = null;
+      // 恢复 textarea
+      this.inputArea.style.display = '';
     }
-
-    /**
-     * 从"wave overlay" 过渡到"小红点 + 录音中"指示器
-     * （用户开始说话后，文本需要可见，wave 收起）
-     */
-    transitionToRecordingIndicator(): void {
-        if (!this.current) return;
-        this.remove();
-
-        this.current = this.inputArea.createDiv({
-            cls: 'deeppdf-voice-recording-indicator',
-        });
-        this.current.createSpan({ cls: 'deeppdf-voice-recording-dot' });
-        this.current.createSpan({ text: '录音中' });
-    }
-
-    /**
-     * 移除当前 overlay（幂等）
-     */
-    remove(): void {
-        if (this.current) {
-            this.current.remove();
-            this.current = null;
-        }
-    }
+  }
 }
