@@ -92,7 +92,11 @@ export class TTSReadingController {
 			}
 		}
 
-		const paragraphs = contentEl.querySelectorAll('p');
+		const allElements = Array.from(contentEl.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6, blockquote'));
+		// 过滤掉包含其他选定元素的容器元素，只保留叶子文本块
+		const paragraphs = allElements.filter(el => {
+			return !allElements.some(other => other !== el && el.contains(other));
+		});
 		if (paragraphs.length === 0) return;
 
 		const paragraphInfo: { el: Element; start: number; end: number }[] = [];
@@ -135,6 +139,53 @@ export class TTSReadingController {
 				(currentParagraph as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
 			}
 			dataset.ttsLastParagraphIndex = String(currentIndex);
+		}
+	}
+
+	/** 直接高亮指定段落索引（无累计误差，更精准） */
+	highlightParagraphIndex(index: number): void {
+		const contentEl = this.host.el?.querySelector('.deeppdf-message-content') as HTMLElement | null;
+		if (!contentEl) return;
+
+		const dataset = contentEl.dataset as TTSContentDataset;
+
+		if (index < 0) {
+			contentEl.querySelectorAll('.deeppdf-tts-reading-paragraph').forEach(el => {
+				el.removeClass('deeppdf-tts-reading-paragraph');
+			});
+			delete dataset.ttsLastParagraphIndex;
+			this.detachScrollListener();
+			this.userScrolled = false;
+			return;
+		}
+
+		if (!this.scrollListener) {
+			const container = this.findScrollContainer(contentEl);
+			if (container) {
+				this.scrollListener = () => { this.userScrolled = true; };
+				container.addEventListener('scroll', this.scrollListener, { passive: true });
+			}
+		}
+
+		const allElements = Array.from(contentEl.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6, blockquote'));
+		// 过滤掉包含其他选定元素的容器元素，只保留叶子文本块
+		const paragraphs = allElements.filter(el => {
+			return !allElements.some(other => other !== el && el.contains(other));
+		});
+
+		if (paragraphs.length === 0 || index >= paragraphs.length) return;
+
+		const currentParagraph = paragraphs[index];
+
+		if (index !== Number(dataset.ttsLastParagraphIndex)) {
+			contentEl.querySelectorAll('.deeppdf-tts-reading-paragraph').forEach(el => {
+				el.removeClass('deeppdf-tts-reading-paragraph');
+			});
+			currentParagraph.addClass('deeppdf-tts-reading-paragraph');
+			if (!this.userScrolled) {
+				(currentParagraph as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+			}
+			dataset.ttsLastParagraphIndex = String(index);
 		}
 	}
 

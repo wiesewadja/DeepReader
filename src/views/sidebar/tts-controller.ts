@@ -137,7 +137,9 @@ export class TTSController {
 				}
 				if (state === 'idle' && messageId) {
 					const msg = this.host.messageList?.getMessage(messageId);
-					if (msg?.highlightTTSProgress) {
+					if (msg?.highlightParagraphIndex) {
+						msg.highlightParagraphIndex(-1);
+					} else if (msg?.highlightTTSProgress) {
 						msg.highlightTTSProgress(-1);
 					}
 				}
@@ -220,22 +222,25 @@ export class TTSController {
 		this.emitMessageTTSState(messageId, 'tts_loading');
 
 		try {
-			// 清洗文本：去除 Markdown 标记、wiki-link 等
-			const cleanText = preprocessForTTS(content).trim();
-			if (!cleanText) {
-				this.stopMessageStream();
-				return;
+			const msg = this.host.messageList?.getMessage(messageId);
+			const messageEl = msg?.getElement();
+			const contentEl = messageEl?.querySelector('.deeppdf-message-content') as HTMLElement | null;
+
+			let paragraphs: string[] = [];
+			if (contentEl) {
+				const allElements = Array.from(contentEl.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6, blockquote'));
+				const leafElements = allElements.filter(el => !allElements.some(other => other !== el && el.contains(other)));
+				paragraphs = leafElements.map(el => el.textContent || '');
 			}
 
-			// 按段落分割（空行分隔）
-			const paragraphs = cleanText.split(/\n\n+/).filter(p => p.trim());
 			if (paragraphs.length === 0) {
-				this.stopMessageStream();
-				return;
+				const cleanText = preprocessForTTS(content).trim();
+				if (!cleanText) {
+					this.stopMessageStream();
+					return;
+				}
+				paragraphs = cleanText.split(/\n\n+/).filter(p => p.trim());
 			}
-
-			const totalChars = paragraphs.reduce((sum, p) => sum + p.length, 0);
-			let charsSoFar = 0;
 
 			// 逐段流式合成 + 播放
 			while (
@@ -250,7 +255,8 @@ export class TTSController {
 
 				const paraIndex = this.messageParagraphIndex;
 				const paraText = paragraphs[paraIndex].trim();
-				if (!paraText) {
+				const cleanParaText = preprocessForTTS(paraText).trim();
+				if (!cleanParaText) {
 					this.messageParagraphIndex++;
 					continue;
 				}
@@ -260,16 +266,14 @@ export class TTSController {
 					this.emitMessageTTSState(messageId, 'playing');
 				}
 
-				// 段落起始字符位置（用于 highlightTTSProgress 映射到该段 <p>）
-				const paragraphStartProgress = Math.min(99, Math.round((charsSoFar / totalChars) * 100));
 				// 本段音频计划开始时间 = 当前已排队音频末尾（与 readCurrentPage 完全一致）
 				const paragraphStartTime = player.endTime;
 				// enqueue 前调度：等实际播放到本段开始时再高亮（与朗读同步）
-				this.scheduleMessageHighlight(messageId, paragraphStartProgress, paragraphStartTime, player);
+				this.scheduleMessageHighlight(messageId, paraIndex, paragraphStartTime, player);
 
 				// 流式合成
 				const stream = client.synthesizeStream(
-					paraText,
+					cleanParaText,
 					{ voiceProfile: { voice: '冰糖' } },
 					this.messageAbort?.signal,
 				);
@@ -291,9 +295,6 @@ export class TTSController {
 				) {
 					break;
 				}
-
-				// 段落完成，累加字符进度
-				charsSoFar += paraText.length;
 
 				this.messageParagraphIndex++;
 			}
@@ -320,7 +321,7 @@ export class TTSController {
 				&& this.messageStreamingId === messageId
 			) {
 				const msg = this.host.messageList?.getMessage(messageId);
-				msg?.highlightTTSProgress?.(-1);
+				msg?.highlightParagraphIndex?.(-1);
 				this.emitMessageTTSState(messageId, 'idle');
 				this.messageStreamingId = null;
 			}
@@ -347,7 +348,7 @@ export class TTSController {
 	/** 等音频播放到指定时间再触发段落高亮（基于 player.currentTime，与朗读同步，参考 scheduleHighlight） */
 	private async scheduleMessageHighlight(
 		messageId: string,
-		progress: number,
+		paraIndex: number,
 		startTime: number,
 		player: PCMStreamPlayer
 	): Promise<void> {
@@ -360,7 +361,7 @@ export class TTSController {
 		}
 		if (this.currentSource === 'message' && this.messageStreamingId === messageId) {
 			const msg = this.host.messageList?.getMessage(messageId);
-			msg?.highlightTTSProgress?.(progress);
+			msg?.highlightParagraphIndex?.(paraIndex);
 		}
 	}
 

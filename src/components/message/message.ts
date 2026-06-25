@@ -41,6 +41,10 @@ export abstract class Message {
 	 * @param progress 0-100 的进度值
 	 */
 	highlightTTSProgress?(progress: number): void;
+	/**
+	 * 直接高亮指定段落索引（无累计误差，更精准）
+	 */
+	highlightParagraphIndex?(index: number): void;
 
 	constructor(data: MessageData, app?: App) {
 		this.data = data;
@@ -597,6 +601,10 @@ export class AIMessage extends Message {
 
 	highlightTTSProgress(progress: number): void {
 		this.ttsReadingCtrl.highlightProgress(progress);
+	}
+
+	highlightParagraphIndex(index: number): void {
+		this.ttsReadingCtrl.highlightParagraphIndex(index);
 	}
 
 	private _openFullscreen(): void {

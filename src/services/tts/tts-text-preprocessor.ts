@@ -24,6 +24,10 @@ export function stripMarkdown(text: string): string {
     result = result.replace(/_(.+?)_/g, '$1');
     // 去除标题标记 #
     result = result.replace(/^#{1,6}\s+/gm, '');
+    // 去除无序列表标记 - or * or + at the start of a line
+    result = result.replace(/^\s*[-*+]\s+/gm, '');
+    // 去除有序列表标记 1. 2. at the start of a line
+    result = result.replace(/^\s*\d+\.\s+/gm, '');
     // 去除水平线
     result = result.replace(/^[-*_]{3,}\s*$/gm, '');
     // 去除代码块

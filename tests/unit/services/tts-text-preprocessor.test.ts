@@ -38,6 +38,11 @@ describe('tts-text-preprocessor', () => {
             expect(stripMarkdown('> 引用文本')).toBe('引用文本');
         });
 
+        it('去除无序和有序列表标记', () => {
+            expect(stripMarkdown('- 列表 1\n* 列表 2\n+ 列表 3')).toBe('列表 1\n列表 2\n列表 3');
+            expect(stripMarkdown('1. 第一项\n2. 第二项\n10. 第十项')).toBe('第一项\n第二项\n第十项');
+        });
+
         it('去除删除线', () => {
             expect(stripMarkdown('~~删除~~')).toBe('删除');
         });
