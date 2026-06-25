@@ -77,6 +77,10 @@ export interface ChatInputOptions {
 	onQuoteAdded?: (quote: QuoteItem) => void;
 	/** 引用移除回调（可选） */
 	onQuoteRemoved?: (quoteId: string) => void;
+	/** 开始录音回调（点击麦克风按钮或移动端长按） */
+	onVoiceStart?: () => void;
+	/** 停止录音回调（点击停止按钮） */
+	onVoiceStop?: () => void;
 }
 
 /**
@@ -176,20 +180,17 @@ export class ChatInput {
 	 */
 	setVoiceState(state: VoiceState): void {
 		this.voiceState = state;
-		if (!this.voiceButton || !this.textarea) return;
+		if (!this.textarea) return;
 
-		this.voiceButton.classList.remove('recording', 'recognizing');
 		this.removeVoiceOverlay();
 
 		if (state === 'recording') {
-			this.voiceButton.classList.add('recording');
 			this.textarea.disabled = true;
 			this.textarea.value = '';
 			this.textarea.setAttribute('placeholder', '');
 			this.inputContainer?.addClass('deeppdf-voice-active');
 			this.showVoiceOverlay('正在聆听...', true);
 		} else if (state === 'recognizing') {
-			this.voiceButton.classList.add('recognizing');
 			this.textarea.disabled = true;
 			this.textarea.value = '';
 			this.textarea.setAttribute('placeholder', '');
@@ -201,6 +202,7 @@ export class ChatInput {
 			this.inputContainer?.removeClass('deeppdf-voice-active');
 		}
 
+		this.updateSendButtonState();
 		this.notifyHeightChange();
 	}
 
@@ -379,11 +381,27 @@ export class ChatInput {
 		// 点击发送按钮
 		if (this.sendButton) {
 			this.clickHandler = () => {
-				// 如果正在流式输出，点击停止
+				// 录音/识别中 → 停止录音
+				if (this.voiceState === 'recording' || this.voiceState === 'recognizing') {
+					this.options.onVoiceStop?.();
+					return;
+				}
+
+				// 流式输出中 → 停止生成
 				if (this.isStreaming) {
 					this.options.onStop?.();
-				} else {
+					return;
+				}
+
+				// 有内容 → 发送消息
+				const value = this.getValue().trim();
+				const hasContent = value.length > 0 || this.quotes.length > 0;
+
+				if (hasContent) {
 					this.handleSend();
+				} else {
+					// 无内容 → 开始录音
+					this.options.onVoiceStart?.();
 				}
 			};
 			this.sendButton.addEventListener('click', this.clickHandler);
@@ -690,11 +708,36 @@ export class ChatInput {
 	private updateSendButtonState(): void {
 		if (!this.sendButton || !this.textarea) return;
 
-		const value = this.getValue().trim();
-		// 有引用或有文本时都可以发送
-		const isDisabled = (value.length === 0 && this.quotes.length === 0) || this.textarea.disabled;
+		// 录音/识别中 → 显示停止按钮
+		if (this.voiceState === 'recording' || this.voiceState === 'recognizing') {
+			this.sendButton.innerHTML = Icons.stop || '⏹';
+			this.sendButton.setAttribute('aria-label', '停止录音');
+			this.sendButton.disabled = false;
+			return;
+		}
 
-		this.sendButton.disabled = isDisabled;
+		// 流式输出中 → 显示停止按钮（保持现有逻辑）
+		if (this.isStreaming) {
+			this.sendButton.innerHTML = Icons.stop || '⏹';
+			this.sendButton.setAttribute('aria-label', '停止生成');
+			this.sendButton.disabled = false;
+			return;
+		}
+
+		// 有内容 → 显示发送按钮
+		const value = this.getValue().trim();
+		const hasContent = value.length > 0 || this.quotes.length > 0;
+
+		if (hasContent) {
+			this.sendButton.innerHTML = Icons.send;
+			this.sendButton.setAttribute('aria-label', '发送消息');
+			this.sendButton.disabled = false;
+		} else {
+			// 无内容 → 显示麦克风按钮
+			this.sendButton.innerHTML = Icons.mic;
+			this.sendButton.setAttribute('aria-label', '语音输入');
+			this.sendButton.disabled = false;
+		}
 	}
 
 	// ==================== 引用相关方法 ====================
