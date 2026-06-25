@@ -884,6 +884,8 @@ export class ReadingModeService implements ScrollPatchService {
 							this.recordPage(this.currentFile.path, page);
 						}
 						this.callbacks?.onStopReadingTTS?.();
+						// 更新"回到朗读页"按钮可见性
+						this.updateReturnReadingBtnVisibility(page);
 					},
 					chapterName,
 					bookName: this.currentBookName,
