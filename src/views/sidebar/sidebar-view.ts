@@ -1063,7 +1063,6 @@ export class SidebarView extends ItemView {
 		// 检查是否可启用语音输入（需要 MiMo API Key）
 		const ttsConfig = resolveRoleConfig("tts", this.plugin.settings);
 		const chatConfig = resolveRoleConfig("chat", this.plugin.settings);
-		const showVoiceButton = !!ttsConfig && !Platform.isMobile; // 移动端隐藏麦克风按钮
 
 		// 创建聊天输入组件（在最上方）
 		this.chatInput = new ChatInput({
@@ -1087,26 +1086,6 @@ export class SidebarView extends ItemView {
 			onUnloadCurrentDoc: async () => {
 				await this.unloadCurrentDocument();
 			},
-			showVoiceButton,
-			onVoiceToggle: showVoiceButton
-				? () => {
-						if (!this.voiceInputCtrl) {
-							this.voiceInputCtrl = new VoiceInputController(this.chatInput!, {
-								apiKey: ttsConfig!.apiKey,
-								baseUrl: ttsConfig!.baseUrl,
-							});
-						}
-						this.voiceInputCtrl.toggle();
-					}
-				: undefined,
-			// 移动端长按触发 Push-to-Talk
-			onLongPress: Platform.isMobile && ttsConfig && chatConfig
-				? () => this.startPushToTalk()
-				: undefined,
-			// 移动端录音中上滑取消
-			onLongPressCancel: Platform.isMobile && ttsConfig && chatConfig
-				? () => this.pushToTalkCtrl?.cancel()
-				: undefined,
 		});
 
 		// 创建引用卡片容器（在输入框上方）

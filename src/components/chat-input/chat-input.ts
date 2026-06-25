@@ -77,14 +77,6 @@ export interface ChatInputOptions {
 	onQuoteAdded?: (quote: QuoteItem) => void;
 	/** 引用移除回调（可选） */
 	onQuoteRemoved?: (quoteId: string) => void;
-	/** 语音输入切换回调（点击麦克风按钮时触发） */
-	onVoiceToggle?: () => void;
-	/** 是否显示语音按钮（默认 false） */
-	showVoiceButton?: boolean;
-	/** 长按触发回调（移动端 push-to-talk） */
-	onLongPress?: () => void;
-	/** 长按录音中上滑取消回调（移动端 push-to-talk） */
-	onLongPressCancel?: () => void;
 }
 
 /**
@@ -131,13 +123,6 @@ export class ChatInput {
 	private pasteHandler: (() => void) | null = null;
 	private loadDocClickHandler: (() => void) | null = null;
 	private containerClickHandler: ((event: MouseEvent) => void) | null = null;
-	private voiceClickHandler: (() => void) | null = null;
-
-	// 长按相关状态
-	private longPressTimer: ReturnType<typeof setTimeout> | null = null;
-	private longPressStartPos = { x: 0, y: 0 };
-	private longPressCancelled = false;
-	private longPressTriggered = false;
 
 	constructor(options: ChatInputOptions) {
 		this.options = {
@@ -334,16 +319,6 @@ export class ChatInput {
 			cls: 'deeppdf-toolbar-left'
 		});
 
-		// 麦克风按钮（最左位）
-		if (this.options.showVoiceButton && this.options.onVoiceToggle) {
-			this.voiceButton = leftToolbar.createEl('button', {
-				cls: 'deeppdf-voice-btn'
-			});
-			this.voiceButton.innerHTML = Icons.mic;
-			this.voiceButton.setAttribute('aria-label', '语音输入');
-			this.voiceButton.type = 'button';
-		}
-
 		// 加载当前文档按钮
 		if (this.options.onLoadCurrentDoc) {
 			this.loadDocButton = leftToolbar.createEl('button', {
@@ -430,14 +405,6 @@ export class ChatInput {
 			this.loadDocButton.addEventListener('click', this.loadDocClickHandler);
 		}
 
-		// 点击麦克风按钮
-		if (this.voiceButton && this.options.onVoiceToggle) {
-			this.voiceClickHandler = () => {
-				this.options.onVoiceToggle!();
-			};
-			this.voiceButton.addEventListener('click', this.voiceClickHandler);
-		}
-
 		// 粘贴事件：移除多余的格式
 		this.pasteHandler = () => {
 			// 延迟处理以确保粘贴内容已插入
@@ -474,11 +441,6 @@ export class ChatInput {
 
 		// 点击其他地方时隐藏文件建议
 		document.addEventListener('click', this.handleDocumentClick);
-
-		// 移动端长按事件（push-to-talk）
-		if (this.options.onLongPress) {
-			this.setupLongPress();
-		}
 	}
 
 	/**
@@ -495,54 +457,6 @@ export class ChatInput {
 	};
 
 	/**
-	 * 设置移动端长按事件监听
-	 */
-	private setupLongPress(): void {
-		if (!this.textarea) return;
-
-		const LONG_PRESS_THRESHOLD = 500;
-		const SWIPE_CANCEL_THRESHOLD = 50;
-
-		this.textarea.addEventListener('touchstart', (e) => {
-			this.longPressCancelled = false;
-			this.longPressTriggered = false;
-			this.longPressStartPos = {
-				x: e.touches[0].clientX,
-				y: e.touches[0].clientY,
-			};
-			this.longPressTimer = setTimeout(() => {
-				if (!this.longPressCancelled) {
-					e.preventDefault();
-					this.longPressTriggered = true;
-					this.options.onLongPress?.();
-				}
-			}, LONG_PRESS_THRESHOLD);
-		}, { passive: false });
-
-		this.textarea.addEventListener('touchmove', (e) => {
-			const dy = e.touches[0].clientY - this.longPressStartPos.y;
-			if (dy >= -SWIPE_CANCEL_THRESHOLD) return;
-			// 上滑超过阈值
-			if (this.longPressTriggered) {
-				// 录音中上滑 → 取消录音
-				this.longPressTriggered = false;
-				this.options.onLongPressCancel?.();
-			} else if (this.longPressTimer) {
-				// 长按未触发前上滑 → 阻止启动
-				clearTimeout(this.longPressTimer);
-				this.longPressTimer = null;
-				this.longPressCancelled = true;
-			}
-		}, { passive: true });
-
-		this.textarea.addEventListener('touchend', () => {
-			if (this.longPressTimer) {
-				clearTimeout(this.longPressTimer);
-				this.longPressTimer = null;
-			}
-		}, { passive: true });
-	}
-
 	/**
 	 * 处理键盘事件
 	 */
@@ -947,17 +861,6 @@ export class ChatInput {
 		if (this.loadDocButton && this.loadDocClickHandler) {
 			this.loadDocButton.removeEventListener('click', this.loadDocClickHandler);
 			this.loadDocClickHandler = null;
-		}
-
-		if (this.voiceButton && this.voiceClickHandler) {
-			this.voiceButton.removeEventListener('click', this.voiceClickHandler);
-			this.voiceClickHandler = null;
-		}
-
-		// 清理长按计时器
-		if (this.longPressTimer) {
-			clearTimeout(this.longPressTimer);
-			this.longPressTimer = null;
 		}
 
 		if (this.inputContainer && this.containerClickHandler) {
