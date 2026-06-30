@@ -15,6 +15,7 @@ import {
   cleanOutput,
   sanitizeOutput,
 } from '../utils/output-sanitizer.js';
+import { upgradeInlineWikiLinks } from '../utils/wiki-link-injector.js';
 import type { FormatterInput } from '../node-io.js';
 import {
   buildFormatterSystemPrompt,
@@ -190,7 +191,14 @@ export async function formatterNode(
       toolResults: [],
       skipVaultVerification: true,
     });
-    return { formattedOutput: formatted };
+    // CASUAL 也接入死链修复（toolResults 通常空，仅 Step1 修 LLM 写的章节死链）
+    const injected = upgradeInlineWikiLinks(formatted, {
+      toolResultsSnapshot,
+      nodeFileMap: nodeFileMap ?? {},
+      pdfName: pdfName || '',
+      crossBookMode,
+    });
+    return { formattedOutput: injected };
   }
 
 
@@ -400,7 +408,16 @@ export async function formatterNode(
     toolResults,
   });
 
+  // Phase 1.5: 把正文已有的章节级链接 [[书/文件]] 就地升级为 block 级 [[书/文件#^blockId|别名]]，
+  // 用 pre_search 命中的 blockId（toolResultsSnapshot.extractedBlockIds）补全，链接位置不变、精度到段
+  const injected = upgradeInlineWikiLinks(formatted, {
+    toolResultsSnapshot,
+    nodeFileMap: nodeFileMap ?? {},
+    pdfName: effectivePdfName,
+    crossBookMode,
+  });
+
   const errorHints = appendErrorHints(state.nodeErrors);
 
-  return { formattedOutput: errorHints ? `${formatted}\n\n> [!hint] ${errorHints}` : formatted };
+  return { formattedOutput: errorHints ? `${injected}\n\n> [!hint] ${errorHints}` : injected };
 }
