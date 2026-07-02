@@ -11,6 +11,7 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import { RunnableLambda } from '@langchain/core/runnables';
 import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
+import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import type { BookSearchResultV2, BookSearchOptionsV2 } from '../../../pageindex/book-types.js';
 import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 import { agentLog as log } from '../../../utils/logger.js';
@@ -305,7 +306,6 @@ export async function preSearchNode(
 
     // 辅助函数：针对指定选项和关键词并发检索并合并
     async function runSearchAndFusion(opts: BookSearchOptionsV2): Promise<BookSearchResultV2[]> {
-      const { searchBookV2 } = require('../../../pageindex/book-search-v2.js');
       const subResults = await Promise.all(
         limitedKeywords.map(async (kw) => {
           try {
