@@ -1,11 +1,11 @@
 /**
- * SharedContext — minimal shared state for LangGraph nodes
+ * SharedContext — immutable request context for LangGraph nodes.
  *
- * Migrated from cognitive-engine/types.ts and cognitive-engine/context.ts.
- * Only includes what the LangGraph path actually uses.
+ * 边界（见 ADR-0001）：SharedContext 只放"本次请求的不可变输入/依赖"。
+ * 节点执行中产生、需向下游流转的可变数据归 LangGraph State，不进此处。
+ * 判定规则：输入 = Context，产出 = State。
  */
 
-import type { LLMClientManager } from '../llm-client';
 import type { ToolContext } from '../tools/types';
 import type { ChatMessage } from '../types';
 import type { HistorySummary } from './utils/history-summarizer';
@@ -38,22 +38,33 @@ export interface EngineCallbacks {
 }
 
 /**
- * Shared context passed to graph nodes via config.configurable.
- * Contains runtime data and dependencies.
+ * Shared context passed to graph nodes via config.configurable.sharedContext.
+ *
+ * 单一来源原则：节点统一从 `config.configurable.sharedContext` 取业务上下文，
+ * 不再从 `config.configurable` 顶层取同名键（消除双轨制）。
+ * 运行时基础设施（mainModel/fastModel/callbacks/enableHumanReview）仍留顶层，
+ * 不属本接口——它们是 LangGraph 执行依赖，与本次对话的业务上下文无关。
  */
 export interface SharedContext {
-  chatHistory: ChatMessage[];
+  /** 用户原始输入（未经 standalone/betterQuestion 改写）。 */
   rawUserQuery: string;
-  tocSummary?: string;
-  betterQuestion?: string;
-  s2ToolResults?: Array<{ toolName: string; args: Record<string, unknown>; result: string; originalResultLength: number }>;
-  abortSignal?: AbortSignal;
+  /** 进入本次图执行前的对话历史（只读输入）。 */
+  chatHistory: ChatMessage[];
+  /** 用户长期记忆摘要（注入 prompt）。 */
   memoryContext?: string;
-  llmClientManager?: LLMClientManager;
-  toolContext?: ToolContext;
-  recentHistorySummaries?: HistorySummary[];
-  prevSearchedBlockIds?: string[];
+  /** 用户画像摘要（注入 prompt）。 */
   userProfileSummary?: string;
+  /** 从历史中抽取的近期对话摘要（注入 prompt）。 */
+  recentHistorySummaries?: HistorySummary[];
+  /**
+   * 上一轮已检索过的 block id 种子（避免本轮重复检索）。
+   * 仅作"初始种子"——运行中节点间流转的累积去重集合归 State.prevSearchedBlockIds。
+   */
+  initialPrevSearchedBlockIds?: string[];
+  /** 工具上下文（Vault / book / plugin 等运行时依赖）。 */
+  toolContext?: ToolContext;
+  /** 用户取消信号。 */
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -64,10 +75,9 @@ export function createSharedContext(params: {
   chatHistory?: ChatMessage[];
   abortSignal?: AbortSignal;
   memoryContext?: string;
-  llmClientManager?: LLMClientManager;
   toolContext?: ToolContext;
   recentHistorySummaries?: HistorySummary[];
-  prevSearchedBlockIds?: string[];
+  initialPrevSearchedBlockIds?: string[];
   userProfileSummary?: string;
 }): SharedContext {
   return {
@@ -75,10 +85,9 @@ export function createSharedContext(params: {
     rawUserQuery: params.rawUserQuery,
     abortSignal: params.abortSignal,
     memoryContext: params.memoryContext,
-    llmClientManager: params.llmClientManager,
     toolContext: params.toolContext,
     recentHistorySummaries: params.recentHistorySummaries,
-    prevSearchedBlockIds: params.prevSearchedBlockIds,
+    initialPrevSearchedBlockIds: params.initialPrevSearchedBlockIds,
     userProfileSummary: params.userProfileSummary,
   };
 }

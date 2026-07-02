@@ -52,8 +52,9 @@ export async function inspectionalNode(
 ): Promise<Partial<CognitiveEngineState>> {
   const { messages, allowedTools: prevTools = [], pdfName, bookId, crossBookMode } = state;
   const fastModel = config.configurable?.fastModel;
-  const toolContext = config.configurable?.toolContext;
-  const chatHistory = config.configurable?.chatHistory ?? [];
+  const ctx = config.configurable?.sharedContext;
+  const toolContext = ctx?.toolContext;
+  const chatHistory = ctx?.chatHistory ?? [];
 
   const rawQuery = extractLastHumanMessage(messages);
 
@@ -137,7 +138,7 @@ export async function inspectionalNode(
 
   // Step 2: Build prompt
   const docDescription = toolContext.book.docDescription;
-  const recentHistorySummaries = config.configurable?.sharedContext?.recentHistorySummaries;
+  const recentHistorySummaries = ctx?.recentHistorySummaries;
   const currentNodeId = toolContext.book.currentNodeId;
   const allHumanContents = extractHumanMessageContents(messages);
   const citedNodeIds = extractCitedNodeIds(allHumanContents);

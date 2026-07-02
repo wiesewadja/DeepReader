@@ -83,9 +83,9 @@ export async function syntopicalNode(
   const { rewrittenQuery }: SyntopicalInput = state;
   const ctx = config.configurable?.sharedContext as SharedContext | undefined;
   const mainModel = config.configurable?.mainModel;
-  const toolContext = config.configurable?.toolContext;
+  const toolContext = ctx?.toolContext;
 
-  if (!mainModel || !toolContext?.app) {
+  if (!mainModel || !toolContext?.vault?.app) {
     log('[S3 Syntopical] Missing required config, returning empty result.');
     return { analysisResult: '', toolResultsSnapshot: [] };
   }

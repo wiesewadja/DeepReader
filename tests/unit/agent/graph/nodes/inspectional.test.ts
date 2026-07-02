@@ -62,15 +62,17 @@ describe('inspectionalNode S1-Unified', () => {
     return {
       configurable: {
         fastModel: mockModel,
-        toolContext: {
-          book: {
-            indexId: 'test-book-id',
-            pdfName: 'test.pdf',
-            docDescription: '测试文档描述',
-            currentNodeId: currentNodeId,
-          },
-          vault: {
-            app: {},
+        sharedContext: {
+          toolContext: {
+            book: {
+              indexId: 'test-book-id',
+              pdfName: 'test.pdf',
+              docDescription: '测试文档描述',
+              currentNodeId: currentNodeId,
+            },
+            vault: {
+              app: {},
+            },
           },
         },
       },

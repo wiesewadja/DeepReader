@@ -73,7 +73,7 @@ export async function advisorNode(
 
 	const ctx = config.configurable?.sharedContext;
 	const mainModel = config.configurable?.mainModel;
-	const toolContext = config.configurable?.toolContext;
+	const toolContext = ctx?.toolContext;
 	const callbacks = config.configurable?.callbacks as {
 		onContent?: (content: string) => void;
 		onProgress?: (msg: string) => void;

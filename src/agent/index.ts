@@ -434,18 +434,18 @@ ${currentMemory}
     // 过滤有效对话历史
     const cleanHistory = (chatHistory ?? []).filter(m => m.role === 'user' || m.role === 'assistant');
     const recentHistorySummaries = summarizeRecentHistory(cleanHistory, 3);
-    const prevSearchedBlockIds = extractPrevBlockIds(cleanHistory);
+    const initialPrevSearchedBlockIds = extractPrevBlockIds(cleanHistory);
 
-    // SharedContext for S2 compatibility
+    // SharedContext：业务上下文单一来源（见 ADR-0001）。
+    // mainModel/fastModel/callbacks 等运行时依赖留 configurable 顶层，不进 ctx。
     const ctx = createSharedContext({
       rawUserQuery: rawUserQuery || '',
       chatHistory: cleanHistory,
       abortSignal: callbacks.abortSignal,
       memoryContext,
-      llmClientManager: this.llmClientManager,
       toolContext: context,
       recentHistorySummaries,
-      prevSearchedBlockIds,
+      initialPrevSearchedBlockIds,
       userProfileSummary,
     });
 
@@ -477,8 +477,6 @@ ${currentMemory}
       fastModel: models.fast,
       mainModel: models.main,
       sharedContext: ctx,
-      chatHistory: cleanHistory,
-      toolContext: context,
       callbacks: engineCallbacks,
       enableHumanReview: this.options.enableHumanReview ?? false,
       _langsmithTracer: langsmithTracer,

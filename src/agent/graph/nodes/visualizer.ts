@@ -30,9 +30,10 @@ export async function visualizerNode(
   // 画图是单次大输出（完整 Excalidraw JSON），fastModel 速度优势明显；
   // fastModel 未配置时 createChatModels 会令其等于 mainModel，故总是存在。
   const fastModel = config.configurable?.fastModel ?? config.configurable?.mainModel;
-  const toolContext = config.configurable?.toolContext;
+  const ctx = config.configurable?.sharedContext;
+  const toolContext = ctx?.toolContext;
   const callbacks = config.configurable?.callbacks as Partial<EngineCallbacks> | undefined;
-  const abortSignal = config.configurable?.abortSignal as AbortSignal | undefined;
+  const abortSignal = ctx?.abortSignal;
 
   if (!fastModel || !toolContext) {
     log('[Visualizer] 缺少 fastModel/mainModel 或 toolContext，跳过图表生成');

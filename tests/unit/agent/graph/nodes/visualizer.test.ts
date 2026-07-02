@@ -38,11 +38,15 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
     book: {} as any,
   };
 
+  const { sharedContext: ctxOverride, ...rest } = overrides;
   return {
     configurable: {
       mainModel: mockModel,
-      toolContext: mockToolContext,
-      ...overrides,
+      sharedContext: {
+        toolContext: mockToolContext,
+        ...ctxOverride,
+      },
+      ...rest,
     },
   } as any;
 }
@@ -148,7 +152,7 @@ describe('visualizerNode (fire-and-forget)', () => {
     const controller = new AbortController();
     controller.abort(); // 进入节点前已 abort
     const config = makeConfig({
-      abortSignal: controller.signal,
+      sharedContext: { abortSignal: controller.signal },
       callbacks: { onDiagramStart: vi.fn(), onDiagramReady, onDiagramFailed } as EngineCallbacks,
     });
 
@@ -248,7 +252,7 @@ describe('visualizerNode (fire-and-forget)', () => {
       controller.abort();
       const config = makeConfig({
         callbacks: { onDiagramStart, onDiagramReady } as EngineCallbacks,
-        abortSignal: controller.signal,
+        sharedContext: { abortSignal: controller.signal },
       });
 
       await visualizerNode(state, config);
@@ -268,7 +272,7 @@ describe('visualizerNode (fire-and-forget)', () => {
 
       const config = makeConfig({
         callbacks: { onDiagramStart: vi.fn(), onDiagramReady } as EngineCallbacks,
-        abortSignal: controller.signal,
+        sharedContext: { abortSignal: controller.signal },
       });
       // 在 invoke 完成时触发 abort，模拟"await 进行中用户中断"
       config.configurable.mainModel.invoke.mockImplementation(() => {
