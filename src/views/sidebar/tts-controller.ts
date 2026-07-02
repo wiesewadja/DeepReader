@@ -24,13 +24,18 @@ export type TTSSource = 'message' | 'reading';
 export interface TTSControllerHost {
 	get app(): import('obsidian').App;
 	get plugin(): DeepReaderPluginInterface;
-	get messageList(): import('../../components/message-list/message-list.js').MessageList | null;
+
 	getDisplayName(name: string): string;
 	getCurrentPdfName(): string | null;
 	getCurrentBookAuthor(): string | null;
 	getCurrentIndexId(): string | null;
 	setTtsService(service: TTSService | null): void;
 	onReadingTTSStateChange?: (state: TTSPlayState) => void;
+	onMessageTTSStateChange?: (messageId: string, state: TTSPlayState) => void;
+	onMessageTTSProgressChange?: (messageId: string, progress: number) => void;
+	/** 获取消息段落文本列表（UI 层实现） */
+	getMessageParagraphs?: (messageId: string) => string[];
+	onMessageTTSParagraphChange?: (messageId: string, paragraphIndex: number) => void;
 	/** 获取当前页码 */
 	getCurrentPage?: () => number;
 	/** 获取指定或当前页段落列表（元素 + 文本） */
@@ -139,22 +144,11 @@ export class TTSController {
 			pluginId: this.host.plugin.manifest.id,
 			onStateChange: (messageId: string | null, state: TTSPlayState) => {
 				if (messageId) {
-					this.host.messageList?.updateTTSState(messageId, state);
-				}
-				if (state === 'idle' && messageId) {
-					const msg = this.host.messageList?.getMessage(messageId);
-					if (msg?.highlightParagraphIndex) {
-						msg.highlightParagraphIndex(-1);
-					} else if (msg?.highlightTTSProgress) {
-						msg.highlightTTSProgress(-1);
-					}
+					this.host.onMessageTTSStateChange?.(messageId, state);
 				}
 			},
 			onProgressChange: (messageId: string, progress: number) => {
-				const msg = this.host.messageList?.getMessage(messageId);
-				if (msg?.highlightTTSProgress) {
-					msg.highlightTTSProgress(progress);
-				}
+				this.host.onMessageTTSProgressChange?.(messageId, progress);
 			},
 		});
 	}
@@ -228,16 +222,7 @@ export class TTSController {
 		this.emitMessageTTSState(messageId, 'tts_loading');
 
 		try {
-			const msg = this.host.messageList?.getMessage(messageId);
-			const messageEl = msg?.getElement();
-			const contentEl = messageEl?.querySelector('.deeppdf-message-content') as HTMLElement | null;
-
-			let paragraphs: string[] = [];
-			if (contentEl) {
-				const allElements = Array.from(contentEl.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6, blockquote'));
-				const leafElements = allElements.filter(el => !allElements.some(other => other !== el && el.contains(other)));
-				paragraphs = leafElements.map(el => el.textContent || '');
-			}
+			let paragraphs = this.host.getMessageParagraphs?.(messageId) ?? [];
 
 			if (paragraphs.length === 0) {
 				const cleanText = preprocessForTTS(content).trim();
@@ -326,17 +311,16 @@ export class TTSController {
 				this.currentSource === 'message'
 				&& this.messageStreamingId === messageId
 			) {
-				const msg = this.host.messageList?.getMessage(messageId);
-				msg?.highlightParagraphIndex?.(-1);
+				this.host.onMessageTTSParagraphChange?.(messageId, -1);
 				this.emitMessageTTSState(messageId, 'idle');
 				this.messageStreamingId = null;
 			}
 		}
 	}
 
-	/** 通知消息朗读状态：更新 messageList UI + 联动悬浮球朗读动效 */
+	/** 通知消息朗读状态：转发 host 回调 + 联动悬浮球朗读动效 */
 	private emitMessageTTSState(messageId: string, state: TTSPlayState): void {
-		this.host.messageList?.updateTTSState(messageId, state);
+		this.host.onMessageTTSStateChange?.(messageId, state);
 		this.notifyXitongReading(state);
 	}
 
@@ -366,8 +350,7 @@ export class TTSController {
 			await sleep(20);
 		}
 		if (this.currentSource === 'message' && this.messageStreamingId === messageId) {
-			const msg = this.host.messageList?.getMessage(messageId);
-			msg?.highlightParagraphIndex?.(paraIndex);
+			this.host.onMessageTTSParagraphChange?.(messageId, paraIndex);
 		}
 	}
 
@@ -395,6 +378,25 @@ export class TTSController {
 			this.messagePaused = true;
 			this.messagePlayer?.pause();
 			this.emitMessageTTSState(this.messageStreamingId!, 'paused');
+		}
+	}
+
+	/** 停止消息流式朗读（公开给 TTSDomain） */
+	public stop(): void {
+		this.stopMessageStream();
+	}
+
+	/** 暂停消息流式朗读 */
+	public pause(): void {
+		if (this.currentSource === 'message' && this.messageStreamingId && !this.messagePaused) {
+			this.toggleMessagePause();
+		}
+	}
+
+	/** 恢复消息流式朗读 */
+	public resume(): void {
+		if (this.currentSource === 'message' && this.messageStreamingId && this.messagePaused) {
+			this.toggleMessagePause();
 		}
 	}
 

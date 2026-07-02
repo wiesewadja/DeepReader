@@ -5,7 +5,6 @@
 
 import { ItemView, type WorkspaceLeaf, Notice, Platform } from "obsidian";
 import { type FrontendAgent } from "../../agent/index.js";
-import { MemoryStore } from "../../agent/memory/store.js";
 import { SessionStore } from "../../agent/session/index.js";
 import type { DeepReaderPluginInterface } from "../../agent/tools/context/vault.js";
 import { ChatInput } from "../../components/chat-input/chat-input.js";
@@ -29,8 +28,8 @@ import {
 	type TTSService,
 	type TTSPlayState,
 } from "../../services/tts/tts-service.js";
-import { ChatDocumentService, type SidebarEventMap } from "./services/chat-document-service.js";
-import { EventBus } from "./event-bus.js";
+import { VoiceInputController } from "../../services/asr/voice-input-controller.js";
+import { PushToTalkController } from "../../services/push-to-talk.js";
 import type { ExcerptContent, ExcerptMetadata } from "../../types/excerpt.js";
 import {
 	IndexListItem,
@@ -45,12 +44,17 @@ import { uiLog as log, warn, error as logError } from "../../utils/logger.js";
 import { LIBRARY_VIEW_TYPE } from "../library-view.js";
 import { AgentChatController } from "./agent-chat-controller.js";
 import { BookManager } from "./book-manager.js";
+import { BookDomain } from "./domains/book-domain.js";
+import { TTSDomain } from "./domains/tts-domain.js";
+import { SessionDomain } from "./domains/session-domain.js";
+import { ChatDocumentService } from "./services/chat-document-service.js";
+import { EventBus } from "./event-bus.js";
+import type { SidebarEventMap } from "./events.js";
+import { ChatPresenter } from "./presenters/chat-presenter.js";
 import { QuoteManager } from "./quote-manager.js";
 import { copyToClipboard as _copyToClipboard } from "./search-utils.js";
 import { SessionManager } from "./session-manager.js";
 import { TTSController } from "./tts-controller.js";
-import { VoiceInputController } from "../../services/asr/voice-input-controller.js";
-import { PushToTalkController } from "../../services/push-to-talk.js";
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -83,9 +87,13 @@ export class SidebarView extends ItemView {
 	// ── 子系统 controller ──
 	private quoteManager: QuoteManager;
 	private ttsCtrl: TTSController;
+	private ttsDomain: TTSDomain;
 	private sessionMgr: SessionManager;
 	private agentChatCtrl: AgentChatController;
+	private sessionDomain: SessionDomain;
 	private bookMgr: BookManager;
+	private bookDomain: BookDomain;
+	private chatPresenter: ChatPresenter | null = null;
 	private voiceInputCtrl: VoiceInputController | null = null;
 	private pushToTalkCtrl: PushToTalkController | null = null;
 
@@ -111,36 +119,19 @@ export class SidebarView extends ItemView {
 	 * 删除索引（本地实现）
 	 */
 	async handleDeleteIndex(indexId: string) {
-		await this.bookMgr.handleDeleteIndex(indexId);
-	}
-
-	/**
-	 * 获取书籍显示名称（去除扩展名和副标题）
-	 */
-	private getDisplayName(pdfName: string): string {
-		let name = pdfName;
-		name = stripFileExtension(name);
-
-		const separators = ["：", ":", "—", "-", "｜", "|"];
-		for (const sep of separators) {
-			if (name.includes(sep)) {
-				name = name.split(sep)[0].trim();
-				break;
-			}
-		}
-		return name;
+		await this.bookDomain.deleteIndex(indexId);
 	}
 
 	async refreshIndexes(): Promise<void> {
-		await this.bookMgr.refreshIndexes();
+		await this.bookDomain.refreshIndexes();
 	}
 
 	/** 停止原文朗读（翻页/切章/关闭阅读模式时调用） */
 	stopReadingTTS(resetIndex = true): void {
-		if (this.ttsCtrl.isAutoPageTurning()) {
+		if (this.ttsDomain.isAutoPageTurning()) {
 			return; // 程序翻页，朗读已在 readCurrentPage 内自然结束
 		}
-		this.ttsCtrl.stopReading(resetIndex);
+		this.ttsDomain.stopReading(resetIndex);
 		this.readingTopbar?.setReadingTTSState('idle');
 		this.clearReadingHighlight();
 	}
@@ -175,9 +166,9 @@ export class SidebarView extends ItemView {
 		if (selection) {
 			this.readingTopbar?.setReadingTTSState('loading');
 			try {
-				await this.ttsCtrl.handleReadingTTS(selection);
+				await this.ttsDomain.readCurrentPage(selection);
 				this.readingTopbar?.setReadingTTSState(
-					this.ttsCtrl.getCurrentSource() === 'reading' ? 'playing' : 'idle',
+					this.ttsDomain.getCurrentSource() === 'reading' ? 'playing' : 'idle',
 				);
 			} catch (e) {
 				this.readingTopbar?.setReadingTTSState('idle');
@@ -195,9 +186,9 @@ export class SidebarView extends ItemView {
 
 		this.readingTopbar?.setReadingTTSState('loading');
 		try {
-			await this.ttsCtrl.handleReadingTTS(); // 无参数走页面朗读
+			await this.ttsDomain.readCurrentPage(); // 无参数走页面朗读
 			this.readingTopbar?.setReadingTTSState(
-				this.ttsCtrl.getCurrentSource() === 'reading' ? 'playing' : 'idle',
+				this.ttsDomain.getCurrentSource() === 'reading' ? 'playing' : 'idle',
 			);
 		} catch (e) {
 			this.readingTopbar?.setReadingTTSState('idle');
@@ -213,7 +204,7 @@ export class SidebarView extends ItemView {
 
 	/** 从 SessionStore 恢复历史记录到视图 */
 	private async restoreFromSessionStore(sessionId: string): Promise<boolean> {
-		return this.sessionMgr.restoreFromSessionStore(sessionId);
+		return this.sessionDomain.restoreSession(sessionId);
 	}
 
 	constructor(leaf: WorkspaceLeaf, plugin: DeepReaderPluginInterface) {
@@ -235,32 +226,57 @@ export class SidebarView extends ItemView {
 			get plugin() {
 				return self.plugin;
 			},
-			get messageList() {
-				return self.messageList;
-			},
+
 			getDisplayName(name: string) {
-				return self.getDisplayName(name);
+				return self.bookDomain.getDisplayName(name);
 			},
 			getCurrentPdfName() {
-				return self.bookMgr.currentPdfName;
+				return self.bookDomain.currentPdfName;
 			},
 			getCurrentBookAuthor() {
-				return self.bookMgr.currentBookAuthor;
+				return self.bookDomain.currentBookAuthor;
 			},
 			getCurrentIndexId() {
-				return self.bookMgr.currentIndexId;
+				return self.bookDomain.currentIndexId;
 			},
 			setTtsService(service) {
 				self.ttsService = service;
 			},
 			onReadingTTSStateChange: (state) => {
-				if (state === 'idle') {
-					self.readingTopbar?.setReadingTTSState('idle');
-				} else if (state === 'tts_loading') {
-					self.readingTopbar?.setReadingTTSState('loading');
-				} else if (state === 'playing') {
-					self.readingTopbar?.setReadingTTSState('playing');
-				}
+				self.eventBus.emit("tts:state-changed", {
+					source: "reading",
+					state,
+				});
+			},
+			onMessageTTSStateChange: (messageId, state) => {
+				self.eventBus.emit("tts:state-changed", {
+					source: "message",
+					messageId,
+					state,
+				});
+			},
+			onMessageTTSProgressChange: (messageId, progress) => {
+				self.eventBus.emit("tts:progress-changed", {
+					source: "message",
+					messageId,
+					progress,
+				});
+			},
+			getMessageParagraphs: (messageId: string) => {
+				const msg = self.messageList?.getMessage(messageId);
+				const messageEl = msg?.getElement();
+				const contentEl = messageEl?.querySelector('.deeppdf-message-content') as HTMLElement | null;
+				if (!contentEl) return [];
+				const allElements = Array.from(contentEl.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6, blockquote'));
+				const leafElements = allElements.filter(el => !allElements.some(other => other !== el && el.contains(other)));
+				return leafElements.map(el => el.textContent || '');
+			},
+			onMessageTTSParagraphChange: (messageId, paragraphIndex) => {
+				self.eventBus.emit("tts:paragraph-changed", {
+					source: "message",
+					messageId,
+					paragraphIndex,
+				});
 			},
 			highlightElement: (el) => self.highlightReadingElement(el),
 			clearHighlight: () => self.clearReadingHighlight(),
@@ -277,6 +293,12 @@ export class SidebarView extends ItemView {
 				return service?.isDualPageMode?.() || false;
 			},
 			goToNextPage: () => self.goToNextPage(),
+		});
+		this.ttsDomain = new TTSDomain({
+			app: this.app,
+			plugin: this.plugin,
+			eventBus: this.eventBus,
+			ttsController: this.ttsCtrl,
 		});
 		this.sessionMgr = new SessionManager({
 			get app() {
@@ -298,16 +320,16 @@ export class SidebarView extends ItemView {
 				return self.frontendAgent;
 			},
 			get currentIndexId() {
-				return self.bookMgr.currentIndexId;
+				return self.bookDomain.currentIndexId;
 			},
 			get currentPdfName() {
-				return self.bookMgr.currentPdfName;
+				return self.bookDomain.currentPdfName;
 			},
 			get currentBookCoverUrl() {
-				return self.bookMgr.currentBookCoverUrl;
+				return self.bookDomain.currentBookCoverUrl;
 			},
 			get currentBookAuthor() {
-				return self.bookMgr.currentBookAuthor;
+				return self.bookDomain.currentBookAuthor;
 			},
 			get agentChatHistory() {
 				return self.agentChatCtrl.agentChatHistory;
@@ -330,7 +352,7 @@ export class SidebarView extends ItemView {
 				return self.initializeFrontendAgent();
 			},
 			get currentBooklistItems() {
-				return self.bookMgr.currentBooklist?.items ?? null;
+				return self.bookDomain.currentBooklist?.items ?? null;
 			},
 			restoreBooklist(booklist: import("../../types/index.js").Booklist) {
 				self.restoreBooklist(booklist);
@@ -353,19 +375,19 @@ export class SidebarView extends ItemView {
 				return self.frontendAgent;
 			},
 			get currentIndexId() {
-				return self.bookMgr.currentIndexId;
+				return self.bookDomain.currentIndexId;
 			},
 			get currentPdfName() {
-				return self.bookMgr.currentPdfName;
+				return self.bookDomain.currentPdfName;
 			},
 			get currentDocDescription() {
-				return self.bookMgr.currentDocDescription;
+				return self.bookDomain.currentDocDescription;
 			},
 			get currentBookCoverUrl() {
-				return self.bookMgr.currentBookCoverUrl;
+				return self.bookDomain.currentBookCoverUrl;
 			},
 			get currentBookAuthor() {
-				return self.bookMgr.currentBookAuthor;
+				return self.bookDomain.currentBookAuthor;
 			},
 			get currentMarkdownFiles() {
 				return self.agentChatCtrl.currentMarkdownFiles;
@@ -383,10 +405,10 @@ export class SidebarView extends ItemView {
 				return self.sessionMgr.crossBookMode;
 			},
 			get currentBooklistBookIds() {
-				return self.bookMgr.currentBooklistBookIds;
+				return self.bookDomain.currentBooklistBookIds;
 			},
 			get indexes() {
-				return self.bookMgr.indexes;
+				return self.bookDomain.indexes;
 			},
 			get contextManager() {
 				return self.chatDocumentService;
@@ -413,7 +435,7 @@ export class SidebarView extends ItemView {
 				self.quoteManager.clearQuotes();
 			},
 			getDisplayName(name: string) {
-				return self.getDisplayName(name);
+				return self.bookDomain.getDisplayName(name);
 			},
 			initializeFrontendAgent() {
 				return self.initializeFrontendAgent();
@@ -425,11 +447,20 @@ export class SidebarView extends ItemView {
 				_copyToClipboard(text);
 			},
 			getBookshelfSummary() {
-				return self.bookMgr.buildBookshelfSummary() || undefined;
+				return self.bookDomain.getBookshelfSummary() || undefined;
 			},
 			preloadTTS(messageId: string, content: string) {
-				return self.preloadTTSPreview(messageId, content);
+				return self.ttsDomain.preloadPreview(messageId, content, {
+					indexId: self.bookDomain.currentIndexId || undefined,
+					pdfName: self.bookDomain.getDisplayName(self.bookDomain.currentPdfName || '') || undefined,
+					author: self.bookDomain.currentBookAuthor || undefined,
+				});
 			},
+		});
+		this.sessionDomain = new SessionDomain({
+			sessionManager: this.sessionMgr,
+			agentChatController: this.agentChatCtrl,
+			eventBus: this.eventBus,
 		});
 		this.bookMgr = new BookManager({
 			get app() {
@@ -472,6 +503,15 @@ export class SidebarView extends ItemView {
 				return self.initializeFrontendAgent();
 			},
 		});
+		this.bookDomain = new BookDomain({
+			app: this.app,
+			plugin: this.plugin,
+			eventBus: this.eventBus,
+			bookManager: this.bookMgr,
+		});
+		this.eventBus.on("book:changed", (context) => {
+			log("[SidebarView] book:changed", context);
+		});
 	}
 
 	getViewType() {
@@ -496,7 +536,7 @@ export class SidebarView extends ItemView {
 	 * @returns 是否存在章节文件
 	 */
 	private async checkBookChaptersExist(pdfName: string): Promise<boolean> {
-		return this.bookMgr.checkBookChaptersExist(pdfName);
+		return this.bookDomain.checkBookChaptersExist(pdfName);
 	}
 
 	/**
@@ -517,7 +557,7 @@ export class SidebarView extends ItemView {
 	private async findBookDirectoryByIndexId(
 		indexId: string,
 	): Promise<{ dirName: string; author?: string; bookName?: string } | null> {
-		return this.bookMgr.findBookDirectoryByIndexId(indexId);
+		return this.bookDomain.findBookDirectoryByIndexId(indexId);
 	}
 
 	/**
@@ -526,28 +566,28 @@ export class SidebarView extends ItemView {
 	 */
 	public async selectIndex(indexId: string): Promise<void> {
 		// 选书时退出书单/阅读顾问模式
-		if (this.sessionMgr.crossBookMode) {
-			this.sessionMgr.crossBookMode = false;
+		if (this.sessionDomain.crossBookMode) {
+			this.sessionDomain.crossBookMode = false;
 		}
-		if (this.sessionMgr.generalChatMode) {
-			this.sessionMgr.generalChatMode = false;
+		if (this.sessionDomain.generalChatMode) {
+			this.sessionDomain.generalChatMode = false;
 		}
-		await this.bookMgr.selectIndex(indexId);
+		await this.bookDomain.selectIndex(indexId);
 	}
 
 	public async selectBooklist(booklist: Booklist): Promise<void> {
-		this.sessionMgr.crossBookMode = true;
+		this.sessionDomain.crossBookMode = true;
 		// 补全 items（历史书单不含 items）
 		if (!booklist.items || booklist.items.length === 0) {
 			const items = booklist.bookIds.map((id) => {
-				const idx = this.bookMgr.indexes.find((i) => i.id === id);
+				const idx = this.bookDomain.indexes.find((i) => i.id === id);
 				let name = idx?.pdf_name || id;
 				name = stripFileExtension(name);
 				return { id, name, author: idx?.author };
 			});
 			booklist = { ...booklist, items };
 		}
-		await this.bookMgr.selectBooklist(booklist);
+		await this.bookDomain.selectBooklist(booklist);
 	}
 
 	/** 重新进入历史书单：恢复已有会话，无会话则新建 */
@@ -555,7 +595,7 @@ export class SidebarView extends ItemView {
 		// 补全 items
 		if (!booklist.items || booklist.items.length === 0) {
 			const items = booklist.bookIds.map((id) => {
-				const idx = this.bookMgr.indexes.find((i) => i.id === id);
+				const idx = this.bookDomain.indexes.find((i) => i.id === id);
 				let name = idx?.pdf_name || id;
 				name = stripFileExtension(name);
 				return { id, name, author: idx?.author };
@@ -563,18 +603,18 @@ export class SidebarView extends ItemView {
 			booklist = { ...booklist, items };
 		}
 
-		this.sessionMgr.crossBookMode = true;
+		this.sessionDomain.crossBookMode = true;
 
 		// 尝试恢复已有会话
 		const savedSessionId = this.plugin.settings.savedSessions?.[booklist.id];
 		warn(
-			`[reenterBooklist DIAG] booklist.id=${booklist.id}, bookIds=${JSON.stringify(booklist.bookIds)}, savedSessionId=${savedSessionId}, crossBookMode=${this.sessionMgr.crossBookMode}`,
+			`[reenterBooklist DIAG] booklist.id=${booklist.id}, bookIds=${JSON.stringify(booklist.bookIds)}, savedSessionId=${savedSessionId}, crossBookMode=${this.sessionDomain.crossBookMode}`,
 		);
 		if (savedSessionId) {
 			// 设置 booklist 状态（不创建新会话）
-			this.bookMgr.restoreBooklist(booklist);
+			this.bookDomain.restoreBooklist(booklist);
 			warn(
-				`[reenterBooklist DIAG] after restoreBooklist: _currentBooklist.bookIds=${JSON.stringify(this.bookMgr.currentBooklistBookIds)}`,
+				`[reenterBooklist DIAG] after restoreBooklist: _currentBooklist.bookIds=${JSON.stringify(this.bookDomain.currentBooklistBookIds)}`,
 			);
 			this.plugin.settings.lastCrossBookMode = true;
 			this.plugin.settings.lastActiveBooklistId = booklist.id;
@@ -585,33 +625,33 @@ export class SidebarView extends ItemView {
 			}
 
 			const restored =
-				await this.sessionMgr.restoreFromSessionStore(savedSessionId);
+				await this.sessionDomain.restoreSession(savedSessionId);
 			if (restored) {
-				this.sessionMgr.sessionId = savedSessionId;
+				this.sessionDomain.sessionId = savedSessionId;
 				return;
 			}
 		}
 
 		// 无已有会话，走正常 selectBooklist
-		await this.bookMgr.selectBooklist(booklist);
+		await this.bookDomain.selectBooklist(booklist);
 	}
 
 	public exitBooklist(): void {
-		this.bookMgr.clearBooklist();
-		this.sessionMgr.crossBookMode = false;
+		this.bookDomain.clearBooklist();
+		this.sessionDomain.crossBookMode = false;
 	}
 
 	public restoreBooklist(booklist: Booklist): void {
 		// 补全 items：优先用已存的 bookNames，fallback 到 indexes 查找
 		const items = booklist.bookIds.map((id, i) => {
-			const idx = this.bookMgr.indexes.find((ix) => ix.id === id);
+			const idx = this.bookDomain.indexes.find((ix) => ix.id === id);
 			const name = stripFileExtension(
 				idx?.pdf_name || booklist.bookNames?.[i] || id,
 			);
 			return { id, name, author: idx?.author };
 		});
 		const restored = { ...booklist, items };
-		this.bookMgr.restoreBooklist(restored);
+		this.bookDomain.restoreBooklist(restored);
 	}
 
 	/**
@@ -623,17 +663,17 @@ export class SidebarView extends ItemView {
 	 * - 只有用户手动点击按钮才能卸载文档
 	 */
 	private async autoSyncCurrentChapter(): Promise<void> {
-		if (!this.chatDocumentService || !this.bookMgr.currentPdfName) return;
+		if (!this.chatDocumentService || !this.bookDomain.currentPdfName) return;
 
 		const activeFile = this.app.workspace.getActiveFile();
 		if (!activeFile || activeFile.extension !== "md") return;
 
 		// 检查当前文件是否属于正在阅读的书籍
-		const bookPath = `DeepReader/${this.bookMgr.currentPdfName}/`;
+		const bookPath = `DeepReader/${this.bookDomain.currentPdfName}/`;
 		if (!activeFile.path.startsWith(bookPath)) return;
 
 		// 排除书籍主文件（只加载章节文件）
-		if (activeFile.path === `${bookPath}${this.bookMgr.currentPdfName}.md`)
+		if (activeFile.path === `${bookPath}${this.bookDomain.currentPdfName}.md`)
 			return;
 
 		// 检查当前章节是否已在上下文中
@@ -660,16 +700,16 @@ export class SidebarView extends ItemView {
 	 * 获取当前选中的索引 ID
 	 */
 	public getCurrentIndexId(): string | null {
-		return this.bookMgr.currentIndexId;
+		return this.bookDomain.currentIndexId;
 	}
 
 	public getCurrentBooklistId(): string | null {
-		return this.bookMgr.currentBooklist?.id ?? null;
+		return this.bookDomain.currentBooklist?.id ?? null;
 	}
 
 	/** 索引列表（供 main.ts 等外部调用者使用） */
 	get indexes(): import("../../types/index.js").IndexListItem[] {
-		return this.bookMgr.indexes;
+		return this.bookDomain.indexes;
 	}
 
 	public async notifyHighlight(text: string): Promise<void> {
@@ -689,10 +729,10 @@ export class SidebarView extends ItemView {
 	 * 通过书名选择索引（自动切换时使用）
 	 */
 	public async selectBookByName(bookName: string): Promise<void> {
-		if (this.sessionMgr.crossBookMode) {
-			this.sessionMgr.crossBookMode = false;
+		if (this.sessionDomain.crossBookMode) {
+			this.sessionDomain.crossBookMode = false;
 		}
-		await this.bookMgr.selectBookByName(bookName);
+		await this.bookDomain.selectBookByName(bookName);
 	}
 
 	/**
@@ -700,7 +740,7 @@ export class SidebarView extends ItemView {
 	 */
 	private createReadingTopbar(container: HTMLElement) {
 		this.readingTopbar = new ReadingTopbar({
-			onOpenLibrary: () => this.bookMgr.openLibrary(),
+			onOpenLibrary: () => this.bookDomain.openLibrary(),
 			onOpenSettings: () => {
 				// 打开设置并定位到 DeepPDF 插件
 				const setting = (this.app as any).setting;
@@ -715,12 +755,12 @@ export class SidebarView extends ItemView {
 				const opened = await service.openMostRecent();
 				if (!opened) {
 					// 无最近阅读历史：fallback 到书库
-					this.bookMgr.openLibrary();
+					this.bookDomain.openLibrary();
 				}
 			},
 			onExitBooklist: () => this.exitBooklist(),
 			onBooklistRename: (newName: string) => {
-				this.bookMgr.renameBooklist(newName);
+				this.bookDomain.renameBooklist(newName);
 			},
 			onToggleReadingTTS: () => this.toggleReadingTTS(),
 		});
@@ -763,7 +803,7 @@ export class SidebarView extends ItemView {
 				for (const doc of documents) {
 					files[doc.path] = doc.content;
 				}
-				this.agentChatCtrl.currentMarkdownFiles = files;
+				this.sessionDomain.currentMarkdownFiles = files;
 
 				// 更新加载按钮的激活状态（检查当前活跃文件是否已加载）
 				const activeFile = this.app.workspace.getActiveFile();
@@ -803,11 +843,11 @@ export class SidebarView extends ItemView {
 		await this.loadIndexes();
 
 		// 恢复跨书籍模式状态
-		await this.sessionMgr.restoreCrossBookMode();
+		await this.sessionDomain.restoreCrossBookMode();
 
 		// 无书时自动进入阅读顾问模式
-		if (!this.bookMgr.currentIndexId && !this.sessionMgr.crossBookMode) {
-			await this.sessionMgr.restoreGeneralChatSession();
+		if (!this.bookDomain.currentIndexId && !this.sessionDomain.crossBookMode) {
+			await this.sessionDomain.restoreGeneralChatSession();
 		}
 
 		// 设置滚动监听：滚动时隐藏输入框
@@ -821,15 +861,15 @@ export class SidebarView extends ItemView {
 				log("[DeepPDF] Received select-index event:", indexId);
 
 				// 如果当前处于跨书籍模式，先切换回单书籍模式
-				if (this.sessionMgr.crossBookMode) {
+				if (this.sessionDomain.crossBookMode) {
 					log("[DeepPDF] 从阅读入口点击，自动关闭跨书籍模式");
-					this.sessionMgr.crossBookMode = false;
+					this.sessionDomain.crossBookMode = false;
 					this.readingTopbar?.setCrossBookMode(false);
 					this.plugin.settings.lastCrossBookMode = false;
 					await this.plugin.saveSettings();
 
 					// 取消任何正在进行的流式请求，避免旧回调更新新消息列表
-					this.agentChatCtrl.cancelActiveStream();
+					this.sessionDomain.cancelStream();
 
 					// 清空跨书籍模式的消息，准备加载单书籍会话
 					this.messageList?.clear();
@@ -995,6 +1035,7 @@ export class SidebarView extends ItemView {
 	 * 创建消息列表区
 	 */
 	private createMessageListSection(container: HTMLElement) {
+		const self = this;
 		const section = container.createDiv({
 			cls: "deeppdf-message-list-section",
 		});
@@ -1003,26 +1044,26 @@ export class SidebarView extends ItemView {
 		this.messageList = new MessageList(
 			{
 				onRegenerate: (messageId: string) => {
-					this.agentChatCtrl.handleRegenerate(messageId);
+					this.sessionDomain.handleRegenerate(messageId);
 				},
 				onCopy: (messageId: string) => {
-					this.agentChatCtrl.handleCopy(messageId);
+					this.sessionDomain.handleCopy(messageId);
 				},
 				onQuestionClick: (question: string) => {
-					this.agentChatCtrl.handleQuestionClick(question);
+					this.sessionDomain.handleQuestionClick(question);
 				},
 				onGenerateOutline: () => {
-					this.agentChatCtrl.handleGenerateOutline();
+					this.sessionDomain.handleGenerateOutline();
 				},
 				onGuidanceClick: (type: GuidanceType) => {
-					this.agentChatCtrl.handleGuidanceClick(type);
+					this.sessionDomain.handleGuidanceClick(type);
 				},
 				onExcerpt: (
 					messageId: string,
 					content: ExcerptContent,
 					metadata: ExcerptMetadata,
 				) => {
-					this.agentChatCtrl.handleExcerpt(messageId, content, metadata);
+					this.sessionDomain.handleExcerpt(messageId, content, metadata);
 				},
 				onQuote: (
 					metadata: import("../../components/chat-input/chat-input.js").QuoteMetadata,
@@ -1030,19 +1071,23 @@ export class SidebarView extends ItemView {
 					this.quoteManager.handleQuoteSelection(metadata);
 				},
 				onDelete: (messageId: string) => {
-					this.agentChatCtrl.handleDeleteMessagePair(messageId);
+					this.sessionDomain.handleDeleteMessagePair(messageId);
 				},
 				onTTS: async (messageId: string, content: string) => {
 					// 喇叭按钮始终直接朗读原文，不走摘要模式
-					this.ttsCtrl.handleTTS(messageId, content);
+					this.ttsDomain.speak(messageId, content);
 				},
 				onStreamingEnd: (messageId: string, content: string) => {
-					this.preloadTTSPreview(messageId, content);
+					this.ttsDomain.preloadPreview(messageId, content, {
+						indexId: this.bookDomain.currentIndexId || undefined,
+						pdfName: this.bookDomain.getDisplayName(this.bookDomain.currentPdfName || '') || undefined,
+						author: this.bookDomain.currentBookAuthor || undefined,
+					});
 				},
 				getCurrentBookInfo: () => ({
-					coverUrl: this.bookMgr.currentBookCoverUrl,
-					author: this.bookMgr.currentBookAuthor,
-					bookName: this.bookMgr.currentPdfName,
+					coverUrl: this.bookDomain.currentBookCoverUrl,
+					author: this.bookDomain.currentBookAuthor,
+					bookName: this.bookDomain.currentPdfName,
 				}),
 			},
 			this.app,
@@ -1052,6 +1097,21 @@ export class SidebarView extends ItemView {
 		if (messageListEl) {
 			section.appendChild(messageListEl);
 		}
+
+		// 创建 ChatPresenter，将 domain 事件映射到 UI
+		this.chatPresenter = new ChatPresenter({
+			eventBus: this.eventBus,
+			get messageList() {
+				return self.messageList;
+			},
+			get chatInput() {
+				return self.chatInput;
+			},
+			get readingTopbar() {
+				return self.readingTopbar;
+			},
+		});
+
 		// 注意：引用卡片容器已移至 createChatInputSection
 	}
 
@@ -1071,11 +1131,11 @@ export class SidebarView extends ItemView {
 			placeholder: Platform.isMobile ? "长按说话，或输入文字" : "输入以开始对话...",
 			onSend: (message: string, _chatInputQuotes) => {
 				// 使用 sidebar 自己管理的引用列表（而非 ChatInput 内部的空数组）
-				this.agentChatCtrl.sendMessage(message, this.quoteManager.getQuotes());
+				this.sessionDomain.sendUserMessage(message, this.quoteManager.getQuotes());
 			},
 			app: this.app,
 			onStop: () => {
-				this.agentChatCtrl.stopGeneration();
+				this.sessionDomain.stopGeneration();
 			},
 			onHeightChange: (height: number) => {
 				// 动态调整消息列表的底部间距（包含引用卡片高度）
@@ -1155,7 +1215,7 @@ export class SidebarView extends ItemView {
 	private stopVoiceRecording(): void {
 		if (!this.pushToTalkCtrl) return;
 
-		const bookContext = this.bookMgr.getCurrentBookInfo();
+		const bookContext = this.bookDomain.getCurrentBookInfo();
 		this.pushToTalkCtrl.stop(bookContext ? {
 			title: bookContext.title || '未知书籍',
 			description: bookContext.docDescription || undefined,
@@ -1209,7 +1269,7 @@ export class SidebarView extends ItemView {
 		if (textarea) {
 			const handleTouchEnd = () => {
 				textarea.removeEventListener('touchend', handleTouchEnd);
-				const bookInfo = this.bookMgr.getCurrentBookInfo();
+				const bookInfo = this.bookDomain.getCurrentBookInfo();
 				this.pushToTalkCtrl?.stop(bookInfo ? {
 					title: bookInfo.title || '未知书籍',
 					description: bookInfo.docDescription || undefined,
@@ -1358,14 +1418,14 @@ export class SidebarView extends ItemView {
 	 * 切换深度思考模式
 	 */
 	public async toggleDeepSearchMode(): Promise<void> {
-		this.sessionMgr.useLLMTreeSearch = !this.sessionMgr.useLLMTreeSearch;
-		const modeText = this.sessionMgr.useLLMTreeSearch
+		this.sessionDomain.useLLMTreeSearch = !this.sessionDomain.useLLMTreeSearch;
+		const modeText = this.sessionDomain.useLLMTreeSearch
 			? "深度思考模式已开启"
 			: "深度思考模式已关闭";
 		new Notice(modeText);
 		log(`[DeepPDF] toggleDeepSearchMode: ${modeText}`);
 		// 持久化设置
-		this.plugin.settings.lastDeepSearchMode = this.sessionMgr.useLLMTreeSearch;
+		this.plugin.settings.lastDeepSearchMode = this.sessionDomain.useLLMTreeSearch;
 		await this.plugin.saveSettings();
 	}
 
@@ -1373,7 +1433,7 @@ export class SidebarView extends ItemView {
 
 	/** 从外部发送消息 */
 	public async sendMessageWithInput(message: string): Promise<void> {
-		await this.agentChatCtrl.sendMessageWithInput(message);
+		await this.sessionDomain.sendUserMessageWithInput(message);
 	}
 
 	/**
@@ -1395,7 +1455,7 @@ export class SidebarView extends ItemView {
 	}
 
 	async loadIndexes(): Promise<void> {
-		await this.bookMgr.loadIndexes();
+		await this.bookDomain.loadIndexes();
 	}
 	/**
 	 * 处理 TTS 播放/暂停请求
@@ -1413,33 +1473,6 @@ export class SidebarView extends ItemView {
 		logError("[DeepPDF]", message);
 	}
 
-	/**
-	 * 预加载 TTS 预览：AI 回复流式结束后，预生成前 250 字语音
-	 */
-	private async preloadTTSPreview(messageId: string, content: string): Promise<void> {
-		if (!this.ttsService) {
-			// 首次流式结束即初始化 TTS，为预加载做准备
-			this.ttsCtrl.ensureService();
-			this.ttsService = this.ttsCtrl.getTtsService();
-			if (!this.ttsService) return;
-		}
-
-		try {
-			log(`[TTS] Preload preview started for message ${messageId}`);
-			const context = {
-				bookId: this.bookMgr.currentIndexId || undefined,
-				bookTitle: this.getDisplayName(this.bookMgr.currentPdfName || '') || undefined,
-				bookAuthor: this.bookMgr.currentBookAuthor || undefined,
-				memoryContent: await new MemoryStore(this.app).readLongTermMemory() || undefined,
-			};
-
-			await this.ttsService.preloadPreview(messageId, content, context);
-			log(`[TTS] Preload preview completed for message ${messageId}`);
-		} catch (err) {
-			log(`[TTS] Preload preview failed for message ${messageId}:`, err);
-		}
-	}
-
 	async onClose() {
 		try {
 			// 清理移动端键盘适配监听
@@ -1449,16 +1482,26 @@ export class SidebarView extends ItemView {
 			}
 			this.chatContainerEl = null;
 
-			if (this.agentChatCtrl.currentStreamController) {
-				this.agentChatCtrl.cancelActiveStream();
+			if (this.sessionDomain.currentStreamController) {
+				this.sessionDomain.cancelStream();
 			}
 
 			// 清理 TTS 服务
-			if (this.ttsCtrl) {
+			if (this.ttsDomain) {
 				try {
-					this.ttsCtrl.destroy();
+					this.ttsDomain.destroy();
 				} catch (e) {
 					warn("[DeepPDF] Error stopping TTS service:", e);
+				}
+			}
+
+			// 清理 Presenter
+			if (this.chatPresenter) {
+				try {
+					this.chatPresenter.dispose();
+					this.chatPresenter = null;
+				} catch (e) {
+					warn("[DeepPDF] Error disposing chat presenter:", e);
 				}
 			}
 
@@ -1535,6 +1578,6 @@ export class SidebarView extends ItemView {
 		page_count: number;
 		docDescription: string | null;
 	} {
-		return this.bookMgr.getCurrentBookInfo();
+		return this.bookDomain.getCurrentBookInfo();
 	}
 }

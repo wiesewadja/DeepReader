@@ -7,6 +7,7 @@
 
 import { type App, TFile } from "obsidian";
 import { EventBus } from "../event-bus.js";
+import type { SidebarEventMap } from "../events.js";
 
 export interface LoadedDocument {
 	/** File path */
@@ -26,10 +27,6 @@ export interface LoadedDocument {
 export interface ChatDocumentServiceOptions {
 	app: App;
 	eventBus: EventBus<SidebarEventMap>;
-}
-
-export interface SidebarEventMap {
-	"chat:documents-changed": { documents: LoadedDocument[] };
 }
 
 export class ChatDocumentService {
