@@ -55,8 +55,13 @@ export class TTSController {
 	private isAutoPageTurn = false;
 	/** 上次朗读的段落索引（供暂停后恢复使用） */
 	private lastReadParagraphIndex = 0;
-	/** 下一页首段音频合成的 Promise 预存 */
-	private nextPageFirstStreamPromise: Promise<AsyncGenerator<ArrayBuffer>> | null = null;
+	/** 已预取的下页音频流（进入该页时优先使用） */
+	private pendingPrefetch: {
+		pageNumber: number;
+		items: { text: string; buffered: ArrayBuffer[]; drained: Promise<void>; failed: boolean }[];
+	} | null = null;
+	/** 是否正在后台预取，防止重复触发 */
+	private isPrefetching = false;
 
 	// ── 流式消息朗读状态 ──────────────────────────
 	private messageAbort: AbortController | null = null;
@@ -106,7 +111,8 @@ export class TTSController {
 		this.currentSource = 'message';
 		this.emitReadingTTSState('idle');
 		this.host.clearHighlight?.();
-		this.nextPageFirstStreamPromise = null;
+		this.pendingPrefetch = null;
+		this.isPrefetching = false;
 
 		if (resetIndex) {
 			this.lastReadParagraphIndex = 0;
@@ -490,7 +496,10 @@ export class TTSController {
 			const hasNext = this.host.goToNextPage?.() ?? false;
 
 			if (hasNext) {
-				await sleep(500);
+				// 等 nextPage 的 smooth scroll + column rerender 完成（page-paginator 的
+				// programmaticScrollTimer 窗口 ~800ms）。空页（如纯图片）跳过时若翻页过快，
+				// 前一页未居中就翻下一页，两次翻页动画叠加导致两页各显示一半。
+				await sleep(800);
 				await this.readCurrentPage(player);
 			} else {
 				this.isAutoPageTurn = false;
@@ -507,6 +516,17 @@ export class TTSController {
 			return;
 		}
 
+		const currentPageNumber = this.host.getCurrentPage?.() ?? 1;
+		const isDual = this.host.isDualPageMode?.() ?? false;
+
+		// 取出为本页准备好的预取缓存，并立刻启动下一页的后台预取
+		let pagePrefetch = this.pendingPrefetch;
+		this.pendingPrefetch = null;
+		if (pagePrefetch && pagePrefetch.pageNumber !== currentPageNumber) {
+			pagePrefetch = null;
+		}
+		this.prefetchNextPage(currentPageNumber, isDual);
+
 		this.emitReadingTTSState('playing');
 
 		try {
@@ -517,35 +537,56 @@ export class TTSController {
 				texts.push(t);
 			}
 
-			// 启动当前段（从 lastReadParagraphIndex 开始）的 stream
-			let currentStream: AsyncGenerator<ArrayBuffer> | null = null;
-			if (this.lastReadParagraphIndex === 0 && this.nextPageFirstStreamPromise) {
-				currentStream = await this.nextPageFirstStreamPromise;
-				this.nextPageFirstStreamPromise = null;
-			} else if (this.lastReadParagraphIndex < texts.length && texts[this.lastReadParagraphIndex]) {
-				currentStream = this.readingClient.synthesizeStream(
-					texts[this.lastReadParagraphIndex],
+			const startIdx = this.lastReadParagraphIndex;
+
+			// makeStream：懒 generator（流式合成，首 chunk 即播——即时段用，避免等整段卡顿）
+			const makeStream = (text: string): AsyncGenerator<ArrayBuffer> =>
+				this.readingClient!.synthesizeStream(
+					text,
 					{ voiceProfile: { voice: '冰糖' } },
 					this.readingAbort?.signal,
 				);
-			}
+			// prefetchSeg：后台 for-await 把整段合成到 buffer（下一段/跨页预取用，段间不卡）。
+			// failed 标志：gen 抛错时不播残缺 buffer，由消费方流式重试（避免静默播半句）
+			const prefetchSeg = (text: string) => {
+				const seg = { text, buffered: [] as ArrayBuffer[], drained: Promise.resolve(), failed: false };
+				const gen = makeStream(text);
+				seg.drained = (async () => {
+					try { for await (const chunk of gen) seg.buffered.push(chunk); }
+					catch { seg.failed = true; }
+				})();
+				return seg;
+			};
+			// 取段：命中翻页预取则复用 Seg，否则返回懒流式 generator（即时段首 chunk 即播）
+			type Item = { buffered: ArrayBuffer[]; drained: Promise<void>; failed: boolean } | { gen: AsyncGenerator<ArrayBuffer> };
+			const getSegment = (idx: number): Item | null => {
+				if (idx < 0 || idx >= texts.length || !texts[idx]) return null;
+				if (
+					startIdx === 0 &&
+					pagePrefetch &&
+					pagePrefetch.pageNumber === currentPageNumber &&
+					idx < pagePrefetch.items.length &&
+					pagePrefetch.items[idx].text === texts[idx]
+				) {
+					return pagePrefetch.items[idx];
+				}
+				return { gen: makeStream(texts[idx]) };
+			};
+			// current：即时段流式（不卡）；next：prefetchSeg 预合成（段间不卡）
+			let current = getSegment(startIdx);
+			let next = startIdx + 1 < texts.length ? prefetchSeg(texts[startIdx + 1]) : null;
 
-			// 预取下一段的 stream（如果存在）
-			let nextStreamPromise: Promise<AsyncGenerator<ArrayBuffer>> | null = null;
-			if (this.lastReadParagraphIndex + 1 < texts.length && texts[this.lastReadParagraphIndex + 1]) {
-				nextStreamPromise = Promise.resolve(this.readingClient.synthesizeStream(
-					texts[this.lastReadParagraphIndex + 1],
-					{ voiceProfile: { voice: '冰糖' } },
-					this.readingAbort?.signal,
-				));
-			}
-
-			for (let i = this.lastReadParagraphIndex; i < paragraphs.length; i++) {
+			for (let i = startIdx; i < paragraphs.length; i++) {
 				if (this.currentSource !== 'reading') {
 					this.lastReadParagraphIndex = i;
 					return;
 				}
-				this.lastReadParagraphIndex = i; // 记录当前正在读的段落索引，供暂停后恢复
+				this.lastReadParagraphIndex = i;
+
+				// 剩余时间不多时，确保下一页预取已启动
+				if (!this.isPrefetching && player.endTime - player.currentTime < 5000) {
+					this.prefetchNextPage(currentPageNumber, isDual);
+				}
 
 				// 1. 记录本段音频的计划开始时间 (当前已调度的 endTime)
 				const paragraphStartTime = player.endTime;
@@ -553,51 +594,31 @@ export class TTSController {
 				// 2. 异步在后台等待到计划开始时间再触发高亮，不阻塞流式排队
 				this.scheduleHighlight(paragraphs[i].element, paragraphStartTime, player);
 
-				// 3. 播放当前段的 stream（已预取或即时启动）并完全排入 player
-				const stream = currentStream!;
-				for await (const chunk of stream) {
-					player.enqueue(chunk);
-				}
-
-				// 当前段播完，把预取的下一段升为 current
-				if (nextStreamPromise) {
-					currentStream = await nextStreamPromise;
-					nextStreamPromise = null;
-
-					// 预取下下段
-					const nextIdx = i + 2;
-					if (nextIdx < texts.length && texts[nextIdx]) {
-						nextStreamPromise = Promise.resolve(this.readingClient.synthesizeStream(
-							texts[nextIdx],
-							{ voiceProfile: { voice: '冰糖' } },
-							this.readingAbort?.signal,
-						));
-					}
-				} else {
-					currentStream = null;
-					// 如果已到本页最后一段，在后台预取下一页的第一段，消除翻页停顿
-					if (i === paragraphs.length - 1) {
-						const isDual = this.host.isDualPageMode?.() ?? false;
-						const nextPageNumber = (this.host.getCurrentPage?.() ?? 1) + (isDual ? 2 : 1);
-						const nextPageParagraphs = this.host.getPageParagraphs?.(nextPageNumber) || [];
-						if (nextPageParagraphs.length > 0 && nextPageParagraphs[0].text) {
-							const cleanText = preprocessForTTS(nextPageParagraphs[0].text).trim();
-							if (cleanText && this.readingClient) {
-								this.nextPageFirstStreamPromise = Promise.resolve(this.readingClient.synthesizeStream(
-									cleanText,
-									{ voiceProfile: { voice: '冰糖' } },
-									this.readingAbort?.signal,
-								));
-							}
+				// 3. 播放当前段
+				if (current) {
+					if ('gen' in current) {
+						// 即时段：流式合成，首 chunk 即播
+						for await (const chunk of current.gen) player.enqueue(chunk);
+					} else {
+						// 预合成段：等后台合成完成；失败则流式重试（不播残缺 buffer）
+						await current.drained;
+						if (current.failed) {
+							for await (const chunk of makeStream(texts[i])) player.enqueue(chunk);
+						} else {
+							for (const chunk of current.buffered) player.enqueue(chunk);
 						}
 					}
 				}
+
+				// 下一段已 prefetchSeg 预合成，升为 current；再预取下下段
+				current = next;
+				next = i + 2 < texts.length ? prefetchSeg(texts[i + 2]) : null;
 			}
 
 			// 等待当前页的所有音频段落播放完毕，再触发翻页
 			const pageEndTime = player.endTime;
 			while (this.currentSource === 'reading' && player.currentTime < pageEndTime) {
-				await sleep(100);
+				await sleep(50);
 			}
 		} catch (err) {
 			throw err;
@@ -611,13 +632,47 @@ export class TTSController {
 			const hasNext = this.host.goToNextPage?.() ?? false;
 
 			if (hasNext) {
-				await sleep(300);
+				// 等 nextPage smooth scroll + column rerender（~800ms 窗口），否则 getPageParagraphs 拿旧页段落
+				await sleep(800);
 				await this.readCurrentPage(player);
 			} else {
 				this.isAutoPageTurn = false;
 				this.stopReading();
 				new Notice('朗读完毕');
 			}
+		}
+	}
+
+	/** 后台预取下一页前 N 段音频流 */
+	private prefetchNextPage(currentPageNumber: number, isDual: boolean): void {
+		if (!this.readingClient || !this.host.getPageParagraphs || this.isPrefetching) return;
+		this.isPrefetching = true;
+		try {
+			const nextPageNumber = currentPageNumber + (isDual ? 2 : 1);
+			const nextParagraphs = this.host.getPageParagraphs(nextPageNumber) || [];
+			if (nextParagraphs.length === 0) return;
+			const texts = nextParagraphs
+				.map(p => preprocessForTTS(p.text).trim())
+				.filter(t => t);
+			if (texts.length === 0) return;
+			// MAX_PREFETCH=1：限并发（current 合成 + next 预取 + 跨页首段预取 ≈ 3 并发），避免 TTS rate limit
+			const MAX_PREFETCH = 1;
+			const items = texts.slice(0, MAX_PREFETCH).map(text => {
+				const seg = { text, buffered: [] as ArrayBuffer[], drained: Promise.resolve(), failed: false };
+				const gen = this.readingClient!.synthesizeStream(
+					text,
+					{ voiceProfile: { voice: '冰糖' } },
+					this.readingAbort?.signal,
+				);
+				seg.drained = (async () => {
+					try { for await (const chunk of gen) seg.buffered.push(chunk); }
+					catch { seg.failed = true; }
+				})();
+				return seg;
+			});
+			this.pendingPrefetch = { pageNumber: nextPageNumber, items };
+		} finally {
+			this.isPrefetching = false;
 		}
 	}
 

@@ -878,7 +878,8 @@ export class ReadingModeService implements ScrollPatchService {
 						if (this.currentFile) {
 							this.recordPage(this.currentFile.path, page);
 						}
-						this.callbacks?.onStopReadingTTS?.();
+						// 清朗读高亮：用户手动滚动翻页时旧页高亮会挂在游离 DOM 节点；自动翻页也会清，重复无害
+						this.clearHighlight();
 					},
 					chapterName,
 					bookName: this.currentBookName,
