@@ -64,11 +64,120 @@ export class ChatPresenter {
 		);
 
 		this.unsubscribe.push(
-			this.eventBus.on("chat:user-message-added", () => {
+			this.eventBus.on("chat:user-message-added", (event) => {
+				const messageList = this.getMessageList();
+				messageList?.addMessage({
+					id: event.messageId,
+					role: "user",
+					content: event.content,
+					timestamp: new Date().toISOString(),
+				});
 				this.getChatInput()?.clear();
 				this.getChatInput()?.setDisabled(true);
 				this.getChatInput()?.setStreaming(true);
 				this.getReadingTopbar()?.setMascotExpression("curious");
+			}),
+		);
+
+		this.unsubscribe.push(
+			this.eventBus.on("chat:assistant-message-started", (event) => {
+				const messageList = this.getMessageList();
+				messageList?.addMessage({
+					id: event.messageId,
+					role: "assistant",
+					content: "",
+					timestamp: new Date().toISOString(),
+					isStreaming: true,
+					isAgentMessage: true,
+					isDiagramPlaceholder: event.isDiagramPlaceholder || false,
+					currentStatus: event.status,
+				});
+			}),
+		);
+
+		this.unsubscribe.push(
+			this.eventBus.on("chat:assistant-text-chunk", (event) => {
+				const messageList = this.getMessageList();
+				messageList?.updateMessage(event.messageId, {
+					content: event.content,
+					isStreaming: true,
+				});
+			}),
+		);
+
+		this.unsubscribe.push(
+			this.eventBus.on("chat:assistant-status-changed", (event) => {
+				const messageList = this.getMessageList();
+				messageList?.updateMessage(event.messageId, {
+					currentStatus: event.status,
+					isStreaming: true,
+				});
+			}),
+		);
+
+		this.unsubscribe.push(
+			this.eventBus.on("chat:assistant-message-completed", (event) => {
+				const messageList = this.getMessageList();
+				messageList?.updateMessage(event.messageId, {
+					content: event.content,
+					isStreaming: false,
+					currentStatus: undefined,
+					timestamp: new Date().toISOString(),
+				});
+				this.getReadingTopbar()?.setMascotExpression("happy");
+			}),
+		);
+
+		this.unsubscribe.push(
+			this.eventBus.on("chat:diagram-ready", (event) => {
+				const messageList = this.getMessageList();
+				messageList?.updateMessage(event.messageId, {
+					content: event.embed,
+					isDiagramPlaceholder: false,
+					currentStatus: undefined,
+					timestamp: new Date().toISOString(),
+				});
+			}),
+		);
+
+		this.unsubscribe.push(
+			this.eventBus.on("chat:diagram-failed", (event) => {
+				const messageList = this.getMessageList();
+				messageList?.updateMessage(event.messageId, {
+					content: `*图表生成失败：${event.reason}*`,
+					isDiagramPlaceholder: false,
+					currentStatus: undefined,
+					timestamp: new Date().toISOString(),
+				});
+			}),
+		);
+
+		this.unsubscribe.push(
+			this.eventBus.on("chat:error", (event) => {
+				const messageList = this.getMessageList();
+				messageList?.updateMessage(event.messageId, {
+					content: `*错误：${event.message}*`,
+					isStreaming: false,
+					currentStatus: undefined,
+					timestamp: new Date().toISOString(),
+				});
+			}),
+		);
+
+		this.unsubscribe.push(
+			this.eventBus.on("chat:history-restored", (event) => {
+				const messageList = this.getMessageList();
+				messageList?.clear();
+				for (const msg of event.messages) {
+					if (msg.role !== "user" && msg.role !== "assistant") continue;
+					messageList?.addMessage({
+						id: msg.timestamp || `restored-${Date.now()}`,
+						role: msg.role,
+						content: msg.content || "",
+						timestamp: msg.timestamp || new Date().toISOString(),
+						isAgentMessage: msg.role === "assistant",
+					});
+				}
 			}),
 		);
 

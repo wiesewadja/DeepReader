@@ -1,4 +1,5 @@
 import type { LoadedDocument } from "./services/chat-document-service.js";
+import type { ChatMessage } from "../../agent/types.js";
 
 /**
  * Per-SidebarView event vocabulary.
@@ -43,6 +44,7 @@ export interface UserMessageAddedEvent {
 export interface AssistantMessageStartedEvent {
 	messageId: string;
 	status?: string;
+	isDiagramPlaceholder?: boolean;
 }
 
 export interface AssistantTextChunkEvent {
@@ -96,4 +98,5 @@ export interface SidebarEventMap {
 	"chat:diagram-failed": DiagramFailedEvent;
 	"chat:error": ChatErrorEvent;
 	"chat:stream-stopped": StreamStoppedEvent;
+	"chat:history-restored": { messages: ChatMessage[] };
 }

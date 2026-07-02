@@ -3,135 +3,139 @@ import { SessionDomain } from "@/views/sidebar/domains/session-domain";
 import { EventBus } from "@/views/sidebar/event-bus";
 import type { SidebarEventMap } from "@/views/sidebar/events";
 
-function createMockSessionManager(overrides: Record<string, any> = {}) {
+// Mock SessionStore
+vi.mock("@/agent/session/index", () => {
 	return {
-		sessionId: "session-1",
-		sessionStore: null,
-		crossBookMode: false,
-		generalChatMode: false,
-		useLLMTreeSearch: false,
-		startNewSession: vi.fn(async () => {}),
-		restoreFromSessionStore: vi.fn(async () => true),
-		ensureSessionStore: vi.fn(async () => {}),
-		saveToCache: vi.fn(async () => {}),
-		maybeConsolidateMemory: vi.fn(async () => {}),
-		restoreCrossBookMode: vi.fn(async () => {}),
-		restoreGeneralChatSession: vi.fn(async () => {}),
-		...overrides,
+		SessionStore: vi.fn().mockImplementation(() => {
+			return {
+				create: vi.fn(async () => {}),
+				get: vi.fn(async () => ({ messages: [], lastConsolidated: 0 })),
+				appendMessage: vi.fn(async () => {}),
+				getLLMHistory: vi.fn(async () => []),
+				acquireLock: vi.fn(async () => {}),
+				releaseLock: vi.fn(() => {}),
+				updateLastConsolidated: vi.fn(async () => {}),
+			};
+		}),
 	};
-}
-
-function createMockAgentChatController(overrides: Record<string, any> = {}) {
-	return {
-		processing: false,
-		aiStreaming: false,
-		agentChatHistory: [],
-		currentMarkdownFiles: {},
-		currentStreamController: null,
-		sendMessage: vi.fn(async () => {}),
-		cancelActiveStream: vi.fn(() => {}),
-		stopGeneration: vi.fn(() => {}),
-		handleRegenerate: vi.fn(() => {}),
-		handleCopy: vi.fn(() => {}),
-		handleQuestionClick: vi.fn(() => {}),
-		handleGenerateOutline: vi.fn(() => {}),
-		handleGuidanceClick: vi.fn(() => {}),
-		handleExcerpt: vi.fn(() => {}),
-		handleDeleteMessagePair: vi.fn(() => {}),
-		...overrides,
-	};
-}
+});
 
 describe("SessionDomain", () => {
 	let eventBus: EventBus<SidebarEventMap>;
-	let sessionManager: ReturnType<typeof createMockSessionManager>;
-	let agentChatController: ReturnType<typeof createMockAgentChatController>;
+	let app: any;
+	let plugin: any;
+	let chatDocumentService: any;
+	let bookDomain: any;
+	let ttsDomain: any;
 
 	beforeEach(() => {
 		eventBus = new EventBus<SidebarEventMap>();
-		sessionManager = createMockSessionManager();
-		agentChatController = createMockAgentChatController();
+		app = {
+			workspace: { getActiveFile: vi.fn(() => null) },
+			metadataCache: { getFileCache: vi.fn(() => null), getFirstLinkpathDest: vi.fn(() => null) },
+			vault: { adapter: { getBasePath: vi.fn(() => "") } },
+		};
+		plugin = {
+			manifest: { id: "deepreader-dev" },
+			settings: { savedSessions: {}, autoTTS: false },
+			getFrontendAgent: vi.fn(async () => ({
+				chat: vi.fn(async (msg, ctx, callbacks) => {
+					callbacks.onContent("Hello from agent");
+					callbacks.onComplete();
+				}),
+				continueChat: vi.fn(async (history, msg, ctx, callbacks) => {
+					callbacks.onContent("Hello from agent continued");
+					callbacks.onComplete();
+				}),
+				getSystemPromptAsync: vi.fn(async () => "system prompt"),
+				getLLMClient: vi.fn(() => ({})),
+			})),
+		};
+		chatDocumentService = {
+			getLoadedDocumentsArray: vi.fn(() => []),
+			loadByPath: vi.fn(async () => null),
+		};
+		bookDomain = {
+			currentIndexId: "book-1",
+			currentPdfName: "test.pdf",
+			currentBookCoverUrl: "cover.png",
+			currentBookAuthor: "author",
+			currentDocDescription: "desc",
+			currentBooklistBookIds: [],
+			indexes: [],
+			getBookshelfSummary: vi.fn(() => "bookshelf summary"),
+		};
+		ttsDomain = {
+			speak: vi.fn(),
+		};
 	});
 
 	function createDomain(): SessionDomain {
 		return new SessionDomain({
-			sessionManager: sessionManager as any,
-			agentChatController: agentChatController as any,
+			app,
+			plugin,
 			eventBus,
+			chatDocumentService,
+			bookDomain,
+			ttsDomain,
 		});
 	}
 
-	it("proxies state accessors", () => {
+	it("manages properties and mode switch variables", () => {
 		const domain = createDomain();
-		expect(domain.sessionId).toBe("session-1");
 		expect(domain.crossBookMode).toBe(false);
-		expect(domain.isProcessing).toBe(false);
+		domain.crossBookMode = true;
+		expect(domain.crossBookMode).toBe(true);
+
+		expect(domain.generalChatMode).toBe(false);
+		domain.generalChatMode = true;
+		expect(domain.generalChatMode).toBe(true);
+
+		expect(domain.useLLMTreeSearch).toBe(false);
+		domain.useLLMTreeSearch = true;
+		expect(domain.useLLMTreeSearch).toBe(true);
 	});
 
-	it("emits chat:user-message-added when sending a user message", async () => {
+	it("streams user and assistant messages emitting appropriate events", async () => {
 		const domain = createDomain();
-		const handler = vi.fn();
-		eventBus.on("chat:user-message-added", handler);
+		const userAddedHandler = vi.fn();
+		const assistantStartedHandler = vi.fn();
+		const chunkHandler = vi.fn();
+		const completedHandler = vi.fn();
+		const stoppedHandler = vi.fn();
+
+		eventBus.on("chat:user-message-added", userAddedHandler);
+		eventBus.on("chat:assistant-message-started", assistantStartedHandler);
+		eventBus.on("chat:assistant-text-chunk", chunkHandler);
+		eventBus.on("chat:assistant-message-completed", completedHandler);
+		eventBus.on("chat:stream-stopped", stoppedHandler);
 
 		await domain.sendUserMessage("hello");
 
-		expect(handler).toHaveBeenCalledWith(
+		expect(userAddedHandler).toHaveBeenCalledWith(
 			expect.objectContaining({ content: "hello", role: "user" }),
 		);
-		expect(agentChatController.sendMessage).toHaveBeenCalledWith("hello", undefined);
+		expect(assistantStartedHandler).toHaveBeenCalled();
+		expect(chunkHandler).toHaveBeenCalledWith(
+			expect.objectContaining({ content: "Hello from agent continued" }),
+		);
+		expect(completedHandler).toHaveBeenCalledWith(
+			expect.objectContaining({ content: "Hello from agent continued" }),
+		);
+		expect(stoppedHandler).toHaveBeenCalledWith(
+			expect.objectContaining({ reason: "completed" }),
+		);
 	});
 
-	it("delegates cancelStream to AgentChatController and emits stream-stopped", () => {
+	it("stops active streaming on cancelStream and emits chat:stream-stopped", async () => {
 		const domain = createDomain();
-		const handler = vi.fn();
-		eventBus.on("chat:stream-stopped", handler);
+		const stoppedHandler = vi.fn();
+		eventBus.on("chat:stream-stopped", stoppedHandler);
 
 		domain.cancelStream();
 
-		expect(agentChatController.cancelActiveStream).toHaveBeenCalled();
-		expect(handler).toHaveBeenCalledWith(
+		expect(stoppedHandler).toHaveBeenCalledWith(
 			expect.objectContaining({ reason: "cancelled" }),
-		);
-	});
-
-	it("delegates session lifecycle to SessionManager", async () => {
-		const domain = createDomain();
-		await domain.startNewSession("book-1");
-		await domain.restoreSession("session-2");
-		await domain.saveToCache();
-
-		expect(sessionManager.startNewSession).toHaveBeenCalledWith("book-1");
-		expect(sessionManager.restoreFromSessionStore).toHaveBeenCalledWith("session-2");
-		expect(sessionManager.saveToCache).toHaveBeenCalled();
-	});
-
-	it("delegates message operations to AgentChatController", () => {
-		const domain = createDomain();
-		domain.handleRegenerate("msg-1");
-		domain.handleCopy("msg-1");
-		domain.handleQuestionClick("question");
-		domain.handleGenerateOutline();
-		domain.handleDeleteMessagePair("msg-1");
-
-		expect(agentChatController.handleRegenerate).toHaveBeenCalledWith("msg-1");
-		expect(agentChatController.handleCopy).toHaveBeenCalledWith("msg-1");
-		expect(agentChatController.handleQuestionClick).toHaveBeenCalledWith("question");
-		expect(agentChatController.handleGenerateOutline).toHaveBeenCalled();
-		expect(agentChatController.handleDeleteMessagePair).toHaveBeenCalledWith("msg-1");
-	});
-
-	it("emits chat:stream-stopped with reason 'error' and re-throws when sendMessage fails", async () => {
-		const domain = createDomain();
-		const handler = vi.fn();
-		eventBus.on("chat:stream-stopped", handler);
-
-		const testError = new Error("Send failed");
-		agentChatController.sendMessage.mockRejectedValue(testError);
-
-		await expect(domain.sendUserMessage("hello")).rejects.toThrow("Send failed");
-
-		expect(handler).toHaveBeenCalledWith(
-			expect.objectContaining({ reason: "error" }),
 		);
 	});
 });

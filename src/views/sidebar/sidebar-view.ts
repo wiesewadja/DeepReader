@@ -41,8 +41,6 @@ import { PDFFileSelectorModal } from "../../ui/pdf-file-selector.js";
 import { findBlockIdFromRange } from "../../utils/block-utils.js";
 import { Icons, getIcon } from "../../utils/icons.js";
 import { uiLog as log, warn, error as logError } from "../../utils/logger.js";
-import { LIBRARY_VIEW_TYPE } from "../library-view.js";
-import { AgentChatController } from "./agent-chat-controller.js";
 import { BookManager } from "./book-manager.js";
 import { BookDomain } from "./domains/book-domain.js";
 import { TTSDomain } from "./domains/tts-domain.js";
@@ -53,7 +51,6 @@ import type { SidebarEventMap } from "./events.js";
 import { ChatPresenter } from "./presenters/chat-presenter.js";
 import { QuoteManager } from "./quote-manager.js";
 import { copyToClipboard as _copyToClipboard } from "./search-utils.js";
-import { SessionManager } from "./session-manager.js";
 import { TTSController } from "./tts-controller.js";
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
@@ -88,8 +85,6 @@ export class SidebarView extends ItemView {
 	private quoteManager: QuoteManager;
 	private ttsCtrl: TTSController;
 	private ttsDomain: TTSDomain;
-	private sessionMgr: SessionManager;
-	private agentChatCtrl: AgentChatController;
 	private sessionDomain: SessionDomain;
 	private bookMgr: BookManager;
 	private bookDomain: BookDomain;
@@ -300,167 +295,13 @@ export class SidebarView extends ItemView {
 			eventBus: this.eventBus,
 			ttsController: this.ttsCtrl,
 		});
-		this.sessionMgr = new SessionManager({
-			get app() {
-				return self.app;
-			},
-			get plugin() {
-				return self.plugin;
-			},
-			get messageList() {
-				return self.messageList;
-			},
-			get readingTopbar() {
-				return self.readingTopbar;
-			},
-			get contextManager() {
-				return self.chatDocumentService;
-			},
-			get frontendAgent() {
-				return self.frontendAgent;
-			},
-			get currentIndexId() {
-				return self.bookDomain.currentIndexId;
-			},
-			get currentPdfName() {
-				return self.bookDomain.currentPdfName;
-			},
-			get currentBookCoverUrl() {
-				return self.bookDomain.currentBookCoverUrl;
-			},
-			get currentBookAuthor() {
-				return self.bookDomain.currentBookAuthor;
-			},
-			get agentChatHistory() {
-				return self.agentChatCtrl.agentChatHistory;
-			},
-			setAgentChatHistory(
-				history: import("../../agent/types.js").ChatMessage[],
-			) {
-				self.agentChatCtrl.agentChatHistory = history;
-			},
-			get isProcessing() {
-				return self.agentChatCtrl?.processing ?? false;
-			},
-			get isAiStreaming() {
-				return self.agentChatCtrl?.aiStreaming ?? false;
-			},
-			cancelActiveStream() {
-				self.agentChatCtrl?.cancelActiveStream();
-			},
-			initializeFrontendAgent() {
-				return self.initializeFrontendAgent();
-			},
-			get currentBooklistItems() {
-				return self.bookDomain.currentBooklist?.items ?? null;
-			},
-			restoreBooklist(booklist: import("../../types/index.js").Booklist) {
-				self.restoreBooklist(booklist);
-			},
-		});
-		this.agentChatCtrl = new AgentChatController({
-			get app() {
-				return self.app;
-			},
-			get plugin() {
-				return self.plugin;
-			},
-			get messageList() {
-				return self.messageList;
-			},
-			get chatInput() {
-				return self.chatInput;
-			},
-			get frontendAgent() {
-				return self.frontendAgent;
-			},
-			get currentIndexId() {
-				return self.bookDomain.currentIndexId;
-			},
-			get currentPdfName() {
-				return self.bookDomain.currentPdfName;
-			},
-			get currentDocDescription() {
-				return self.bookDomain.currentDocDescription;
-			},
-			get currentBookCoverUrl() {
-				return self.bookDomain.currentBookCoverUrl;
-			},
-			get currentBookAuthor() {
-				return self.bookDomain.currentBookAuthor;
-			},
-			get currentMarkdownFiles() {
-				return self.agentChatCtrl.currentMarkdownFiles;
-			},
-			get useLLMTreeSearch() {
-				return self.sessionMgr.useLLMTreeSearch;
-			},
-			get sessionId() {
-				return self.sessionMgr.sessionId;
-			},
-			get sessionStore() {
-				return self.sessionMgr.sessionStore;
-			},
-			get crossBookMode() {
-				return self.sessionMgr.crossBookMode;
-			},
-			get currentBooklistBookIds() {
-				return self.bookDomain.currentBooklistBookIds;
-			},
-			get indexes() {
-				return self.bookDomain.indexes;
-			},
-			get contextManager() {
-				return self.chatDocumentService;
-			},
-			get isProcessing() {
-				return self.agentChatCtrl.processing;
-			},
-			get isAiStreaming() {
-				return self.agentChatCtrl.aiStreaming;
-			},
-			get readingTopbar() {
-				return self.readingTopbar;
-			},
-			get ttsService() {
-				return self.ttsService;
-			},
-			saveToCache() {
-				return self.sessionMgr.saveToCache();
-			},
-			maybeConsolidateMemory() {
-				return self.sessionMgr.maybeConsolidateMemory();
-			},
-			clearQuotes() {
-				self.quoteManager.clearQuotes();
-			},
-			getDisplayName(name: string) {
-				return self.bookDomain.getDisplayName(name);
-			},
-			initializeFrontendAgent() {
-				return self.initializeFrontendAgent();
-			},
-			parseAndLoadReferences(message: string) {
-				return self.parseAndLoadReferences(message);
-			},
-			copyToClipboard(text: string) {
-				_copyToClipboard(text);
-			},
-			getBookshelfSummary() {
-				return self.bookDomain.getBookshelfSummary() || undefined;
-			},
-			preloadTTS(messageId: string, content: string) {
-				return self.ttsDomain.preloadPreview(messageId, content, {
-					indexId: self.bookDomain.currentIndexId || undefined,
-					pdfName: self.bookDomain.getDisplayName(self.bookDomain.currentPdfName || '') || undefined,
-					author: self.bookDomain.currentBookAuthor || undefined,
-				});
-			},
-		});
 		this.sessionDomain = new SessionDomain({
-			sessionManager: this.sessionMgr,
-			agentChatController: this.agentChatCtrl,
+			app: this.app,
+			plugin: this.plugin,
 			eventBus: this.eventBus,
+			chatDocumentService: this.chatDocumentService!,
+			bookDomain: this.bookDomain,
+			ttsDomain: this.ttsDomain,
 		});
 		this.bookMgr = new BookManager({
 			get app() {
@@ -479,25 +320,25 @@ export class SidebarView extends ItemView {
 				return self.frontendAgent;
 			},
 			startNewSession(indexId: string) {
-				return self.sessionMgr.startNewSession(indexId);
+				return self.sessionDomain.startNewSession(indexId);
 			},
 			restoreFromSessionStore(sessionId: string) {
-				return self.sessionMgr.restoreFromSessionStore(sessionId);
+				return self.sessionDomain.restoreSession(sessionId);
 			},
 			get sessionId() {
-				return self.sessionMgr.sessionId;
+				return self.sessionDomain.sessionId;
 			},
 			set sessionId(id: string | null) {
-				self.sessionMgr.sessionId = id;
+				self.sessionDomain.sessionId = id;
 			},
 			get sessionStore() {
-				return self.sessionMgr.sessionStore;
+				return self.sessionDomain.sessionStore;
 			},
 			ensureSessionStore() {
-				return self.sessionMgr.ensureSessionStore();
+				return self.sessionDomain.ensureSessionStore();
 			},
 			cancelActiveStream() {
-				self.agentChatCtrl.cancelActiveStream();
+				self.sessionDomain.cancelStream();
 			},
 			initializeFrontendAgent() {
 				return self.initializeFrontendAgent();
