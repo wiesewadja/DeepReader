@@ -23,6 +23,7 @@ import { GUIDANCE_BUTTONS, ADVISOR_BUTTONS, type GuidanceType } from '../../comp
 import type { MascotExpression } from '../../components/reading-topbar/mascot-face.js';
 import { uiLog as log, warn, error as logError } from '../../utils/logger.js';
 import { getVaultPath } from '../../utils/mobile-fs.js';
+import type { ChatDocumentService } from './services/chat-document-service.js';
 
 export interface AgentChatControllerHost {
 	get app(): import('obsidian').App;
@@ -42,7 +43,7 @@ export interface AgentChatControllerHost {
 	get crossBookMode(): boolean;
 	get currentBooklistBookIds(): string[] | null;
 	get indexes(): import('../../types/index.js').IndexListItem[];
-	get contextManager(): import('../../services/context-manager.js').ContextManager | null;
+	get contextManager(): ChatDocumentService | null;
 	get isProcessing(): boolean;
 	get isAiStreaming(): boolean;
 

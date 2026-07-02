@@ -15,13 +15,14 @@ import type { ChatMessage } from '../../agent/types.js';
 import type { MessageRole } from '../../components/message/message.js';
 import type { BooklistItemInfo, Booklist } from '../../types/index.js';
 import { uiLog as log, warn, error as logError } from '../../utils/logger.js';
+import type { ChatDocumentService } from './services/chat-document-service.js';
 
 export interface SessionManagerHost {
 	get app(): import('obsidian').App;
 	get plugin(): DeepReaderPluginInterface;
 	get messageList(): import('../../components/message-list/message-list.js').MessageList | null;
 	get readingTopbar(): import('../../components/reading-topbar/index.js').ReadingTopbar | null;
-	get contextManager(): import('../../services/context-manager.js').ContextManager | null;
+	get contextManager(): ChatDocumentService | null;
 	get frontendAgent(): import('../../agent/index.js').FrontendAgent | null;
 	get currentIndexId(): string | null;
 	get currentPdfName(): string | null;

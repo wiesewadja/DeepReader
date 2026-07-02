@@ -25,11 +25,12 @@ import {
 import { ReadingTopbar } from "../../components/reading-topbar/index.js";
 import { type TaskProgressCard } from "../../components/task-progress-card.js";
 import { resolveRoleConfig } from "../../config/providers.js";
-import { ContextManager } from "../../services/context-manager.js";
 import {
 	type TTSService,
 	type TTSPlayState,
 } from "../../services/tts/tts-service.js";
+import { ChatDocumentService, type SidebarEventMap } from "./services/chat-document-service.js";
+import { EventBus } from "./event-bus.js";
 import type { ExcerptContent, ExcerptMetadata } from "../../types/excerpt.js";
 import {
 	IndexListItem,
@@ -62,8 +63,11 @@ export class SidebarView extends ItemView {
 	private messageList: MessageList | null = null;
 	private chatInput: ChatInput | null = null;
 
-	// 上下文管理（章节辅助阅读）
-	private contextManager: ContextManager | null = null;
+	// EventBus：每个 SidebarView 实例独立
+	private eventBus: EventBus<SidebarEventMap> = new EventBus<SidebarEventMap>();
+
+	// 聊天上下文文档服务（章节辅助阅读）
+	private chatDocumentService: ChatDocumentService | null = null;
 
 	// 引用卡片管理
 	private quotesContainer: HTMLElement | null = null;
@@ -288,7 +292,7 @@ export class SidebarView extends ItemView {
 				return self.readingTopbar;
 			},
 			get contextManager() {
-				return self.contextManager;
+				return self.chatDocumentService;
 			},
 			get frontendAgent() {
 				return self.frontendAgent;
@@ -385,7 +389,7 @@ export class SidebarView extends ItemView {
 				return self.bookMgr.indexes;
 			},
 			get contextManager() {
-				return self.contextManager;
+				return self.chatDocumentService;
 			},
 			get isProcessing() {
 				return self.agentChatCtrl.processing;
@@ -619,7 +623,7 @@ export class SidebarView extends ItemView {
 	 * - 只有用户手动点击按钮才能卸载文档
 	 */
 	private async autoSyncCurrentChapter(): Promise<void> {
-		if (!this.contextManager || !this.bookMgr.currentPdfName) return;
+		if (!this.chatDocumentService || !this.bookMgr.currentPdfName) return;
 
 		const activeFile = this.app.workspace.getActiveFile();
 		if (!activeFile || activeFile.extension !== "md") return;
@@ -633,22 +637,22 @@ export class SidebarView extends ItemView {
 			return;
 
 		// 检查当前章节是否已在上下文中
-		if (this.contextManager.hasDocument(activeFile.path)) return;
+		if (this.chatDocumentService.hasDocument(activeFile.path)) return;
 
 		// 找到当前书籍的章节文档（source === 'current' 的文档）
-		const docs = this.contextManager.getLoadedDocuments();
+		const docs = this.chatDocumentService.getLoadedDocuments();
 		const currentChapterDoc = Array.from(docs.values()).find(
 			(doc) => doc.source === "current" && doc.path.startsWith(bookPath),
 		);
 
 		if (currentChapterDoc) {
 			// 卸载旧的章节
-			this.contextManager.removeDocument(currentChapterDoc.path);
+			this.chatDocumentService.removeDocument(currentChapterDoc.path);
 			log(`[DeepPDF] 自动卸载旧章节: ${currentChapterDoc.name}`);
 		}
 
 		// 加载新的章节到上下文
-		await this.contextManager.loadByPath(activeFile.path, "current");
+		await this.chatDocumentService.loadByPath(activeFile.path, "current");
 		log(`[DeepPDF] 自动加载章节: ${activeFile.basename}`);
 	}
 
@@ -747,32 +751,30 @@ export class SidebarView extends ItemView {
 		container.empty();
 		this.chatContainerEl = container;
 
-		// 初始化上下文管理器（章节辅助阅读）
-		this.contextManager = new ContextManager({
+		// 初始化聊天上下文文档服务（章节辅助阅读）
+		this.chatDocumentService = new ChatDocumentService({
 			app: this.app,
-			onContextChange: (
-				docs: Map<
-					string,
-					import("../../services/context-manager.js").LoadedDocument
-				>,
-			) => {
+			eventBus: this.eventBus,
+		});
+		this.registerEvent(
+			this.eventBus.on("chat:documents-changed", ({ documents }) => {
 				// 同步文档内容到 currentMarkdownFiles 供 Agent 搜索使用
 				const files: Record<string, string> = {};
-				for (const [path, doc] of docs) {
-					files[path] = doc.content;
+				for (const doc of documents) {
+					files[doc.path] = doc.content;
 				}
 				this.agentChatCtrl.currentMarkdownFiles = files;
 
 				// 更新加载按钮的激活状态（检查当前活跃文件是否已加载）
 				const activeFile = this.app.workspace.getActiveFile();
 				const isCurrentDocLoaded = activeFile
-					? docs.has(activeFile.path)
+					? documents.some((d) => d.path === activeFile.path)
 					: false;
 				this.chatInput?.setLoadBtnActive(isCurrentDocLoaded);
 				// 更新消息列表的底部间距，避免被上下文标签遮挡
-				this.updateMessageListPadding(docs.size > 0);
-			},
-		});
+				this.updateMessageListPadding(documents.length > 0);
+			}),
+		);
 
 		// 创建阅读顶栏（有消息时提供书名/封面/设置入口）
 		this.createReadingTopbar(container);
@@ -864,10 +866,10 @@ export class SidebarView extends ItemView {
 		// 监听文件切换事件，更新文档加载按钮状态 + 阅读进度追踪 + 自动同步章节上下文
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", () => {
-				if (this.contextManager) {
+				if (this.chatDocumentService) {
 					const activeFile = this.app.workspace.getActiveFile();
 					const isLoaded = activeFile
-						? this.contextManager.hasDocument(activeFile.path)
+						? this.chatDocumentService.hasDocument(activeFile.path)
 						: false;
 					this.chatInput?.setLoadBtnActive(isLoaded);
 				}
@@ -1273,9 +1275,9 @@ export class SidebarView extends ItemView {
 	 * 加载当前文档到上下文
 	 */
 	private async loadCurrentDocument(): Promise<void> {
-		if (!this.contextManager) return;
+		if (!this.chatDocumentService) return;
 
-		const doc = await this.contextManager.loadCurrentDocument();
+		const doc = await this.chatDocumentService.loadCurrentDocument();
 		if (doc) {
 			// new Notice(`已加载: ${doc.name}`);
 		}
@@ -1285,12 +1287,12 @@ export class SidebarView extends ItemView {
 	 * 从上下文卸载当前文档
 	 */
 	private async unloadCurrentDocument(): Promise<void> {
-		if (!this.contextManager) return;
+		if (!this.chatDocumentService) return;
 
 		const activeFile = this.app.workspace.getActiveFile();
 		if (!activeFile) return;
 
-		this.contextManager.removeDocument(activeFile.path);
+		this.chatDocumentService.removeDocument(activeFile.path);
 	}
 
 	/**
@@ -1298,7 +1300,7 @@ export class SidebarView extends ItemView {
 	 * 支持 [[文件名]] 格式的引用
 	 */
 	private async parseAndLoadReferences(message: string): Promise<void> {
-		if (!this.contextManager) return;
+		if (!this.chatDocumentService) return;
 
 		// 匹配 [[文件名]] 格式
 		const wikilinkRegex = /\[\[([^\]]+)\]\]/g;
@@ -1323,7 +1325,7 @@ export class SidebarView extends ItemView {
 			);
 
 			if (file) {
-				const doc = await this.contextManager.loadByPath(file.path, "wikilink");
+				const doc = await this.chatDocumentService.loadByPath(file.path, "wikilink");
 				if (doc) {
 					loadedNames.push(doc.name);
 				}
@@ -1340,9 +1342,9 @@ export class SidebarView extends ItemView {
 	 * 获取上下文文档列表（用于 API 调用）
 	 */
 	private getContextDocs(): ContextDoc[] | undefined {
-		if (!this.contextManager) return undefined;
+		if (!this.chatDocumentService) return undefined;
 
-		const docs = this.contextManager.getLoadedDocuments();
+		const docs = this.chatDocumentService.getLoadedDocuments();
 		if (docs.size === 0) return undefined;
 
 		return Array.from(docs.values()).map((doc) => ({
@@ -1500,7 +1502,8 @@ export class SidebarView extends ItemView {
 				this.pushToTalkCtrl = null;
 			}
 
-
+			// 清理 EventBus 订阅
+			this.eventBus.dispose();
 
 			// 清理任务卡片
 			try {
