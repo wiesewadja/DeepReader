@@ -33,3 +33,13 @@
 - 节点不再从 `configurable` 顶层取 `chatHistory`/`toolContext`/`abortSignal`，新增业务上下文字段时应加进 `SharedContext` 而非顶层。
 - `syntopical` 守卫修复后，跨书主题阅读路径将真正执行节点逻辑（此前守卫恒为真、节点 early return 空结果）——需在跨书场景下回归验证。
 - 取消图表生成（abort）在 visualizer 路径重新生效，需验证用户中止时图表不再继续生成。
+
+## 验证状态（2026-07-02）
+
+动态验证经 `evalBackdoor` 通道（真实 LLM）执行：
+
+- ✅ **depth=2 分析阅读**：48.8s 真实对话通过，覆盖改动最多的 analytical/pre-search/inspectional 节点（全走 ctx 取数），formatter 输出含正确 wiki 链接。
+- ✅ **visualizer 节点执行**：trace `["inspectional","visualizer","formatter"]` 证节点在真实链路跑通、ctx 改动未致崩溃。
+- ⏸ **syntopical 跨书 / visualizer abortSignal 生效**：`evalBackdoor` 通道先天不注入 `crossBook` 与 `abortSignal`（`context` 仅单书、`opts` 无 signal），这两个场景在 ad-hoc 探针里触发不了，**以代码审查兜底**——signal 路径单一无分支（`buildConfigurable → SharedContext.abortSignal → ctx.abortSignal`），守卫修复是纯类型修正（`.app`→`.vault?.app`）、节点内部逻辑未动，且 syntopical 此前恒 early-return 故"恢复执行"等价于首次启用，下游问题属预存潜伏而非本次引入。
+
+这两条是**有意搁置**的已知项，非遗漏：要动态确证需扩展 evalBackdoor（注入 crossBook + abortSignal）或走 sidebar UI 手动实测，留待该路径 deemed 高频或再次改动时补。
