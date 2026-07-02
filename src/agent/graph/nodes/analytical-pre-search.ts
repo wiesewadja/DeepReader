@@ -152,10 +152,12 @@ function collectAllNodeIds(nodes: TreeNode[], idSet: Set<string>): void {
 
 /** 格式化命中结果为带元数据的文本行 */
 type HitEntry = { title: string; file_name: string; matched_blocks: { block_id: string; content: string }[] };
-function formatBlockLines(hits: HitEntry[]): string[] {
+function formatBlockLines(hits: HitEntry[], pdfName: string): string[] {
+  // Epic #9：对齐 syntopical 样式 【书/文件#^blockId】，让 LLM 直接照搬成 [[书/文件#^blockId|别名]]
+  const prefix = pdfName ? `${pdfName}/` : '';
   return hits.flatMap(h =>
     h.matched_blocks.map(b =>
-      `【${h.title}】(file_name: "${h.file_name}", block_id: ${b.block_id})\n${b.content}`
+      `【${prefix}${h.file_name}#^${b.block_id}】\n${b.content}`
     )
   );
 }
@@ -183,11 +185,13 @@ export async function preSearchNode(
     return emptyPreSearchResult(rawScopeNodeIds);
   }
 
+  const effectivePdfName = statePdfName || ctx?.toolContext?.book.pdfName || '';
+
   // 1. Validate scope
   const { validIds: validatedScopeNodeIdsRaw, nodeFileMap } = await validateScopeNodeIds(
     toolContext.vault.app,
     toolContext.book.indexId || '',
-    statePdfName || ctx?.toolContext?.book.pdfName || '',
+    effectivePdfName,
     rawScopeNodeIds,
   );
 
@@ -456,7 +460,7 @@ export async function preSearchNode(
     if (shouldEarlyStop) {
       log(`[S2-Pre] 早停: isEarlyStopped=${isEarlyStopped}, wScore=${wScore.toFixed(2)} >= ${earlyStopThreshold}, substantive=${substantiveScore}, 跳过 ReAct`);
 
-      const blockLines = formatBlockLines(hits);
+      const blockLines = formatBlockLines(hits, effectivePdfName);
       const userQuery = stateBetterQuestion || stateQuery || ctx?.rawUserQuery || '';
 
       const preSearchRecords = hits.flatMap(h =>
@@ -516,7 +520,7 @@ export async function preSearchNode(
     }
 
     // 5. Normal path: inject compact pre-search results
-    const blockLines = formatBlockLines(hits);
+    const blockLines = formatBlockLines(hits, effectivePdfName);
     if (l5ForcesAnalytical) {
       log(`[S2-Pre] L5 强制走 analytical: 跳过早停决策, 注入 ${verifiedFullBookHits.length} 条全量复核 hits`);
     } else if (wScore >= earlyStopThreshold && hits.length >= 2 && substantiveScore < SUBSTANTIVE_THRESHOLD) {

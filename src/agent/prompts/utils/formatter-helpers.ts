@@ -1,6 +1,7 @@
 import { formatHistoryBlock, summarizeRecentHistory } from '../../graph/utils/history-summarizer.js';
 import { formatterPrompt } from '../core/formatter.js';
 import type { ChatMessage } from '../../types.js';
+import type { ToolResultSnapshot } from '../../graph/state.js';
 
 export const MAX_HISTORY_ROUNDS = 3;
 
@@ -66,6 +67,57 @@ function countWikiLinks(text: string): number {
   return (text.match(/\[\[[^\]]+\]\]/g) || []).length;
 }
 
+/** 一段检索原文 + 其全部 block_id（按 snapshot 记录聚合，原文只喂一次以省 token） */
+export interface RetrievedBlock {
+  fileName: string;
+  blockIds: string[];
+  excerpt: string;
+}
+
+const DEFAULT_MAX_RETRIEVED_BLOCKS = 5;
+const DEFAULT_MAX_CHARS_PER_BLOCK = 400;
+
+/**
+ * 从 toolResultsSnapshot 按记录聚合提取 block 原文，供 formatter prompt 就地引用。
+ *
+ * 一条 snapshot 记录 = 一次 search_book = 一段原文（可能含多个 blockId，见
+ * tool-execution.ts extractBlockIdsFromResult）。按记录聚合（非按 blockId 平铺）
+ * 让同一段原文在 prompt 里只出现一次，避免 token 浪费。
+ *
+ * 跳过：node_id 缺失 / nodeFileMap 无映射 / extractedBlockIds 空 / result 空。
+ * 跨记录去重相同 blockId；受 maxBlocks / maxCharsPerBlock 限制。
+ */
+export function extractRetrievedBlocks(
+  snapshot: ToolResultSnapshot[],
+  nodeFileMap: Record<string, string>,
+  opts: { maxBlocks?: number; maxCharsPerBlock?: number } = {},
+): RetrievedBlock[] {
+  const maxBlocks = opts.maxBlocks ?? DEFAULT_MAX_RETRIEVED_BLOCKS;
+  const maxChars = opts.maxCharsPerBlock ?? DEFAULT_MAX_CHARS_PER_BLOCK;
+  const seen = new Set<string>();
+  const out: RetrievedBlock[] = [];
+
+  for (const rec of snapshot) {
+    if (out.length >= maxBlocks) break;
+    const nodeId = rec.args?.node_id;
+    const rawIds = rec.extractedBlockIds ?? [];
+    const excerpt = rec.result || '';
+    if (typeof nodeId !== 'string' || !nodeId || rawIds.length === 0 || !excerpt) continue;
+    const rawFile = nodeFileMap[nodeId];
+    if (!rawFile) continue;
+    // extractedBlockIds 不带 ^（extractBlockIdsFromResult 捕获组已剥离前缀）
+    const blockIds = rawIds.filter(id => id && !seen.has(id));
+    if (blockIds.length === 0) continue;
+    blockIds.forEach(id => seen.add(id));
+    out.push({
+      fileName: rawFile.replace(/\.md$/, ''),
+      blockIds,
+      excerpt: excerpt.length > maxChars ? excerpt.slice(0, maxChars) : excerpt,
+    });
+  }
+  return out;
+}
+
 export function buildFormatterUserMessage(
   rawUserQuery: string,
   analysisResult: string,
@@ -82,6 +134,7 @@ export function buildFormatterUserMessage(
     isCoverageGap: boolean;
   },
   userNotesContext?: string,
+  retrievedBlocks?: RetrievedBlock[],
 ): string {
   const historyText = recentHistory && recentHistory.length > 0
     ? formatHistoryBlock(summarizeRecentHistory(recentHistory, MAX_HISTORY_ROUNDS))
@@ -116,22 +169,29 @@ ${retrievalCoverage.isCoverageGap
     ? `（系统检测到 analysis 和 structural_analysis 共包含 ${linkCount} 个 wiki 链接，你的最终回复中也必须精准出现这 ${linkCount} 个链接，一个都不能少）`
     : '';
 
-  const bookInstruction = multiBook
-    ? `1. wiki 链接硬性要求${linkCountHint}：每一个 [[...]] 链接都必须原样保留在你的回复中。禁止修改其路径 and block_id 部分，禁止漏掉任何一个链接！
-2. 别名自然嵌入句中：把别名作为主语、宾语或定语融入句子，使其读起来像一个通顺自然的句子，禁止链接孤立地放在句尾或放在括号内。`
-    : `1. wiki 链接硬性要求${linkCountHint}：每一个 [[...]] 链接都必须原样保留在你的回复中。禁止修改其路径 and block_id 部分，禁止漏掉任何一个链接！
+  // wiki 链接提醒（multiBook 与单书文案一致，曾误分两分支，已合并）
+  const bookInstruction = `1. wiki 链接硬性要求${linkCountHint}：每一个 [[...]] 链接都必须原样保留在你的回复中。禁止修改其路径 and block_id 部分，禁止漏掉任何一个链接！
 2. 别名自然嵌入句中：把别名作为主语、宾语或定语融入句子，使其读起来像一个通顺自然的句子，禁止链接孤立地放在句尾或放在括号内。`;
+
+  // Epic #9：把检索命中的 block 原文喂进 prompt，供 LLM 就地引用 block 级链接
+  const retrievedSection = retrievedBlocks && retrievedBlocks.length > 0
+    ? `\n<retrieved_blocks>\n${retrievedBlocks.map(b => {
+        const prefix = multiBook ? '' : `${bookName}/`;
+        const idsStr = b.blockIds.map(id => `#^${id}`).join(' ');
+        return `【${prefix}${b.fileName}${idsStr}】\n${b.excerpt}`;
+      }).join('\n\n')}\n（每段原文可对应多个 block_id，引用时按语义择一，生成 [[书/文件#^blockId|2-6字别名]]）\n</retrieved_blocks>\n`
+    : '';
 
   return `<history>
 ${historyText}
 </history>
- 
+
 <query>${effectiveQuery}</query>
- 
+
 <analysis>
 ${analysisResult || '(无分析结果)'}
 </analysis>
-${structureSection}${scopeSection}${notesSection}${retrievalSection}<book>${bookName}</book>
+${structureSection}${scopeSection}${notesSection}${retrievalSection}${retrievedSection}<book>${bookName}</book>
  
 用奚童的口吻分享你读后的理解。
  

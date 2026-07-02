@@ -21,6 +21,7 @@ import {
   buildFormatterSystemPrompt,
   buildFormatterUserMessage,
   buildScopedChaptersBlock,
+  extractRetrievedBlocks,
 } from '../../prompts/utils/index.js';
 import { vaultExists, vaultList, vaultRead, joinPath } from '../../../utils/mobile-fs.js';
 import { bookExcerptDir } from '../../../utils/book-paths.js';
@@ -304,6 +305,8 @@ export async function formatterNode(
   callbacks?.onProgress?.('正在整理笔记...');
   // Booklist mode: avoid single-book link fixup; pdfName is meaningless for multi-book analysis
   const effectivePdfName = crossBookMode ? '' : (pdfName || '');
+  // Epic #9：提取检索命中的 block 原文，喂进 formatter prompt 供 LLM 就地引用
+  const retrievedBlocks = extractRetrievedBlocks(toolResultsSnapshot ?? [], nodeFileMap ?? {});
   const userMessage = buildFormatterUserMessage(
     rewrittenQuery,
     effectiveAR,
@@ -316,6 +319,7 @@ export async function formatterNode(
     !!crossBookMode,
     retrievalCoverage,
     userNotesContext || undefined,
+    retrievedBlocks,
   );
 
   const messages = [

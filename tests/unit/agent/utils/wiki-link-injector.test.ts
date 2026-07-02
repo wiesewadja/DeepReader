@@ -176,3 +176,57 @@ describe('文件名归一化', () => {
     expect(out).toBe('[[书/03–标题|标题]] 讲了概念。');
   });
 });
+
+describe('Step 2 — LLM 已引用则跳过（Epic #9）', () => {
+  it('LLM 已为该文件生成 block 级链接 → 跳过主题词内嵌', () => {
+    // LLM 已原生引用 12 章 block，Step2 不应再内嵌"内在吸引力"
+    const content = '如[[疯传/12 - 内在吸引力#^p11-004|好奇心]]所述，这是关键。';
+    const ctx = makeCtx({
+      toolResultsSnapshot: [snap('0012', 'p11-004', '好奇心是内在吸引力的核心')],
+    });
+    expect(upgradeInlineWikiLinks(content, ctx)).toBe(content);
+  });
+
+  it('LLM 未引用该文件 → Step2 仍兜底内嵌', () => {
+    const content = '内在吸引力是关键驱动。';
+    const ctx = makeCtx({
+      toolResultsSnapshot: [snap('0012', 'p11-004', '好奇心是内在吸引力的核心')],
+    });
+    const out = upgradeInlineWikiLinks(content, ctx);
+    expect(out).toContain('[[疯传/12 - 内在吸引力#^p11-004|内在吸引力]]');
+  });
+
+  it('LLM 引用了 A 文件但未引用 B 文件 → 跳过 A、仍内嵌 B', () => {
+    const content = '如[[疯传/12 - 内在吸引力#^p11-004|好奇心]]所述。游戏竞赛也很重要。';
+    const ctx = makeCtx({
+      toolResultsSnapshot: [
+        snap('0012', 'p11-004', '好奇心是内在吸引力的核心'),
+        snap('0014', 'p13-001', '游戏竞赛通过让用户参与和分享提升品牌'),
+      ],
+    });
+    const out = upgradeInlineWikiLinks(content, ctx);
+    // 12 章已引用 → 不重复；14 章（游戏竞赛）未引用 → 兜底内嵌
+    expect(out).toBe(content.replace('游戏竞赛', '[[疯传/14 - 游戏竞赛#^p13-001|游戏竞赛]]'));
+  });
+});
+
+describe('Epic #9 — 补 # 修复漏 # 的 block 链接', () => {
+  const ctxNoMap: InjectionContext = {
+    toolResultsSnapshot: [], nodeFileMap: {}, pdfName: '疯传', crossBookMode: false,
+  };
+
+  it('漏 # 的 [[文件^block|别名]] → 补成 [[文件#^block|别名]]', () => {
+    const content = '核心是[[疯传/11 - 标题^p10-006|自我意识]]的理念。';
+    expect(upgradeInlineWikiLinks(content, ctxNoMap)).toBe('核心是[[疯传/11 - 标题#^p10-006|自我意识]]的理念。');
+  });
+
+  it('漏 # 无别名的 [[文件^block]] → 补成 [[文件#^block]]', () => {
+    const content = '见[[疯传/11 - 标题^p10-006]]的论述。';
+    expect(upgradeInlineWikiLinks(content, ctxNoMap)).toBe('见[[疯传/11 - 标题#^p10-006]]的论述。');
+  });
+
+  it('已正确的 [[文件#^block]] 不误改（无 double #）', () => {
+    const content = '[[疯传/11 - 标题#^p10-006|别名]]';
+    expect(upgradeInlineWikiLinks(content, ctxNoMap)).toBe(content);
+  });
+});

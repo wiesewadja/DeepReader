@@ -114,6 +114,14 @@ function chooseBest(text: string, offset: number, len: number, blocks: BlockCand
 
 export function upgradeInlineWikiLinks(content: string, ctx: InjectionContext): string {
   if (!content) return content;
+  // Epic #9 修补：LLM 偶发漏 # 的 block 链接 [[文件^block|别名]] → [[文件#^block|别名]]
+  // （路径 [^\]\[^|#]+ 不含 #，故已正确的 [[文件#^block]] 不被误改成 double #）
+  let fixedHash = 0;
+  content = content.replace(/\[\[([^\]\[^|#]+)\^([a-zA-Z0-9_-]+)(\|[^\]]*)?\]\]/g, (_m, p, bid, alias) => {
+    fixedHash++;
+    return `[[${p}#^${bid}${alias || ''}]]`;
+  });
+  if (fixedHash) log(`[WikiLinkInjector] 补 # 修复 ${fixedHash} 条漏 # 的 block 链接`);
   const fileNameMap = buildFileNameMap(ctx);
   if (fileNameMap.size === 0) return content;
   const candidates = buildCandidates(ctx);
@@ -151,6 +159,8 @@ export function upgradeInlineWikiLinks(content: string, ctx: InjectionContext): 
 
   let embedded = 0;
   for (const { realFile, blocks: allBlocks } of candidates.values()) {
+    // Epic #9：LLM 已为该文件原生引用了 block 级链接 → 跳过主题词内嵌（避免重复）
+    if (result.includes(`[[${prefix}${realFile}#^`)) continue;
     const topic = fileNameToAlias(realFile);
     if (!topic || topic.length < 2) continue;
     const avail = allBlocks.filter(b => !used.has(b.blockId));
