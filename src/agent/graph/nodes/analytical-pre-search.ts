@@ -179,7 +179,7 @@ export async function preSearchNode(
   }: PreSearchInput = state;
   const ctx = config.configurable?.sharedContext;
   const mainModel = config.configurable?.mainModel;
-  const toolContext = config.configurable?.toolContext;
+  const toolContext = ctx?.toolContext;
 
   if (!mainModel || !toolContext) {
     return emptyPreSearchResult(rawScopeNodeIds);
@@ -195,10 +195,10 @@ export async function preSearchNode(
     rawScopeNodeIds,
   );
 
-  const tocSummary = stateTocSummary || ctx?.tocSummary;
+  const tocSummary = stateTocSummary;
   const currentNodeId = toolContext.book.currentNodeId;
   const currentChapterName = resolveCurrentChapterName(currentNodeId, toolContext.book.markdownFiles);
-  const markdownFiles = ctx?.toolContext?.book.markdownFiles ?? {};
+  const markdownFiles = toolContext?.book.markdownFiles ?? {};
 
   // === Scope hard-guard (defense in depth — see utils/scope-guard.ts docstring) ===
   const citedFromMessages = extractCitedNodeIds(
@@ -257,9 +257,9 @@ export async function preSearchNode(
     markdownFiles,
     nodeFileMap,
     standaloneQuery: stateQuery || ctx?.rawUserQuery || '',
-    betterQuestion: stateBetterQuestion || ctx?.betterQuestion,
+    betterQuestion: stateBetterQuestion,
     recentHistorySummaries: ctx?.recentHistorySummaries,
-    prevSearchedBlockIds: ctx?.prevSearchedBlockIds,
+    prevSearchedBlockIds: ctx?.initialPrevSearchedBlockIds,
     skipUserMessage: true,
   });
 
@@ -531,7 +531,7 @@ export async function preSearchNode(
     const preSearchBlockIds = hits.flatMap(h =>
       h.matched_blocks.map(b => b.block_id).filter(Boolean)
     );
-    const existingBlockIds = ctx?.prevSearchedBlockIds ?? [];
+    const existingBlockIds = ctx?.initialPrevSearchedBlockIds ?? [];
     const mergedBlockIds = [...new Set([...existingBlockIds, ...preSearchBlockIds])];
 
     const mainPreSearchBlock = `<pre_search_results>

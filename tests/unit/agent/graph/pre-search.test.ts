@@ -47,18 +47,19 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
         invoke: vi.fn(async () => ({ content: 'AI response with [[book/ch1#^b1|keyword]]' })),
         stream: vi.fn(),
       },
-      toolContext: {
-        vault: {
-          app: mockApp,
-          plugin: { settings: {} },
-        },
-        book: {
-          indexId: 'test-book-id',
-          currentNodeId: 'node1',
-          markdownFiles: { 'book/01 - Intro.md': 'content' },
+      sharedContext: {
+        toolContext: {
+          vault: {
+            app: mockApp,
+            plugin: { settings: {} },
+          },
+          book: {
+            indexId: 'test-book-id',
+            currentNodeId: 'node1',
+            markdownFiles: { 'book/01 - Intro.md': 'content' },
+          },
         },
       },
-      sharedContext: {},
       callbacks: {},
       ...overrides,
     },
@@ -109,7 +110,7 @@ describe('preSearchNode', () => {
 
   it('returns empty result when toolContext is missing', async () => {
     const state = makeState();
-    const config = makeConfig({ toolContext: undefined });
+    const config = makeConfig({ sharedContext: {} });
 
     const result = await preSearchNode(state, config as any);
 
