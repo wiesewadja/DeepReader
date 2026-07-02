@@ -119,4 +119,19 @@ describe("SessionDomain", () => {
 		expect(agentChatController.handleGenerateOutline).toHaveBeenCalled();
 		expect(agentChatController.handleDeleteMessagePair).toHaveBeenCalledWith("msg-1");
 	});
+
+	it("emits chat:stream-stopped with reason 'error' and re-throws when sendMessage fails", async () => {
+		const domain = createDomain();
+		const handler = vi.fn();
+		eventBus.on("chat:stream-stopped", handler);
+
+		const testError = new Error("Send failed");
+		agentChatController.sendMessage.mockRejectedValue(testError);
+
+		await expect(domain.sendUserMessage("hello")).rejects.toThrow("Send failed");
+
+		expect(handler).toHaveBeenCalledWith(
+			expect.objectContaining({ reason: "error" }),
+		);
+	});
 });
