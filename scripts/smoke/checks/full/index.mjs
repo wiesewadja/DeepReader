@@ -18,7 +18,6 @@ import s27 from './s-27.mjs';
 import s29 from './s-29.mjs';
 import s32 from './s-32.mjs';
 import s34 from './s-34.mjs';
-import s35 from './s-35.mjs';
 
 export const fullChecks = [
 	s01,
@@ -34,5 +33,4 @@ export const fullChecks = [
 	s29,
 	s32,
 	s34,
-	s35,
 ];

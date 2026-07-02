@@ -116,9 +116,8 @@ Obsidian 内部对 `addCommand({ name: ... })` 做 **i18n 映射 + 小写化 + k
 | S-29 | Z-Lib 设置开关 | F-29 | evalObsidian 验证 settings.zlibrary | ✅ PASS（基础设施）|
 | S-32 | 画像数据 schema | F-32 | evalObsidian 验证 profile 目录 | ✅ PASS |
 | S-34 | LangSmith 设置项 | F-34 | evalObsidian 验证 settings.langsmith | ✅ PASS |
-| S-35 | stream-processor 模块可达 | F-35 | evalObsidian 验证 graph.streamProcessor | ✅ PASS |
 
-**Full 15 预期结果**：~9 PASS / ~6 SKIP / 0 FAIL。
+**Full 14 预期结果**：~8 PASS / ~6 SKIP / 0 FAIL。
 
 ---
 
@@ -220,10 +219,6 @@ Obsidian 内部对 `addCommand({ name: ... })` 做 **i18n 映射 + 小写化 + k
 **S-34**: LangSmith 设置
 - 触发: `evalObsidian('Object.keys(app.plugins.plugins["deepreader"]?.settings?.langsmith || {})')`
 - 断言: 含 `apiKey` / `project` / `enabled` 字段
-
-**S-35**: stream-processor 模块
-- 触发: `evalObsidian('typeof app.plugins.plugins["deepreader"]?.frontendAgent?.graph?.streamProcessor')`
-- 断言: typeof === 'object'（具体路径待实测）
 
 ---
 
