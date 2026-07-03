@@ -64,12 +64,12 @@
 	flex: 1;
 	min-height: 22px;
 	max-height: 180px;
-	padding: 4px 6px;
+	padding: 2px 6px 4px 6px;
 
 	/* 字体和颜色适配 - 使用默认文本字号 */
 	font-size: var(--font-text-size, var(--font-ui-medium));
 	font-family: var(--font-interface);
-	line-height: 1.5;
+	line-height: 1.35;
 	color: var(--text-normal);
 
 	background: transparent;
@@ -82,6 +82,7 @@
 
 .deeppdf-chat-input-textarea::placeholder {
 	color: var(--text-faint);
+	line-height: inherit;
 }
 
 /* 滚动条 —— 只设宽度，颜色用浏览器默认 */
