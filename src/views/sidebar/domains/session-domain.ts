@@ -16,7 +16,6 @@ import type { TTSDomain } from "./tts-domain.js";
 import type { DeepReaderPluginInterface } from "../../../agent/tools/context/vault.js";
 import type { ToolContext } from "../../../agent/tools/types.js";
 import { validateWikiLinks } from "../../../agent/utils/wiki-link-hook.js";
-import { StreamingThinkParser } from "../../../utils/streaming-think.js";
 import { uiLog as log, warn, error as logError } from "../../../utils/logger.js";
 
 // Memory & Mode constants/stores
@@ -257,7 +256,7 @@ export class SessionDomain {
 
 		this.resetDiagramState();
 
-		const thinkParser = new StreamingThinkParser();
+		let latestContent = "";
 		let reasoningContent = "";
 		let currentStatus = "";
 
@@ -267,21 +266,14 @@ export class SessionDomain {
 			for await (const event of this.agentDomain.stream(request)) {
 				switch (event.type) {
 					case "text": {
-						const { reasoning, cleanedContent } = thinkParser.append(event.content);
+						// main 上 stream-processor 的 onContent 发送的是 formatter 的全量
+						// formattedOutput（覆盖式赋值），text event 必须按全量处理，不能累积。
+						latestContent = event.content;
 						this.eventBus.emit("chat:assistant-text-chunk", {
 							messageId: aiMessageId,
-							content: cleanedContent,
+							content: latestContent,
 							isIncremental: false,
 						});
-						const displayStatus = reasoning.trim()
-							? `${STATUS_THINKING_PREFIX} ${reasoning.split("\n")[0].slice(0, 50)}...`
-							: currentStatus;
-						if (displayStatus) {
-							this.eventBus.emit("chat:assistant-status-changed", {
-								messageId: aiMessageId,
-								status: displayStatus,
-							});
-						}
 						break;
 					}
 					case "reasoning": {
@@ -325,8 +317,7 @@ export class SessionDomain {
 				}
 			}
 
-			const { cleanedContent } = thinkParser.finalize();
-			const correctedContent = await this.correctWikiLinks(cleanedContent);
+			const correctedContent = await this.correctWikiLinks(latestContent);
 
 			this.finalizeAssistantMessage(aiMessageId, correctedContent);
 

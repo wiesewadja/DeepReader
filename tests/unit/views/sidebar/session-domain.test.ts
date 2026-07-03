@@ -127,6 +127,37 @@ describe("SessionDomain", () => {
 		);
 	});
 
+	it("treats successive onContent calls as full-content snapshots, not increments (formatter全量语义)", async () => {
+		// main 上 stream-processor 的 onContent 发的是 formatter 的全量 formattedOutput（覆盖式）。
+		// session-domain 不能按增量累积，否则每次全量都会被累加 → 内容指数级重复。
+		plugin.getFrontendAgent = vi.fn(async () => ({
+			chat: vi.fn(async () => {}),
+			continueChat: vi.fn(async (_history: any, _msg: any, _ctx: any, callbacks: any) => {
+				callbacks.onContent("收到");
+				callbacks.onContent("收到，连接正常。");
+				callbacks.onContent("收到，连接正常。你之前在读《AI极简经济学》。");
+				callbacks.onComplete();
+			}),
+			getSystemPromptAsync: vi.fn(async () => "system prompt"),
+			getLLMClient: vi.fn(() => ({})),
+		}));
+
+		const domain = createDomain();
+		const chunkHandler = vi.fn();
+		const completedHandler = vi.fn();
+		eventBus.on("chat:assistant-text-chunk", chunkHandler);
+		eventBus.on("chat:assistant-message-completed", completedHandler);
+
+		await domain.sendUserMessage("测试");
+
+		// 最后一次 chunk 应为最后一次的全量，而非三次累积
+		const lastChunk = chunkHandler.mock.calls.at(-1)?.[0];
+		expect(lastChunk.content).toBe("收到，连接正常。你之前在读《AI极简经济学》。");
+		expect(completedHandler).toHaveBeenCalledWith(
+			expect.objectContaining({ content: "收到，连接正常。你之前在读《AI极简经济学》。" }),
+		);
+	});
+
 	it("stops active streaming on cancelStream and emits chat:stream-stopped", async () => {
 		const domain = createDomain();
 		const stoppedHandler = vi.fn();
