@@ -50,7 +50,7 @@ export async function analyticalNode(
   }: AnalyticalInput = state;
   const ctx = config.configurable?.sharedContext;
   const mainModel = config.configurable?.mainModel;
-  const toolContext = config.configurable?.toolContext;
+  const toolContext = ctx?.toolContext;
   const callbacks = config.configurable?.callbacks as {
     onContent?: (content: string) => void;
     onProgress?: (msg: string) => void;
@@ -66,8 +66,8 @@ export async function analyticalNode(
   const scopeNodeIds = validatedScopeNodeIds.length > 0 ? validatedScopeNodeIds : rawScopeNodeIds;
   const currentNodeId = toolContext.book.currentNodeId;
   const currentChapterName = resolveCurrentChapterName(currentNodeId, toolContext.book.markdownFiles);
-  const markdownFiles = ctx?.toolContext?.book.markdownFiles ?? {};
-  const tocSummary = stateTocSummary || ctx?.tocSummary;
+  const markdownFiles = toolContext?.book.markdownFiles ?? {};
+  const tocSummary = stateTocSummary;
   const nodeFileMap = stateNodeFileMap ?? {};
 
   // Build prompt context
@@ -80,9 +80,9 @@ export async function analyticalNode(
     markdownFiles,
     nodeFileMap,
     standaloneQuery: stateQuery || ctx?.rawUserQuery || '',
-    betterQuestion: stateBetterQuestion || ctx?.betterQuestion,
+    betterQuestion: stateBetterQuestion,
     recentHistorySummaries: ctx?.recentHistorySummaries,
-    prevSearchedBlockIds: statePrevBlockIds.length > 0 ? statePrevBlockIds : ctx?.prevSearchedBlockIds,
+    prevSearchedBlockIds: statePrevBlockIds.length > 0 ? statePrevBlockIds : ctx?.initialPrevSearchedBlockIds,
   });
 
   // Inject pre-search results from S2-Pre node

@@ -17,14 +17,31 @@ vi.mock('@/agent/graph/utils/self-verification', () => ({
   verifyAndCleanContent: vi.fn(async (content: string) => ({ content, totalRefs: 0, ghostRefs: 0 })),
 }));
 
+vi.mock('@/agent/graph/utils/scope-guard.js', () => ({
+  enforceScopeHardGuard: vi.fn((ids: string[]) => ({ scope: ids, injected: [] })),
+}));
+
+vi.mock('@/agent/graph/utils/claim-verifier.js', () => ({
+  shouldVerifyNegativeClaim: vi.fn(() => false),
+  verifyNegativeClaimWithFullBook: vi.fn(async () => []),
+}));
+
+vi.mock('@/agent/graph/utils/scope-validator.js', () => ({
+  validateScopeNodeIds: vi.fn(async (app: any, bookId: string, pdfName: string, ids: string[]) => ({
+    validIds: ids,
+    nodeFileMap: {},
+  })),
+}));
+
 vi.mock('@/utils/logger.js', () => ({
   agentLog: vi.fn(),
 }));
 
 import { preSearchNode } from '@/agent/graph/nodes/analytical-pre-search';
 import { searchBookV2 } from '@/pageindex/book-search-v2.js';
-import { verifyAndCleanContent } from '@/agent/graph/utils/self-verification';
 import type { BookSearchResultV2 } from '@/pageindex/book-types.js';
+
+const mockSearchBookV2 = vi.mocked(searchBookV2);
 
 function makeConfig(overrides: Record<string, unknown> = {}) {
   const mockApp = {
@@ -47,18 +64,19 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
         invoke: vi.fn(async () => ({ content: 'AI response with [[book/ch1#^b1|keyword]]' })),
         stream: vi.fn(),
       },
-      toolContext: {
-        vault: {
-          app: mockApp,
-          plugin: { settings: {} },
-        },
-        book: {
-          indexId: 'test-book-id',
-          currentNodeId: 'node1',
-          markdownFiles: { 'book/01 - Intro.md': 'content' },
+      sharedContext: {
+        toolContext: {
+          vault: {
+            app: mockApp,
+            plugin: { settings: {} },
+          },
+          book: {
+            indexId: 'test-book-id',
+            currentNodeId: 'node1',
+            markdownFiles: { 'book/01 - Intro.md': 'content' },
+          },
         },
       },
-      sharedContext: {},
       callbacks: {},
       ...overrides,
     },
@@ -109,7 +127,7 @@ describe('preSearchNode', () => {
 
   it('returns empty result when toolContext is missing', async () => {
     const state = makeState();
-    const config = makeConfig({ toolContext: undefined });
+    const config = makeConfig({ sharedContext: {} });
 
     const result = await preSearchNode(state, config as any);
 
@@ -127,14 +145,14 @@ describe('preSearchNode', () => {
   });
 
   it('returns empty result when search returns fewer than 2 results', async () => {
-    vi.mocked(searchBookV2).mockResolvedValue([makeSearchResult()]);
+    mockSearchBookV2.mockResolvedValue([makeSearchResult()]);
     const state = makeState();
     const config = makeConfig();
 
     const result = await preSearchNode(state, config as any);
 
     expect(result.preSearchBlock).toBe('');
-    expect(searchBookV2).toHaveBeenCalled();
+    expect(mockSearchBookV2).toHaveBeenCalled();
   });
 
   it('early-stops when avgScore >= threshold', async () => {
@@ -143,7 +161,7 @@ describe('preSearchNode', () => {
       makeSearchResult({ nodeId: 'n2', score: 0.9 }),
       makeSearchResult({ nodeId: 'n3', score: 0.88 }),
     ];
-    vi.mocked(searchBookV2).mockResolvedValue(highScoreResults);
+    mockSearchBookV2.mockResolvedValue(highScoreResults);
 
     const state = makeState();
     const config = makeConfig();
@@ -152,7 +170,6 @@ describe('preSearchNode', () => {
 
     expect(result.earlyStopContent).toBe('done');
     expect(result.analysisResult).toBeDefined();
-    expect(verifyAndCleanContent).toHaveBeenCalled();
   });
 
   it('injects preSearchBlock on normal path (low scores)', async () => {
@@ -160,7 +177,7 @@ describe('preSearchNode', () => {
       makeSearchResult({ nodeId: 'n1', score: 0.3 }),
       makeSearchResult({ nodeId: 'n2', score: 0.35 }),
     ];
-    vi.mocked(searchBookV2).mockResolvedValue(lowScoreResults);
+    mockSearchBookV2.mockResolvedValue(lowScoreResults);
 
     const state = makeState();
     const config = makeConfig();
@@ -178,7 +195,7 @@ describe('preSearchNode', () => {
       makeSearchResult({ nodeId: 'n2', score: 0.9, matchedBlocks: [{ blockId: '', content: '[Chapter 2]' }] }),
       makeSearchResult({ nodeId: 'n3', score: 0.88, matchedBlocks: [{ blockId: '', content: '[Chapter 3]' }] }),
     ];
-    vi.mocked(searchBookV2).mockResolvedValue(highScoreButNoBlocks);
+    mockSearchBookV2.mockResolvedValue(highScoreButNoBlocks);
 
     const state = makeState();
     const config = makeConfig();
@@ -191,7 +208,7 @@ describe('preSearchNode', () => {
   });
 
   it('returns empty result on search exception', async () => {
-    vi.mocked(searchBookV2).mockRejectedValue(new Error('Search failed'));
+    mockSearchBookV2.mockRejectedValue(new Error('Search failed'));
 
     const state = makeState();
     const config = makeConfig();

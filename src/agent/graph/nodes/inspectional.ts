@@ -52,8 +52,9 @@ export async function inspectionalNode(
 ): Promise<Partial<CognitiveEngineState>> {
   const { messages, allowedTools: prevTools = [], pdfName, bookId, crossBookMode } = state;
   const fastModel = config.configurable?.fastModel;
-  const toolContext = config.configurable?.toolContext;
-  const chatHistory = config.configurable?.chatHistory ?? [];
+  const ctx = config.configurable?.sharedContext;
+  const toolContext = ctx?.toolContext;
+  const chatHistory = ctx?.chatHistory ?? [];
 
   const rawQuery = extractLastHumanMessage(messages);
 
@@ -74,6 +75,24 @@ export async function inspectionalNode(
   // 3. Correction override
   if (isCorrection && initialDepth < ReadingDepth.ANALYTICAL) {
     initialDepth = ReadingDepth.ANALYTICAL;
+  }
+
+  // 3.5 Security check: 拒绝系统提示词泄露请求
+  const securityTrigger = /系统提示|提示词|system\s*prompt|内部规则|运作机制|开发信息|如何工作|技术架构|调用什么|使用什么工具|访问什么数据|告诉我你是|你的规则|你的设定|你的配置|你的核心|你的主要|你的工作|你能做什么|你的功能|你的能力/i;
+  if (securityTrigger.test(rawQuery.trim())) {
+    log(`[S1 Unified] 安全拦截: 系统提示词泄露请求`);
+    return {
+      depth: ReadingDepth.CASUAL,
+      rewrittenQuery: '安全拒绝',
+      allowedTools: [],
+      correctionDetected: false,
+      scopeNodeIds: [],
+      tocSummary: '安全拒绝',
+      betterQuestion: '安全拒绝',
+      structuralAnalysis: '我是你的 AI 伴读，专注于帮你理解书籍内容。有什么书想聊聊吗？',
+      suggestedKeywords: [],
+      shouldVisualize: false,
+    };
   }
 
   // 4. Short-circuit: Casual chat — check before heavy IntentRouter analysis
@@ -137,7 +156,7 @@ export async function inspectionalNode(
 
   // Step 2: Build prompt
   const docDescription = toolContext.book.docDescription;
-  const recentHistorySummaries = config.configurable?.sharedContext?.recentHistorySummaries;
+  const recentHistorySummaries = ctx?.recentHistorySummaries;
   const currentNodeId = toolContext.book.currentNodeId;
   const allHumanContents = extractHumanMessageContents(messages);
   const citedNodeIds = extractCitedNodeIds(allHumanContents);

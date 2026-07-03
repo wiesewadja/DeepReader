@@ -11,6 +11,7 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import { RunnableLambda } from '@langchain/core/runnables';
 import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
+import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import type { BookSearchResultV2, BookSearchOptionsV2 } from '../../../pageindex/book-types.js';
 import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 import { agentLog as log } from '../../../utils/logger.js';
@@ -179,7 +180,7 @@ export async function preSearchNode(
   }: PreSearchInput = state;
   const ctx = config.configurable?.sharedContext;
   const mainModel = config.configurable?.mainModel;
-  const toolContext = config.configurable?.toolContext;
+  const toolContext = ctx?.toolContext;
 
   if (!mainModel || !toolContext) {
     return emptyPreSearchResult(rawScopeNodeIds);
@@ -195,10 +196,10 @@ export async function preSearchNode(
     rawScopeNodeIds,
   );
 
-  const tocSummary = stateTocSummary || ctx?.tocSummary;
+  const tocSummary = stateTocSummary;
   const currentNodeId = toolContext.book.currentNodeId;
   const currentChapterName = resolveCurrentChapterName(currentNodeId, toolContext.book.markdownFiles);
-  const markdownFiles = ctx?.toolContext?.book.markdownFiles ?? {};
+  const markdownFiles = toolContext?.book.markdownFiles ?? {};
 
   // === Scope hard-guard (defense in depth — see utils/scope-guard.ts docstring) ===
   const citedFromMessages = extractCitedNodeIds(
@@ -257,9 +258,9 @@ export async function preSearchNode(
     markdownFiles,
     nodeFileMap,
     standaloneQuery: stateQuery || ctx?.rawUserQuery || '',
-    betterQuestion: stateBetterQuestion || ctx?.betterQuestion,
+    betterQuestion: stateBetterQuestion,
     recentHistorySummaries: ctx?.recentHistorySummaries,
-    prevSearchedBlockIds: ctx?.prevSearchedBlockIds,
+    prevSearchedBlockIds: ctx?.initialPrevSearchedBlockIds,
     skipUserMessage: true,
   });
 
@@ -305,7 +306,6 @@ export async function preSearchNode(
 
     // 辅助函数：针对指定选项和关键词并发检索并合并
     async function runSearchAndFusion(opts: BookSearchOptionsV2): Promise<BookSearchResultV2[]> {
-      const { searchBookV2 } = require('../../../pageindex/book-search-v2.js');
       const subResults = await Promise.all(
         limitedKeywords.map(async (kw) => {
           try {
@@ -531,7 +531,7 @@ export async function preSearchNode(
     const preSearchBlockIds = hits.flatMap(h =>
       h.matched_blocks.map(b => b.block_id).filter(Boolean)
     );
-    const existingBlockIds = ctx?.prevSearchedBlockIds ?? [];
+    const existingBlockIds = ctx?.initialPrevSearchedBlockIds ?? [];
     const mergedBlockIds = [...new Set([...existingBlockIds, ...preSearchBlockIds])];
 
     const mainPreSearchBlock = `<pre_search_results>

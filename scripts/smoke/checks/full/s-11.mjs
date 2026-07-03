@@ -7,7 +7,7 @@
  *
  * 真实验证: frontendAgent 没有 proactiveEngine 属性（undefined），
  *           但 settings.proactiveGuidanceEnabled = true。
- *           引擎运行时由 piManager 或 graph 驱动，不在 frontendAgent 顶层。
+ *           引擎运行时由 graph 驱动，不在 frontendAgent 顶层。
  */
 
 import { evalObsidian } from '../../lib/obsidian-cli.mjs';

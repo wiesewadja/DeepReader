@@ -33,6 +33,7 @@ import indexIntegrity from './index-integrity.spec.mjs';
 import selectionQuote from './selection-quote.spec.mjs';
 import excalidrawVisual from './excalidraw-visual.spec.mjs';
 import pushToTalk from './push-to-talk.spec.mjs';
+import agentMultiturnAiEcon from './agent-multiturn-ai-econ.spec.mjs';
 
 export const e2eLightSpecs = [
 	readingModePagination,
@@ -64,4 +65,5 @@ export const e2eLightSpecs = [
 	selectionQuote,
 	excalidrawVisual,
 	pushToTalk,
+	agentMultiturnAiEcon,
 ];
