@@ -1,12 +1,8 @@
-import { setIcon } from 'obsidian';
-
 /**
- * VoiceOverlay — 语音录制界面
+ * VoiceOverlay — 极简内联语音浮层
  *
- * 点击语音按钮后，替换输入框区域为录制界面：
- * - 左侧：停止按钮
- * - 中间：声纹动画
- * - 右侧：发送按钮
+ * 在输入框内部叠加一个绝对定位的动画层（点状波形），
+ * 不再替换整个输入容器，实现无缝平滑切换。
  */
 
 export interface VoiceOverlayCallbacks {
@@ -18,8 +14,6 @@ export class VoiceOverlay {
   private container: HTMLElement;
   private current: HTMLElement | null = null;
   private callbacks: VoiceOverlayCallbacks;
-  private waveSpans: HTMLElement[] = [];
-  private animationFrame: number | null = null;
 
   constructor(container: HTMLElement, callbacks: VoiceOverlayCallbacks) {
     this.container = container;
@@ -32,93 +26,24 @@ export class VoiceOverlay {
   showRecording(): void {
     this.remove();
 
-    // 隐藏整个输入框容器
-    this.container.style.display = 'none';
-
-    // 创建录制界面
-    this.current = this.container.parentElement!.createDiv({
-      cls: 'deeppdf-voice-recording-panel',
+    // 在 container 内部创建一个绝对定位覆盖层
+    this.current = this.container.createDiv({
+      cls: 'deeppdf-voice-ripple',
     });
 
-    // 取消按钮
-    const cancelBtn = this.current.createEl('button', {
-      cls: 'deeppdf-voice-stop-btn',
-    });
-    setIcon(cancelBtn, 'x');
-    cancelBtn.setAttribute('aria-label', '取消录音');
-    cancelBtn.addEventListener('click', () => this.callbacks.onCancel());
-
-    // 声纹动画容器
-    const waveContainer = this.current.createDiv({
-      cls: 'deeppdf-voice-wave-container',
-    });
-
-    // 创建 12 条声纹
-    for (let i = 0; i < 12; i++) {
-      const span = waveContainer.createDiv({
-        cls: 'deeppdf-voice-wave-bar',
-      });
-      this.waveSpans.push(span);
+    // 3 个跳动的小圆点
+    for (let i = 0; i < 3; i++) {
+      this.current.createDiv({ cls: 'deeppdf-voice-dot' });
     }
-
-    // 发送按钮
-    const sendBtn = this.current.createEl('button', {
-      cls: 'deeppdf-voice-send-btn',
-    });
-    setIcon(sendBtn, 'arrow-up');
-    sendBtn.setAttribute('aria-label', '发送语音');
-    sendBtn.addEventListener('click', () => this.callbacks.onSend());
-
-    // 启动声纹动画
-    this.startWaveAnimation();
   }
 
   /**
-   * 启动声纹动画
-   */
-  private startWaveAnimation(): void {
-    let t = 0;
-    const animate = () => {
-      t += 0.15;
-      this.waveSpans.forEach((span, i) => {
-        // 结合正弦波与随机噪点，创造出自然顺滑流动的声纹波动效果
-        const wave = Math.sin(t + i * 0.5);
-        const noise = 0.8 + Math.random() * 0.4;
-        const height = 6 + Math.abs(wave) * 22 * noise;
-        span.style.height = `${height}px`;
-        span.style.opacity = `${0.4 + Math.abs(wave) * 0.6}`;
-      });
-      this.animationFrame = requestAnimationFrame(animate);
-    };
-    animate();
-  }
-
-  /**
-   * 停止声纹动画
-   */
-  private stopWaveAnimation(): void {
-    if (this.animationFrame) {
-      cancelAnimationFrame(this.animationFrame);
-      this.animationFrame = null;
-    }
-    // 重置声纹高度
-    this.waveSpans.forEach(span => {
-      span.style.height = '6px';
-      span.style.opacity = '0.4';
-    });
-  }
-
-  /**
-   * 移除录制界面（幂等）
+   * 移除录制界面
    */
   remove(): void {
-    this.stopWaveAnimation();
     if (this.current) {
       this.current.remove();
       this.current = null;
-      this.waveSpans = [];
-      // 恢复输入框容器
-      this.container.style.display = '';
     }
   }
 }

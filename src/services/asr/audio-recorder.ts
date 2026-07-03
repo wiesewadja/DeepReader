@@ -14,7 +14,6 @@ export class AudioRecorder {
 	private state: RecorderState = 'idle';
 	private startTime = 0;
 	private maxDuration: number;
-	private timeoutId: ReturnType<typeof setTimeout> | null = null;
 	private stopping = false;
 
 	constructor(options?: AudioRecorderOptions) {
@@ -60,12 +59,6 @@ export class AudioRecorder {
 			this.state = 'recording';
 			this.startTime = Date.now();
 			this.stopping = false;
-
-			this.timeoutId = setTimeout(() => {
-				if (this.state === 'recording' && !this.stopping) {
-					this.stop().catch(() => {});
-				}
-			}, this.maxDuration);
 		} catch (err) {
 			stream.getTracks().forEach(t => t.stop());
 			throw err;
@@ -82,11 +75,6 @@ export class AudioRecorder {
 
 		this.stopping = true;
 		const duration = Date.now() - this.startTime;
-
-		if (this.timeoutId) {
-			clearTimeout(this.timeoutId);
-			this.timeoutId = null;
-		}
 
 		return new Promise((resolve, reject) => {
 			if (!this.mediaRecorder) {
@@ -182,11 +170,6 @@ export class AudioRecorder {
 	}
 
 	private cleanup(): void {
-		if (this.timeoutId) {
-			clearTimeout(this.timeoutId);
-			this.timeoutId = null;
-		}
-
 		if (this.mediaRecorder?.stream) {
 			this.mediaRecorder.stream.getTracks().forEach(t => t.stop());
 		}
