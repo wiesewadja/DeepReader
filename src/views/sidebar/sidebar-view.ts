@@ -50,7 +50,6 @@ import type { SidebarEventMap } from "./events.js";
 import { ChatPresenter } from "./presenters/chat-presenter.js";
 import { QuoteManager } from "./quote-manager.js";
 import { copyToClipboard as _copyToClipboard } from "./search-utils.js";
-import { TTSController } from "./tts-controller.js";
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -75,14 +74,10 @@ export class SidebarView extends ItemView {
 	// 前端 Agent
 	private frontendAgent: FrontendAgent | null = null;
 
-	// 会话存储（JSONL 文件）
-	private ttsService:
-		| import("../../services/tts/tts-service.js").TTSService
-		| null = null;
+
 
 	// ── 子系统 controller ──
 	private quoteManager: QuoteManager;
-	private ttsCtrl: TTSController;
 	private ttsDomain: TTSDomain;
 	private sessionDomain: SessionDomain;
 	private bookDomain: BookDomain;
@@ -216,49 +211,11 @@ export class SidebarView extends ItemView {
 			app: this.app,
 			eventBus: this.eventBus,
 		});
-		this.ttsCtrl = new TTSController({
-			get app() {
-				return self.app;
-			},
-			get plugin() {
-				return self.plugin;
-			},
+		this.ttsDomain = new TTSDomain({
+			app: this.app,
+			plugin: this.plugin,
+			eventBus: this.eventBus,
 
-			getDisplayName(name: string) {
-				return self.bookDomain.getDisplayName(name);
-			},
-			getCurrentPdfName() {
-				return self.bookDomain.currentPdfName;
-			},
-			getCurrentBookAuthor() {
-				return self.bookDomain.currentBookAuthor;
-			},
-			getCurrentIndexId() {
-				return self.bookDomain.currentIndexId;
-			},
-			setTtsService(service) {
-				self.ttsService = service;
-			},
-			onReadingTTSStateChange: (state) => {
-				self.eventBus.emit("tts:state-changed", {
-					source: "reading",
-					state,
-				});
-			},
-			onMessageTTSStateChange: (messageId, state) => {
-				self.eventBus.emit("tts:state-changed", {
-					source: "message",
-					messageId,
-					state,
-				});
-			},
-			onMessageTTSProgressChange: (messageId, progress) => {
-				self.eventBus.emit("tts:progress-changed", {
-					source: "message",
-					messageId,
-					progress,
-				});
-			},
 			getMessageParagraphs: (messageId: string) => {
 				const msg = self.messageList?.getMessage(messageId);
 				const messageEl = msg?.getElement();
@@ -267,13 +224,6 @@ export class SidebarView extends ItemView {
 				const allElements = Array.from(contentEl.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6, blockquote'));
 				const leafElements = allElements.filter(el => !allElements.some(other => other !== el && el.contains(other)));
 				return leafElements.map(el => el.textContent || '');
-			},
-			onMessageTTSParagraphChange: (messageId, paragraphIndex) => {
-				self.eventBus.emit("tts:paragraph-changed", {
-					source: "message",
-					messageId,
-					paragraphIndex,
-				});
 			},
 			highlightElement: (el) => self.highlightReadingElement(el),
 			clearHighlight: () => self.clearReadingHighlight(),
@@ -290,12 +240,6 @@ export class SidebarView extends ItemView {
 				return service?.isDualPageMode?.() || false;
 			},
 			goToNextPage: () => self.goToNextPage(),
-		});
-		this.ttsDomain = new TTSDomain({
-			app: this.app,
-			plugin: this.plugin,
-			eventBus: this.eventBus,
-			ttsController: this.ttsCtrl,
 		});
 		this.bookDomain = new BookDomain({
 			app: this.app,

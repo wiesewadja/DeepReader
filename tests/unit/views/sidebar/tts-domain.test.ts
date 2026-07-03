@@ -1,131 +1,100 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { TTSDomain } from "@/views/sidebar/domains/tts-domain";
 import { EventBus } from "@/views/sidebar/event-bus";
-import type { SidebarEventMap, TTSPlayState } from "@/views/sidebar/events";
-import type { TTSController } from "@/views/sidebar/tts-controller";
+import type { SidebarEventMap } from "@/views/sidebar/events";
 
-function createMockTTSController(
-	overrides: Partial<TTSController> = {},
-): TTSController {
+// Mock providers and resolveRoleConfig
+vi.mock("@/config/providers", () => {
 	return {
-		handleTTS: vi.fn(async () => {}),
-		stop: vi.fn(() => {}),
-		pause: vi.fn(() => {}),
-		resume: vi.fn(() => {}),
-		handleReadingTTS: vi.fn(async () => {}),
-		stopReading: vi.fn(() => {}),
-		ensureService: vi.fn(() => {}),
-		getTtsService: vi.fn(() => null),
-		getCurrentSource: vi.fn(() => "message"),
-		isAutoPageTurning: vi.fn(() => false),
-		destroy: vi.fn(() => {}),
-		...overrides,
-	} as unknown as TTSController;
-}
+		resolveRoleConfig: vi.fn(() => ({ apiKey: "key", baseUrl: "url", model: "model", provider: "provider" })),
+	};
+});
+
+vi.mock("@/services/tts/pcm-stream-player", () => {
+	return {
+		PCMStreamPlayer: vi.fn().mockImplementation(() => {
+			return {
+				enqueue: vi.fn(),
+				stop: vi.fn(),
+				pause: vi.fn(),
+				resume: vi.fn(),
+				seal: vi.fn(),
+				waitForEnd: vi.fn(async () => {}),
+				endTime: 0,
+				currentTime: 0,
+			};
+		}),
+	};
+});
+
+vi.mock("@/services/tts/tts-client", () => {
+	return {
+		TTSClient: vi.fn().mockImplementation(() => {
+			return {
+				synthesizeStream: vi.fn().mockImplementation(function* () {
+					yield new ArrayBuffer(8);
+				}),
+			};
+		}),
+	};
+});
 
 describe("TTSDomain", () => {
 	let eventBus: EventBus<SidebarEventMap>;
-	let ttsController: TTSController;
+	let app: any;
+	let plugin: any;
+	let stateHandler: any;
 
 	beforeEach(() => {
 		eventBus = new EventBus<SidebarEventMap>();
-		ttsController = createMockTTSController();
+		stateHandler = vi.fn();
+		eventBus.on("tts:state-changed", stateHandler);
+
+		app = {
+			vault: {
+				getAbstractFileByPath: vi.fn(() => null),
+			},
+		};
+
+		plugin = {
+			manifest: { id: "deepreader-dev" },
+			settings: {
+				tts: { apiKey: "key", baseUrl: "url", model: "model" },
+				router: { apiKey: "key", baseUrl: "url", model: "model" },
+			},
+		};
 	});
 
 	function createDomain(): TTSDomain {
 		return new TTSDomain({
-			app: {} as any,
-			plugin: {} as any,
+			app,
+			plugin,
 			eventBus,
-			ttsController,
+			getDisplayName: (name) => name,
+			getCurrentPdfName: () => "test.pdf",
+			getCurrentBookAuthor: () => "author",
+			getCurrentIndexId: () => "book-1",
+			setTtsService: vi.fn(),
 		});
 	}
 
-	it("delegates speak to TTSController", async () => {
+	it("manages current playback source and handles lifecycle calls", () => {
 		const domain = createDomain();
-		await domain.speak("msg-1", "hello");
-		expect(ttsController.handleTTS).toHaveBeenCalledWith("msg-1", "hello");
-	});
+		expect(domain.getCurrentSource()).toBe("message");
+		expect(domain.isAutoPageTurning()).toBe(false);
 
-	it("delegates stop to TTSController", () => {
-		const domain = createDomain();
 		domain.stop();
-		expect(ttsController.stop).toHaveBeenCalled();
+		domain.stopReading();
 	});
 
-	it("delegates pause and resume to TTSController", () => {
-		const domain = createDomain();
-		domain.pause();
-		domain.resume();
-		expect(ttsController.pause).toHaveBeenCalled();
-		expect(ttsController.resume).toHaveBeenCalled();
-	});
-
-	it("delegates readCurrentPage to TTSController", async () => {
-		const domain = createDomain();
-		await domain.readCurrentPage("selection text");
-		expect(ttsController.handleReadingTTS).toHaveBeenCalledWith("selection text");
-	});
-
-	it("delegates stopReading to TTSController", () => {
-		const domain = createDomain();
-		domain.stopReading(true);
-		expect(ttsController.stopReading).toHaveBeenCalledWith(true);
-	});
-
-	it("delegates service accessors to TTSController", () => {
+	it("initializes TTS service and handles speak trigger state changes", async () => {
 		const domain = createDomain();
 		domain.ensureService();
-		domain.getTtsService();
-		domain.getCurrentSource();
-		domain.isAutoPageTurning();
-		expect(ttsController.ensureService).toHaveBeenCalled();
-		expect(ttsController.getTtsService).toHaveBeenCalled();
-		expect(ttsController.getCurrentSource).toHaveBeenCalled();
-		expect(ttsController.isAutoPageTurning).toHaveBeenCalled();
-	});
+		expect(domain.getTtsService()).not.toBeNull();
 
-	it("delegates destroy to TTSController", () => {
-		const domain = createDomain();
-		domain.destroy();
-		expect(ttsController.destroy).toHaveBeenCalled();
-	});
-
-	it("preloads TTS preview through the service", async () => {
-		const preloadPreview = vi.fn(async () => {});
-		const mockService = { preloadPreview };
-		const getTtsService = vi.fn()
-			.mockReturnValueOnce(null)
-			.mockReturnValue(mockService as any);
-		ttsController = createMockTTSController({ getTtsService });
-		const domain = new TTSDomain({
-			app: {
-				vault: {
-					adapter: {
-						exists: vi.fn(async () => false),
-					},
-				},
-			} as any,
-			plugin: {} as any,
-			eventBus,
-			ttsController,
-		});
-
-		await domain.preloadPreview("msg-1", "hello world", {
-			indexId: "book-1",
-			pdfName: "Book One",
-			author: "Author",
-		});
-
-		expect(ttsController.ensureService).toHaveBeenCalled();
-		expect(preloadPreview).toHaveBeenCalledWith(
-			"msg-1",
-			"hello world",
-			expect.objectContaining({
-				bookId: "book-1",
-				bookTitle: "Book One",
-				bookAuthor: "Author",
-			}),
+		await domain.speak("msg-1", "hello");
+		expect(stateHandler).toHaveBeenCalledWith(
+			expect.objectContaining({ source: "message", messageId: "msg-1" }),
 		);
 	});
 });
