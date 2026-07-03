@@ -7,6 +7,7 @@ export interface ModelConfig {
   baseUrl: string;
   model: string;
   disableThinking?: boolean;
+  requestTimeout?: number; // 请求超时（毫秒）
 }
 
 export interface ChatModels {
@@ -65,6 +66,7 @@ export function createChatModels(main: ModelConfig, fast?: ModelConfig): ChatMod
     streaming: true,
     temperature: 0.3,
     modelKwargs: mainKwargs,
+    requestTimeout: main.requestTimeout || 60000, // 默认 60 秒超时
   });
   // 覆盖 getNumTokens，跳过远程 tiktoken 加载（避免 gfw 导致的 ERR_CONNECTION_CLOSED）
   mainModel.getNumTokens = estimateTokens;
@@ -82,6 +84,7 @@ export function createChatModels(main: ModelConfig, fast?: ModelConfig): ChatMod
       streaming: false,
       temperature: 0.1,
       modelKwargs: fastKwargs,
+      requestTimeout: fast.requestTimeout || 30000, // 默认 30 秒超时
     });
     fastModel.getNumTokens = estimateTokens;
   }
