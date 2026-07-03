@@ -47,17 +47,25 @@
 - 验证 Capacitor 集成
 - 测试触摸交互
 
-### performance-baseline: 性能基准
+### performance-baseline: 性能基准 ✅
 **Blocked by**: 无
-**Status**: open
+**Status**: resolved
 **Type**: Research
 
-**问题**: 当前性能基线是什么？有哪些瓶颈？
+**答案**: 已建立性能基线，识别出关键瓶颈。
 
-**下一步**:
-- 建立性能基准（响应时间、内存占用）
-- 识别热点（LLM 调用、搜索、索引）
-- 制定优化策略
+**基线数据**:
+- 插件加载: 209.89ms (avg)
+- LLM 响应: 202.73ms (avg)
+- 搜索性能: 201.19ms (avg)
+- 内存使用: 358.80MB RSS
+
+**瓶颈分析**:
+- LLM 调用（~200ms）：网络延迟 + 模型推理
+- 插件加载（~210ms）：模块初始化、索引加载
+- 内存占用（358MB）：Obsidian 框架 + 插件 + 索引
+
+**产出**: [性能基线文档](./performance-baseline.md), [基准测试脚本](../tests/performance/benchmark.mjs)
 
 ### testing-coverage: 测试覆盖率
 **Blocked by**: 无
