@@ -138,4 +138,24 @@ describe("SessionDomain", () => {
 			expect.objectContaining({ reason: "cancelled" }),
 		);
 	});
+
+	it("handleRegenerate truncates history to the preceding user message and restarts the assistant stream", async () => {
+		const domain = createDomain();
+		domain.agentChatHistory = [
+			{ role: "user", content: "question 1", timestamp: "ts-user-1" },
+			{ role: "assistant", content: "answer 1", timestamp: "ts-assistant-1" },
+			{ role: "user", content: "question 2", timestamp: "ts-user-2" },
+			{ role: "assistant", content: "answer 2", timestamp: "ts-assistant-2" },
+		];
+
+		const streamSpy = vi.spyOn(domain as any, "streamAssistantResponse");
+
+		domain.handleRegenerate("ts-assistant-2");
+
+		expect(domain.agentChatHistory).toHaveLength(3);
+		expect(domain.agentChatHistory[2]).toEqual(
+			expect.objectContaining({ role: "user", content: "question 2" }),
+		);
+		expect(streamSpy).toHaveBeenCalledWith("question 2");
+	});
 });

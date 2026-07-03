@@ -196,6 +196,49 @@ export class ChatPresenter {
 				this.getReadingTopbar()?.setMascotExpression("idle");
 			}),
 		);
+
+		this.unsubscribe.push(
+			this.eventBus.on("book:changed", (event) => {
+				const messageList = this.getMessageList();
+				const readingTopbar = this.getReadingTopbar();
+
+				if (event.currentBooklist) {
+					readingTopbar?.setCurrentBooklist(event.currentBooklist);
+					if (event.booklistCovers) {
+						readingTopbar?.updateBooklistCovers(event.booklistCovers);
+					}
+					messageList?.setCurrentPdfName(event.currentBooklist.name);
+				} else if (event.pdfName) {
+					readingTopbar?.setCurrentBook(event.pdfName, event.bookAuthor ?? undefined);
+					if (event.bookCoverUrl) {
+						readingTopbar?.setBookCover(event.bookCoverUrl);
+					} else {
+						readingTopbar?.setBookCover(null);
+					}
+					messageList?.setCurrentPdfName(event.pdfName);
+				} else {
+					readingTopbar?.setCurrentBook(null);
+					readingTopbar?.setBookCover(null);
+					readingTopbar?.clearBooklistMode();
+				}
+
+				if (event.clearChat) {
+					messageList?.clear();
+				}
+			}),
+		);
+
+		this.unsubscribe.push(
+			this.eventBus.on("book:index-deleted", (event) => {
+				new Notice(`索引已删除: ${event.pdfName}`);
+			}),
+		);
+
+		this.unsubscribe.push(
+			this.eventBus.on("book:index-delete-failed", (event) => {
+				new Notice(`删除失败: ${event.pdfName} (${event.error})`);
+			}),
+		);
 	}
 
 	private handleTTSStateChanged(

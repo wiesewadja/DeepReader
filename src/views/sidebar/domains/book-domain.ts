@@ -1,4 +1,4 @@
-import { App, Notice, TFile } from "obsidian";
+import { App, TFile } from "obsidian";
 import type { DeepReaderPluginInterface } from "../../../agent/tools/context/vault.js";
 import { removeFromCatalog } from "../../../pageindex/archive.js";
 import { PAGEINDEX_DIR, getPageindexDir } from "../../../pageindex/paths.js";
@@ -40,9 +40,6 @@ export interface BookDomainOptions {
 	getSessionStore(): any;
 	ensureSessionStore(): Promise<void>;
 	cancelActiveStream(): void;
-	initializeFrontendAgent(): Promise<void>;
-	getMessageList(): any;
-	getReadingTopbar(): any;
 }
 
 export class BookDomain {
@@ -59,6 +56,7 @@ export class BookDomain {
 	private _indexes: IndexListItem[] = [];
 	private _bookshelfSummary: string | null = null;
 	private _currentBooklist: Booklist | null = null;
+	private _booklistCovers?: { id: string; name: string; coverUrl?: string }[] = [];
 
 	constructor(options: BookDomainOptions) {
 		this.app = options.app;
@@ -210,6 +208,18 @@ export class BookDomain {
 		}
 	}
 
+	static getDisplayName(pdfName: string): string {
+		let name = pdfName;
+		const separators = ["_", "-"];
+		for (const sep of separators) {
+			if (name.includes(sep)) {
+				name = name.split(sep)[0].trim();
+				break;
+			}
+		}
+		return name;
+	}
+
 	static async deleteIndexOnly(app: App, plugin: DeepReaderPluginInterface, indexId: string): Promise<IndexListItem[]> {
 		try {
 			const indexDir = `${PAGEINDEX_DIR}/${indexId}`;
@@ -225,17 +235,6 @@ export class BookDomain {
 			const indexes = await BookDomain.loadIndexesOnly(app, plugin);
 			const index = indexes.find((idx) => idx.id === indexId);
 
-			const getDisplayName = (pdfName: string): string => {
-				let name = pdfName;
-				for (const sep of ["_", "-"]) {
-					if (name.includes(sep)) {
-						name = name.split(sep)[0].trim();
-						break;
-					}
-				}
-				return name;
-			};
-
 			if (index && exportName) {
 				await vaultRmdir(app, `DeepReader/${exportName}`);
 				for (const ext of ["png", "jpg", "jpeg", "webp", "gif", "svg"]) {
@@ -244,7 +243,7 @@ export class BookDomain {
 					} catch { /* not found */ }
 				}
 			} else if (index) {
-				const displayName = getDisplayName(index.pdf_name);
+				const displayName = BookDomain.getDisplayName(index.pdf_name);
 				await vaultRmdir(app, `DeepReader/${displayName}`);
 				for (const ext of ["png", "jpg", "jpeg", "webp", "gif", "svg"]) {
 					try {
@@ -260,27 +259,17 @@ export class BookDomain {
 				logError(`[BookDomain] removeFromCatalog failed (bookId=${indexId}):`, e);
 			}
 
-			new Notice("索引已删除");
 			return indexes.filter((idx) => idx.id !== indexId);
 		} catch (error) {
 			logError("[BookDomain] Delete index failed:", error);
-			new Notice("删除失败");
-			return BookDomain.loadIndexesOnly(app, plugin);
+			throw error;
 		}
 	}
 
 	// ── Display Name ──
 
 	getDisplayName(pdfName: string): string {
-		let name = pdfName;
-		const separators = ["_", "-"];
-		for (const sep of separators) {
-			if (name.includes(sep)) {
-				name = name.split(sep)[0].trim();
-				break;
-			}
-		}
-		return name;
+		return BookDomain.getDisplayName(pdfName);
 	}
 
 	// ── Library View Interaction ──
@@ -391,7 +380,7 @@ export class BookDomain {
 		// Exit booklist mode when switching to a single book
 		if (this._currentBooklist) {
 			this._currentBooklist = null;
-			this.options.getReadingTopbar()?.clearBooklistMode();
+			this._booklistCovers = undefined;
 			this.plugin.settings.lastCrossBookMode = false;
 			this.plugin.settings.lastActiveBooklistId = undefined;
 		}
@@ -422,7 +411,7 @@ export class BookDomain {
 				coverName = exportName;
 			} catch { /* ignored */ }
 
-			const simplifiedName = vaultDir?.dirName || exportName || this.getDisplayName(displayName);
+			const simplifiedName = vaultDir?.dirName || exportName || BookDomain.getDisplayName(displayName);
 			this._currentPdfName = simplifiedName;
 			displayName = vaultDir?.bookName || simplifiedName;
 			author = vaultDir?.author || metaAuthor || index.author;
@@ -463,12 +452,9 @@ export class BookDomain {
 
 		this._currentBookAuthor = author || null;
 
-		this.options.getMessageList()?.setCurrentPdfName(displayName);
-		this.options.getReadingTopbar()?.setCurrentBook(displayName, author);
-
 		// Read description from local Markdown note
 		try {
-			const bookName = coverName || this.getDisplayName(this._currentPdfName || "");
+			const bookName = coverName || BookDomain.getDisplayName(this._currentPdfName || "");
 			const bookNotePath = `DeepReader/${bookName}/${bookName}.md`;
 			const bookNoteFile = this.app.vault.getAbstractFileByPath(bookNotePath);
 
@@ -489,7 +475,6 @@ export class BookDomain {
 		}
 
 		this.options.cancelActiveStream();
-		this.options.getMessageList()?.clear();
 
 		// Session Restoration
 		const savedSessions = this.plugin.settings.savedSessions || {};
@@ -510,26 +495,28 @@ export class BookDomain {
 
 					if (!isMatch) {
 						await this.options.startNewSession(indexId);
-						this.emitChanged();
+						this.emitChanged(true);
 						return;
 					}
 
 					this.options.setSessionId(savedSessionId);
 					const restored = await this.options.restoreFromSessionStore(savedSessionId);
 					if (restored) {
-						this.emitChanged();
+						this.emitChanged(false);
 						return;
 					}
 				}
 				await this.options.startNewSession(indexId);
+				this.emitChanged(true);
 			} catch (e) {
 				logError("[BookDomain] Session restoration failed, starting new session:", e);
 				await this.options.startNewSession(indexId);
+				this.emitChanged(true);
 			}
 		} else {
 			await this.options.startNewSession(indexId);
+			this.emitChanged(true);
 		}
-		this.emitChanged();
 	}
 
 	async selectBookByName(bookName: string): Promise<void> {
@@ -624,11 +611,11 @@ export class BookDomain {
 
 		if (this._currentPdfName !== vaultDir.dirName) {
 			this._currentPdfName = vaultDir.dirName;
-			this.options.getMessageList()?.setCurrentPdfName(displayName);
 		}
 
 		const author = vaultDir.author || index?.author;
-		this.options.getReadingTopbar()?.setCurrentBook(displayName, author);
+		this._currentBookAuthor = author || null;
+		this.emitChanged(false);
 	}
 
 	async checkBookChaptersExist(pdfName: string): Promise<boolean> {
@@ -648,14 +635,24 @@ export class BookDomain {
 	// ── Delete index ──
 
 	async deleteIndex(indexId: string): Promise<void> {
-		this._indexes = await BookDomain.deleteIndexOnly(this.app, this.plugin, indexId);
-		this.plugin.settings.lastSelectedIndexId = undefined;
-		await this.plugin.saveSettings();
+		try {
+			const index = this._indexes.find((idx) => idx.id === indexId);
+			const pdfName = index ? index.pdf_name : indexId;
 
-		if (this._currentIndexId === indexId) {
-			this.clearBookInfo();
+			this._indexes = await BookDomain.deleteIndexOnly(this.app, this.plugin, indexId);
+			this.plugin.settings.lastSelectedIndexId = undefined;
+			await this.plugin.saveSettings();
+
+			if (this._currentIndexId === indexId) {
+				this.clearBookInfo();
+			}
+			this.eventBus.emit("book:index-deleted", { pdfName });
+			this.emitChanged(true);
+		} catch (error) {
+			const index = this._indexes.find((idx) => idx.id === indexId);
+			const pdfName = index ? index.pdf_name : indexId;
+			this.eventBus.emit("book:index-delete-failed", { pdfName, error: String(error) });
 		}
-		this.emitChanged();
 	}
 
 	clearBookInfo(): void {
@@ -664,14 +661,7 @@ export class BookDomain {
 		this._currentBookCoverUrl = null;
 		this._currentBookAuthor = null;
 		this._currentBooklist = null;
-		this.options.getReadingTopbar()?.setCurrentBook(null);
-		this.options.getReadingTopbar()?.setBookCover(null);
-		this.options.getReadingTopbar()?.clearBooklistMode();
-	}
-
-	clearTopbarDisplay(): void {
-		this.options.getReadingTopbar()?.setCurrentBook(null);
-		this.options.getReadingTopbar()?.setBookCover(null);
+		this._booklistCovers = undefined;
 	}
 
 	// ── Book Cover Loader ──
@@ -694,12 +684,12 @@ export class BookDomain {
 		if (coverFile) {
 			const coverUrl = this.app.vault.getResourcePath(coverFile as any);
 			this._currentBookCoverUrl = coverUrl;
-			this.options.getReadingTopbar()?.setBookCover(coverUrl);
+			this.emitChanged(false);
 			return;
 		}
 
 		this._currentBookCoverUrl = null;
-		this.options.getReadingTopbar()?.setBookCover(null);
+		this.emitChanged(false);
 	}
 
 	// ── Booklists ──
@@ -711,13 +701,11 @@ export class BookDomain {
 		this._currentBookAuthor = null;
 		this._currentDocDescription = null;
 		this._currentBooklist = booklist;
+		this._booklistCovers = undefined;
 
 		this.options.cancelActiveStream();
-		this.options.getMessageList()?.clear();
-		this.options.getReadingTopbar()?.setCurrentBooklist(booklist);
-		this.options.getMessageList()?.setCurrentPdfName(booklist.name);
+		this.emitChanged(true);
 		this.loadAndApplyBooklistCovers(booklist);
-		this.emitChanged();
 	}
 
 	private async loadAndApplyBooklistCovers(booklist: Booklist): Promise<void> {
@@ -743,19 +731,19 @@ export class BookDomain {
 				}
 				const bookIdx = booklist.bookIds.indexOf(bookId);
 				if (bookIdx >= 0 && booklist.bookNames?.[bookIdx]) {
-					const bn = booklist.bookNames[bookIdx];
-					if (!names.includes(bn)) names.push(bn);
+					names.push(booklist.bookNames[bookIdx]);
 				}
 
 				for (const name of names) {
 					for (const ext of extensions) {
 						const coverPath = `DeepReader/covers/${name}.${ext}`;
-						const file = this.app.vault.getAbstractFileByPath(coverPath);
-						if (file) {
-							coverUrls.push(this.app.vault.getResourcePath(file as any));
-							found = true;
-							break;
-						}
+						try {
+							if (await adapter.exists(coverPath)) {
+								coverUrls.push(this.app.vault.getResourcePath(coverPath as any));
+								found = true;
+								break;
+							}
+						} catch { continue; }
 					}
 					if (found) break;
 				}
@@ -778,12 +766,12 @@ export class BookDomain {
 			}
 
 			if (coverUrls.some((u) => u)) {
-				const items = booklist.bookIds.slice(0, 3).map((id, i) => ({
+				this._booklistCovers = booklist.bookIds.slice(0, 3).map((id, i) => ({
 					id,
 					name: booklist.bookNames?.[i] || id,
 					coverUrl: coverUrls[i] || undefined,
 				}));
-				this.options.getReadingTopbar()?.updateBooklistCovers(items);
+				this.emitChanged(false);
 			}
 		} catch (err) {
 			log.warn("[BookDomain] loadAndApplyBooklistCovers failed:", err);
@@ -799,8 +787,8 @@ export class BookDomain {
 		this._currentBookAuthor = null;
 		this._currentDocDescription = null;
 		this._currentBooklist = booklist;
+		this._booklistCovers = undefined;
 
-		this.options.getReadingTopbar()?.setCurrentBooklist(booklist);
 		this.loadAndApplyBooklistCovers(booklist);
 
 		this.plugin.settings.lastSelectedIndexId = undefined;
@@ -820,12 +808,9 @@ export class BookDomain {
 
 		await this.plugin.saveSettings();
 
-		this.options.getMessageList()?.setCurrentPdfName(booklist.name);
 		this.options.cancelActiveStream();
-		this.options.getMessageList()?.clear();
-
 		await this.options.startNewSession(booklist.id);
-		this.emitChanged();
+		this.emitChanged(true);
 	}
 
 	clearBooklist(): void {
@@ -834,23 +819,20 @@ export class BookDomain {
 		this.options.cancelActiveStream();
 		this._currentBooklist = null;
 		this._currentDocDescription = null;
-
-		this.options.getReadingTopbar()?.clearBooklistMode();
-		this.options.getMessageList()?.clear();
+		this._booklistCovers = undefined;
 
 		this.plugin.settings.lastCrossBookMode = false;
 		this.plugin.settings.lastSelectedIndexId = undefined;
 		this.plugin.settings.lastActiveBooklistId = undefined;
 		this.plugin.saveSettings();
 		this.options.setSessionId(null);
-		this.emitChanged();
+		this.emitChanged(true);
 	}
 
 	renameBooklist(newName: string): void {
 		if (!this._currentBooklist || !newName) return;
 
 		this._currentBooklist.name = newName;
-		this.options.getMessageList()?.setCurrentPdfName(newName);
 
 		const history = this.plugin.settings.booklistHistory || [];
 		const idx = history.findIndex((b: Booklist) => b.id === this._currentBooklist!.id);
@@ -864,7 +846,7 @@ export class BookDomain {
 			const view = leaf.view as any;
 			view.updateBooklistName?.(this._currentBooklist!.id, newName);
 		}
-		this.emitChanged();
+		this.emitChanged(false);
 	}
 
 	getCurrentBookInfo(): { title: string | null; page_count: number; docDescription: string | null } {
@@ -875,18 +857,29 @@ export class BookDomain {
 		};
 	}
 
-	private emitChanged(): void {
-		this.eventBus.emit("book:changed", this.getCurrentBookContext());
+	private emitChanged(clearChat = false): void {
+		this.eventBus.emit("book:changed", {
+			indexId: this.currentIndexId,
+			pdfName: this.currentPdfName,
+			docDescription: this.currentDocDescription,
+			bookCoverUrl: this.currentBookCoverUrl,
+			bookAuthor: this.currentBookAuthor,
+			currentBooklist: this._currentBooklist,
+			booklistCovers: this._booklistCovers,
+			clearChat,
+		});
 	}
 
-	getCurrentBookContext(): BookContext {
+	getCurrentBookContext(): any {
 		return {
 			indexId: this.currentIndexId,
 			pdfName: this.currentPdfName,
 			docDescription: this.currentDocDescription,
 			bookCoverUrl: this.currentBookCoverUrl,
 			bookAuthor: this.currentBookAuthor,
-			currentBooklistBookIds: this.currentBooklistBookIds,
+			currentBooklist: this._currentBooklist,
+			booklistCovers: this._booklistCovers,
+			clearChat: false,
 		};
 	}
 }

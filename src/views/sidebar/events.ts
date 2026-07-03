@@ -6,6 +6,8 @@ import type { LoadedDocument } from "./services/chat-document-service.js";
  * Domains publish these events; ChatPresenter and cross-domain subscribers consume them.
  */
 
+import type { Booklist } from "../../types/index.js";
+
 export type TTSPlayState = "idle" | "summarizing" | "tts_loading" | "playing" | "paused";
 
 export interface BookChangedEvent {
@@ -14,6 +16,9 @@ export interface BookChangedEvent {
 	bookAuthor: string | null;
 	bookCoverUrl: string | null;
 	docDescription: string | null;
+	currentBooklist: Booklist | null;
+	booklistCovers?: { id: string; name: string; coverUrl?: string }[];
+	clearChat: boolean;
 }
 
 export interface TTSStateChangedEvent {
@@ -101,6 +106,8 @@ export interface HistoryRestoredEvent {
 export interface SidebarEventMap {
 	"chat:documents-changed": { documents: LoadedDocument[] };
 	"book:changed": BookChangedEvent;
+	"book:index-deleted": { pdfName: string };
+	"book:index-delete-failed": { pdfName: string; error: string };
 	"tts:state-changed": TTSStateChangedEvent;
 	"tts:progress-changed": TTSProgressChangedEvent;
 	"tts:paragraph-changed": TTSParagraphChangedEvent;

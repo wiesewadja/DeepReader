@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { TTSDomain } from "@/views/sidebar/domains/tts-domain";
 import { EventBus } from "@/views/sidebar/event-bus";
 import type { SidebarEventMap } from "@/views/sidebar/events";
+import { PCMStreamPlayer } from "@/services/tts/pcm-stream-player";
+import { TTSClient } from "@/services/tts/tts-client";
 
 // Mock providers and resolveRoleConfig
 vi.mock("@/config/providers", () => {
@@ -31,7 +33,7 @@ vi.mock("@/services/tts/tts-client", () => {
 	return {
 		TTSClient: vi.fn().mockImplementation(() => {
 			return {
-				synthesizeStream: vi.fn().mockImplementation(function* () {
+				synthesizeStream: vi.fn().mockImplementation(async function* () {
 					yield new ArrayBuffer(8);
 				}),
 			};
@@ -44,6 +46,9 @@ describe("TTSDomain", () => {
 	let app: any;
 	let plugin: any;
 	let stateHandler: any;
+	let clearHighlight: any;
+	let getPageParagraphs: any;
+	let goToNextPage: any;
 
 	beforeEach(() => {
 		eventBus = new EventBus<SidebarEventMap>();
@@ -62,7 +67,14 @@ describe("TTSDomain", () => {
 				tts: { apiKey: "key", baseUrl: "url", model: "model" },
 				router: { apiKey: "key", baseUrl: "url", model: "model" },
 			},
+			readingModeService: {
+				setXitongReading: vi.fn(),
+			},
 		};
+
+		clearHighlight = vi.fn();
+		getPageParagraphs = vi.fn(() => []);
+		goToNextPage = vi.fn(() => false);
 	});
 
 	function createDomain(): TTSDomain {
@@ -70,11 +82,11 @@ describe("TTSDomain", () => {
 			app,
 			plugin,
 			eventBus,
-			getDisplayName: (name) => name,
-			getCurrentPdfName: () => "test.pdf",
-			getCurrentBookAuthor: () => "author",
-			getCurrentIndexId: () => "book-1",
-			setTtsService: vi.fn(),
+			getPageParagraphs,
+			getCurrentPage: () => 1,
+			isDualPageMode: () => false,
+			clearHighlight,
+			goToNextPage,
 		});
 	}
 
@@ -96,5 +108,64 @@ describe("TTSDomain", () => {
 		expect(stateHandler).toHaveBeenCalledWith(
 			expect.objectContaining({ source: "message", messageId: "msg-1" }),
 		);
+	});
+
+	it("readCurrentPage transitions through loading/playing/idle and uses the PCM player", async () => {
+		const domain = createDomain();
+
+		await domain.readCurrentPage("hello world");
+
+		expect(domain.getCurrentSource()).toBe("message");
+		expect(stateHandler).toHaveBeenCalledWith(
+			expect.objectContaining({ source: "reading", state: "tts_loading" }),
+		);
+		expect(stateHandler).toHaveBeenCalledWith(
+			expect.objectContaining({ source: "reading", state: "playing" }),
+		);
+		expect(stateHandler).toHaveBeenLastCalledWith(
+			expect.objectContaining({ source: "reading", state: "idle" }),
+		);
+
+		const player = vi.mocked(PCMStreamPlayer).mock.results[0].value;
+		expect(player.enqueue).toHaveBeenCalled();
+		expect(player.stop).toHaveBeenCalled();
+	});
+
+	it("stopReading aborts an active reading stream and resets state", async () => {
+		const { TTSClient: MockedTTSClient } = await import("@/services/tts/tts-client");
+		const abortSignal = { aborted: false } as AbortSignal;
+		let controller: AbortController | null = null;
+
+		vi.mocked(MockedTTSClient).mockImplementation(() => ({
+			synthesizeStream: vi.fn((_text, _opts, signal) => {
+				controller = signal as unknown as AbortController;
+				return (async function* () {
+					yield new ArrayBuffer(8);
+					// Keep the stream alive until explicitly aborted.
+					while (!signal?.aborted) {
+						await new Promise((r) => setTimeout(r, 5));
+					}
+				})();
+			}),
+		}));
+
+		const domain = createDomain();
+		const readPromise = domain.readCurrentPage("hello world");
+
+		// Allow the async generator to start before stopping.
+		await new Promise((r) => setTimeout(r, 10));
+		expect(domain.getCurrentSource()).toBe("reading");
+
+		domain.stopReading();
+		await readPromise;
+
+		expect(domain.getCurrentSource()).toBe("message");
+		expect(clearHighlight).toHaveBeenCalled();
+		expect(stateHandler).toHaveBeenLastCalledWith(
+			expect.objectContaining({ source: "reading", state: "idle" }),
+		);
+
+		const player = vi.mocked(PCMStreamPlayer).mock.results[0].value;
+		expect(player.stop).toHaveBeenCalled();
 	});
 });

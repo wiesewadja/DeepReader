@@ -22,8 +22,6 @@ describe("BookDomain", () => {
 	let startNewSession: any;
 	let restoreFromSessionStore: any;
 	let cancelActiveStream: any;
-	let getMessageList: any;
-	let getReadingTopbar: any;
 
 	beforeEach(() => {
 		eventBus = new EventBus<SidebarEventMap>();
@@ -64,19 +62,9 @@ describe("BookDomain", () => {
 		startNewSession = vi.fn(async () => {});
 		restoreFromSessionStore = vi.fn(async () => true);
 		cancelActiveStream = vi.fn();
-		getMessageList = vi.fn(() => ({
-			setCurrentPdfName: vi.fn(),
-			clear: vi.fn(),
-		}));
-		getReadingTopbar = vi.fn(() => ({
-			clearBooklistMode: vi.fn(),
-			setCurrentBook: vi.fn(),
-			setBookCover: vi.fn(),
-			setCurrentBooklist: vi.fn(),
-		}));
 	});
 
-	function createDomain() {
+	function createDomain(sessionStore?: any) {
 		return new BookDomain({
 			app,
 			plugin,
@@ -85,11 +73,9 @@ describe("BookDomain", () => {
 			restoreFromSessionStore,
 			getSessionId: () => "session-1",
 			setSessionId: () => {},
-			getSessionStore: () => null,
+			getSessionStore: () => sessionStore ?? null,
 			ensureSessionStore: vi.fn(async () => {}),
 			cancelActiveStream,
-			getMessageList,
-			getReadingTopbar,
 		});
 	}
 
@@ -116,6 +102,57 @@ describe("BookDomain", () => {
 		expect(domain.currentPdfName).toBe("Test Book");
 		expect(domain.currentBookAuthor).toBe("Test Author");
 		expect(changeHandler).toHaveBeenCalled();
+	});
+
+	it("selectIndex restores saved session when one exists", async () => {
+		const { vaultRead } = await import("@/utils/mobile-fs");
+		vi.mocked(vaultRead).mockResolvedValue(
+			JSON.stringify({
+				bookId: "book-1",
+				title: "Test Book",
+				author: "Test Author",
+				status: "ready",
+			}),
+		);
+
+		plugin.settings.savedSessions = { "Test Book": "saved-session-123" };
+		const sessionStore = {
+			get: vi.fn(async () => ({ indexId: "book-1", messages: [] })),
+		};
+
+		const domain = createDomain(sessionStore);
+		await domain.loadIndexes();
+		await domain.selectIndex("book-1");
+
+		expect(sessionStore.get).toHaveBeenCalledWith("saved-session-123");
+		expect(restoreFromSessionStore).toHaveBeenCalledWith("saved-session-123");
+		expect(startNewSession).not.toHaveBeenCalled();
+
+		const lastCall = changeHandler.mock.calls[changeHandler.mock.calls.length - 1][0];
+		expect(lastCall.clearChat).toBe(false);
+	});
+
+	it("selectIndex starts a new session when no saved session exists", async () => {
+		const { vaultRead } = await import("@/utils/mobile-fs");
+		vi.mocked(vaultRead).mockResolvedValue(
+			JSON.stringify({
+				bookId: "book-1",
+				title: "Test Book",
+				author: "Test Author",
+				status: "ready",
+			}),
+		);
+
+		plugin.settings.savedSessions = {};
+		const domain = createDomain();
+		await domain.loadIndexes();
+		await domain.selectIndex("book-1");
+
+		expect(restoreFromSessionStore).not.toHaveBeenCalled();
+		expect(startNewSession).toHaveBeenCalledWith("book-1");
+
+		const lastCall = changeHandler.mock.calls[changeHandler.mock.calls.length - 1][0];
+		expect(lastCall.clearChat).toBe(true);
 	});
 
 	it("manages thematic reading booklist select and clear", async () => {
