@@ -72,35 +72,6 @@ Obsidian 插件，奚童，AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
 - wdio 从 `bin/` 加载插件（不是 test-vault），`bin/manifest.json` 的 id 也要匹配
 - 跨 worktree 部署时需同时更新主仓库的 `bin/` 和 `test-vault/.obsidian/plugins/deepreader-dev/`
 
-## Worktree Skill/Agent 同步
-
-AI 工具配置（`.agents/`、`.claude/`、`.mimocode/`、`.kimi-code/`、`.archon/`）**不纳入 DeepReader 仓库，也不上传 GitHub**。它们现在独立存放在本地仓库 `~/workspace/DeepReader-AI-Configs`，由该仓库单独管理。
-
-DeepReader 主仓库通过 symlink 引用独立仓库：
-
-```
-<repo-root>/.agents   -> ~/workspace/DeepReader-AI-Configs/.agents
-<repo-root>/.claude   -> ~/workspace/DeepReader-AI-Configs/.claude
-<repo-root>/.mimocode -> ~/workspace/DeepReader-AI-Configs/.mimocode
-<repo-root>/.kimi-code -> ~/workspace/DeepReader-AI-Configs/.kimi-code
-<repo-root>/.archon   -> ~/workspace/DeepReader-AI-Configs/.archon
-```
-
-创建 worktree 时会自动通过 symlink 共享 AI 配置：
-
-```bash
-# 一键创建 worktree 并自动链接 AI 工具目录
-npm run worktree:create <branch-name> [base-ref]
-
-# 或直接使用脚本
-bash scripts/setup-worktree.sh <branch-name> [base-ref]
-```
-
-如果已有 worktree 需要补建 symlink，可单独运行：
-
-```bash
-bash scripts/setup-worktree-symlinks.sh .worktrees/<branch-name>
-```
 
 ## 项目规则
 
