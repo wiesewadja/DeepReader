@@ -31,6 +31,7 @@ export class PushToTalkController {
 	private cancelled = false;
 	private abortCtrl: AbortController | null = null;
 	private rewriteTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+	private maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
 	private config: PushToTalkConfig;
 
 	constructor(
@@ -68,6 +69,12 @@ export class PushToTalkController {
 			await this.recorder.start();
 			this.chatInput.setVoiceState('recording');
 			this.startIncrementalRecognition();
+
+			this.maxDurationTimer = setTimeout(() => {
+				if (this.state === 'listening') {
+					this.stop().catch(() => {});
+				}
+			}, 60000);
 		} catch (error) {
 			this.handleError(error as Error);
 		}
@@ -105,9 +112,9 @@ export class PushToTalkController {
 			// 直接使用 ASR 识别结果，跳过 LLM 重写
 			this.callbacks.onTextReady(recognizedText);
 			this.chatInput.setValue(recognizedText);
-			this.setState('done');
-			// 调用 completeVoiceInput 让 ChatInput 处理发送逻辑
+			// 调用 completeVoiceInput 让 ChatInput 处理发送逻辑，然后重置 state 回 idle
 			this.chatInput.completeVoiceInput();
+			this.reset();
 		} catch (error) {
 			this.handleError(error as Error);
 		}
@@ -141,6 +148,10 @@ export class PushToTalkController {
 		if (this.rewriteTimeoutTimer) {
 			clearTimeout(this.rewriteTimeoutTimer);
 			this.rewriteTimeoutTimer = null;
+		}
+		if (this.maxDurationTimer) {
+			clearTimeout(this.maxDurationTimer);
+			this.maxDurationTimer = null;
 		}
 		this.abortCtrl = null;
 		this.chatInput.setVoiceState('idle');

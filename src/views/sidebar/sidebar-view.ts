@@ -983,10 +983,10 @@ export class SidebarView extends ItemView {
 			
 			let target = "";
 			if (raised) {
-				const containerRect = container.getBoundingClientRect();
-				const topOffset = Math.max(0, containerRect.top);
-				// 视口高度减去容器顶部的偏移，即为键盘弹起时容器实际可用的最大高度，避免输入框被遮挡
-				target = `${vv.height - topOffset}px`;
+				const containerTop = container.getBoundingClientRect().top + window.scrollY;
+				const viewportTop = vv.offsetTop || 0;
+				const usableTop = Math.max(0, containerTop - viewportTop);
+				target = `${vv.height - usableTop}px`;
 			}
 
 			if (target === lastApplied) return;
@@ -996,8 +996,9 @@ export class SidebarView extends ItemView {
 			// 当键盘弹起时，确保当前聚焦的输入框滚动到视口中
 			if (raised && document.activeElement && container.contains(document.activeElement)) {
 				setTimeout(() => {
-					document.activeElement?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-				}, 150);
+					const inputSection = container.querySelector('.deeppdf-chat-input-section');
+					inputSection?.scrollIntoView({ block: "end", behavior: "smooth" });
+				}, 300);
 			}
 		};
 

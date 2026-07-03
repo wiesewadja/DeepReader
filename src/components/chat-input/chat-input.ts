@@ -8,9 +8,9 @@
  * Skills 自动路由：后端根据查询关键词自动匹配 Skill，无需手动选择
  */
 
-import { type App, type TFile } from 'obsidian';
+import { type App, type TFile, Platform } from 'obsidian';
 import type { QuoteMetadata } from '../../types/quote.js';
-import { Icons } from '../../utils/icons.js';
+import { Icons, getSpinnerIcon } from '../../utils/icons.js';
 import { FileSuggest } from '../file-suggest/file-suggest.js';
 import { VoiceOverlay } from './voice-overlay.js';
 
@@ -442,10 +442,13 @@ export class ChatInput {
 		};
 		this.inputContainer?.addEventListener('click', this.containerClickHandler);
 
-		// 聚焦/失焦时通知高度变化（用于动态调整消息列表间距）
 		this.textarea.addEventListener('focus', () => {
 			// 延迟通知，等待 CSS 过渡完成
 			setTimeout(() => this.notifyHeightChange(), 300);
+			// 移动端：主动触发 resize 以适配键盘
+			if (Platform.isMobile) {
+				setTimeout(() => window.visualViewport?.dispatchEvent(new Event('resize')), 100);
+			}
 		});
 		this.textarea.addEventListener('blur', () => {
 			// 延迟通知，等待 CSS 过渡完成
@@ -508,6 +511,10 @@ export class ChatInput {
 			if (this.longPressTimer) {
 				clearTimeout(this.longPressTimer);
 				this.longPressTimer = null;
+			}
+			if (this.longPressTriggered) {
+				this.longPressTriggered = false;
+				this.options.onVoiceStop?.();
 			}
 		}, { passive: true });
 	}
@@ -759,11 +766,19 @@ export class ChatInput {
 	private updateSendButtonState(): void {
 		if (!this.sendButton || !this.textarea) return;
 
-		// 录音/识别中 → 显示停止按钮
-		if (this.voiceState === 'recording' || this.voiceState === 'recognizing') {
-			this.sendButton.innerHTML = Icons.stop || '⏹';
-			this.sendButton.setAttribute('aria-label', '停止录音');
+		// 录音中 → 显示完成按钮 (Icons.check)
+		if (this.voiceState === 'recording') {
+			this.sendButton.innerHTML = Icons.check || '✓';
+			this.sendButton.setAttribute('aria-label', '完成录音');
 			this.sendButton.disabled = false;
+			return;
+		}
+
+		// 识别中 → 显示加载图标并禁用按钮
+		if (this.voiceState === 'recognizing') {
+			this.sendButton.innerHTML = getSpinnerIcon();
+			this.sendButton.setAttribute('aria-label', '识别中');
+			this.sendButton.disabled = true;
 			return;
 		}
 
