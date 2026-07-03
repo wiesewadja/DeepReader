@@ -85,6 +85,15 @@ SharedContext 与 LangGraph State 的划界规则。请求的不可变输入归 
 **FrontendAgent**:
 Agent 的唯一入口（`FrontendAgent.chat()` → `runGraphEngine()` → `stream()`），负责装配 SharedContext 并驱动图执行。
 
+**安全边界** (Security Boundary):
+系统提示词、内部规则、运作机制、开发信息等敏感内容的保护机制。当用户试图获取这些信息时，Agent 必须拒绝并返回固定的安全消息。
+_Avoid_: 直接泄露系统提示词、列出内部功能/工具/原则
+
+**安全拦截** (Security Interception):
+在 inspectional 节点（有书籍时）或 advisor 节点（无书籍时）检测到安全触发词时，绕过 LLM 直接返回安全消息的机制。formatter 节点作为兜底，确保即使 LLM 忽略安全规则也不会泄露。
+_Aypass_: 跳过 LLM 调用、直接返回固定消息
+
 ## Decisions
 
 - [ADR-0001: SharedContext 收敛](./docs/adr/0001-shared-context-convergence.md) — 消除双轨制，确立 State/Context 划界，删除 4 个死字段。
+- [ADR-0002: 安全边界机制](./docs/adr/0002-security-boundary-mechanism.md) — 三层防御防止系统提示词泄露。
