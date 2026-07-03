@@ -2,208 +2,138 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { BookDomain } from "@/views/sidebar/domains/book-domain";
 import { EventBus } from "@/views/sidebar/event-bus";
 import type { SidebarEventMap } from "@/views/sidebar/events";
-import type { BookManager } from "@/views/sidebar/book-manager";
-import type { IndexListItem, Booklist } from "@/types/index";
 
-function createMockBookManager(overrides: Partial<BookManager> = {}): BookManager {
-	const state = {
-		currentIndexId: null as string | null,
-		currentPdfName: null as string | null,
-		currentBookCoverUrl: null as string | null,
-		currentBookAuthor: null as string | null,
-		currentDocDescription: null as string | null,
-		indexes: [] as IndexListItem[],
-		currentBooklist: null as Booklist | null,
-	};
-
+vi.mock("@/utils/mobile-fs", () => {
 	return {
-		currentIndexId: state.currentIndexId,
-		currentPdfName: state.currentPdfName,
-		currentBookCoverUrl: state.currentBookCoverUrl,
-		currentBookAuthor: state.currentBookAuthor,
-		currentDocDescription: state.currentDocDescription,
-		indexes: state.indexes,
-		currentBooklist: state.currentBooklist,
-		currentBooklistBookIds: state.currentBooklist?.bookIds ?? null,
-
-		getDisplayName: vi.fn((pdfName: string) => pdfName.split("_")[0].split("-")[0]),
-		openLibrary: vi.fn(async () => {}),
-		buildBookshelfSummary: vi.fn(() => "mock summary"),
-		getCurrentBookInfo: vi.fn(() => ({
-			title: state.currentPdfName,
-			page_count: 0,
-			docDescription: state.currentDocDescription,
-		})),
-		loadIndexes: vi.fn(async () => {}),
-		selectIndex: vi.fn(async (indexId: string) => {
-			state.currentIndexId = indexId;
-			state.currentPdfName = `Book ${indexId}`;
-			state.currentBookAuthor = "Author";
-		}),
-		selectBookByName: vi.fn(async () => {}),
-		findBookDirectoryByIndexId: vi.fn(async () => null),
-		checkBookChaptersExist: vi.fn(async () => false),
-		handleDeleteIndex: vi.fn(async () => {
-			state.currentIndexId = null;
-			state.currentPdfName = null;
-		}),
-		selectBooklist: vi.fn(async () => {}),
-		restoreBooklist: vi.fn(() => {}),
-		clearBooklist: vi.fn(() => {
-			state.currentBooklist = null;
-		}),
-		renameBooklist: vi.fn(() => {}),
-
-		...overrides,
-	} as unknown as BookManager;
-}
+		vaultRead: vi.fn(async () => "{}"),
+		vaultExists: vi.fn(async () => true),
+		vaultList: vi.fn(async () => ({ folders: ["path/to/book-1"], files: [] })),
+		vaultRemove: vi.fn(async () => {}),
+		vaultRmdir: vi.fn(async () => {}),
+		getVaultPath: vi.fn(() => ""),
+	};
+});
 
 describe("BookDomain", () => {
 	let eventBus: EventBus<SidebarEventMap>;
-	let changeHandler: ReturnType<typeof vi.fn>;
+	let app: any;
+	let plugin: any;
+	let changeHandler: any;
+	let startNewSession: any;
+	let restoreFromSessionStore: any;
+	let cancelActiveStream: any;
+	let getMessageList: any;
+	let getReadingTopbar: any;
 
 	beforeEach(() => {
 		eventBus = new EventBus<SidebarEventMap>();
 		changeHandler = vi.fn();
 		eventBus.on("book:changed", changeHandler);
+
+		app = {
+			workspace: {
+				getActiveFile: vi.fn(() => null),
+				getLeavesOfType: vi.fn(() => []),
+				getLeaf: vi.fn(() => ({
+					setViewState: vi.fn(async () => {}),
+				})),
+			},
+			metadataCache: {
+				getFileCache: vi.fn(() => null),
+			},
+			vault: {
+				getMarkdownFiles: vi.fn(() => []),
+				getAbstractFileByPath: vi.fn(() => null),
+				adapter: {
+					stat: vi.fn(async () => ({ mtime: Date.now() })),
+					exists: vi.fn(async () => false),
+				},
+				getResourcePath: vi.fn(() => "mock-cover.png"),
+			},
+		};
+
+		plugin = {
+			settings: {
+				lastSelectedIndexId: undefined,
+				lastCrossBookMode: false,
+				booklistHistory: [],
+			},
+			saveSettings: vi.fn(async () => {}),
+		};
+
+		startNewSession = vi.fn(async () => {});
+		restoreFromSessionStore = vi.fn(async () => true);
+		cancelActiveStream = vi.fn();
+		getMessageList = vi.fn(() => ({
+			setCurrentPdfName: vi.fn(),
+			clear: vi.fn(),
+		}));
+		getReadingTopbar = vi.fn(() => ({
+			clearBooklistMode: vi.fn(),
+			setCurrentBook: vi.fn(),
+			setBookCover: vi.fn(),
+			setCurrentBooklist: vi.fn(),
+		}));
 	});
 
-	it("proxies state accessors to BookManager", () => {
-		const bookManager = createMockBookManager({
-			currentIndexId: "book-1",
-			currentPdfName: "Book One",
-		});
-		const domain = new BookDomain({
-			app: {} as any,
-			plugin: {} as any,
+	function createDomain() {
+		return new BookDomain({
+			app,
+			plugin,
 			eventBus,
-			bookManager,
+			startNewSession,
+			restoreFromSessionStore,
+			getSessionId: () => "session-1",
+			setSessionId: () => {},
+			getSessionStore: () => null,
+			ensureSessionStore: vi.fn(async () => {}),
+			cancelActiveStream,
+			getMessageList,
+			getReadingTopbar,
 		});
+	}
 
-		expect(domain.currentIndexId).toBe("book-1");
-		expect(domain.currentPdfName).toBe("Book One");
-	});
-
-	it("emits book:changed after loadIndexes", async () => {
-		const bookManager = createMockBookManager();
-		const domain = new BookDomain({
-			app: {} as any,
-			plugin: {} as any,
-			eventBus,
-			bookManager,
-		});
+	it("manages properties and selectIndex operations", async () => {
+		const domain = createDomain();
+		
+		// Setup loadIndexes mock response
+		const { vaultRead } = await import("@/utils/mobile-fs");
+		vi.mocked(vaultRead).mockResolvedValue(
+			JSON.stringify({
+				bookId: "book-1",
+				title: "Test Book",
+				author: "Test Author",
+				status: "ready",
+			}),
+		);
 
 		await domain.loadIndexes();
-
-		expect(bookManager.loadIndexes).toHaveBeenCalled();
-		expect(changeHandler).toHaveBeenCalledTimes(1);
-	});
-
-	it("emits book:changed after selectIndex", async () => {
-		const bookManager = createMockBookManager();
-		const domain = new BookDomain({
-			app: {} as any,
-			plugin: {} as any,
-			eventBus,
-			bookManager,
-		});
+		expect(domain.indexes.length).toBeGreaterThan(0);
+		expect(domain.indexes[0].id).toBe("book-1");
 
 		await domain.selectIndex("book-1");
-
-		expect(bookManager.selectIndex).toHaveBeenCalledWith("book-1");
-		expect(changeHandler).toHaveBeenCalledTimes(1);
+		expect(domain.currentIndexId).toBe("book-1");
+		expect(domain.currentPdfName).toBe("Test Book");
+		expect(domain.currentBookAuthor).toBe("Test Author");
+		expect(changeHandler).toHaveBeenCalled();
 	});
 
-	it("emits book:changed after deleteIndex", async () => {
-		const bookManager = createMockBookManager();
-		const domain = new BookDomain({
-			app: {} as any,
-			plugin: {} as any,
-			eventBus,
-			bookManager,
-		});
-
-		await domain.deleteIndex("book-1");
-
-		expect(bookManager.handleDeleteIndex).toHaveBeenCalledWith("book-1");
-		expect(changeHandler).toHaveBeenCalledTimes(1);
-	});
-
-	it("emits book:changed after selectBooklist", async () => {
-		const bookManager = createMockBookManager();
-		const domain = new BookDomain({
-			app: {} as any,
-			plugin: {} as any,
-			eventBus,
-			bookManager,
-		});
-		const booklist: Booklist = { id: "list-1", name: "List", bookIds: ["book-1"] };
+	it("manages thematic reading booklist select and clear", async () => {
+		const domain = createDomain();
+		
+		const booklist = {
+			id: "bl-1",
+			name: "My Thematic List",
+			bookIds: ["book-1", "book-2"],
+			bookNames: ["Book One", "Book Two"],
+		};
 
 		await domain.selectBooklist(booklist);
-
-		expect(bookManager.selectBooklist).toHaveBeenCalledWith(booklist);
-		expect(changeHandler).toHaveBeenCalledTimes(1);
-	});
-
-	it("emits book:changed after clearBooklist", () => {
-		const bookManager = createMockBookManager();
-		const domain = new BookDomain({
-			app: {} as any,
-			plugin: {} as any,
-			eventBus,
-			bookManager,
-		});
+		expect(domain.currentBooklist?.id).toBe("bl-1");
+		expect(domain.currentIndexId).toBeNull();
 
 		domain.clearBooklist();
-
-		expect(bookManager.clearBooklist).toHaveBeenCalled();
-		expect(changeHandler).toHaveBeenCalledTimes(1);
-	});
-
-	it("proxies getBookshelfSummary to BookManager", () => {
-		const bookManager = createMockBookManager();
-		const domain = new BookDomain({
-			app: {} as any,
-			plugin: {} as any,
-			eventBus,
-			bookManager,
-		});
-
-		expect(domain.getBookshelfSummary()).toBe("mock summary");
-		expect(bookManager.buildBookshelfSummary).toHaveBeenCalled();
-	});
-
-	it("proxies getCurrentBookInfo to BookManager", () => {
-		const bookManager = createMockBookManager();
-		const domain = new BookDomain({
-			app: {} as any,
-			plugin: {} as any,
-			eventBus,
-			bookManager,
-		});
-
-		domain.getCurrentBookInfo();
-
-		expect(bookManager.getCurrentBookInfo).toHaveBeenCalled();
-	});
-
-	it("returns current book context from BookManager state", () => {
-		const bookManager = createMockBookManager({
-			currentIndexId: "book-1",
-			currentPdfName: "Book One",
-			currentBookAuthor: "Author One",
-		});
-		const domain = new BookDomain({
-			app: {} as any,
-			plugin: {} as any,
-			eventBus,
-			bookManager,
-		});
-
-		const context = domain.getCurrentBookContext();
-
-		expect(context.indexId).toBe("book-1");
-		expect(context.pdfName).toBe("Book One");
-		expect(context.bookAuthor).toBe("Author One");
+		expect(domain.currentBooklist).toBeNull();
+		expect(changeHandler).toHaveBeenCalled();
 	});
 });

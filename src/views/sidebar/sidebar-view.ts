@@ -41,7 +41,6 @@ import { PDFFileSelectorModal } from "../../ui/pdf-file-selector.js";
 import { findBlockIdFromRange } from "../../utils/block-utils.js";
 import { Icons, getIcon } from "../../utils/icons.js";
 import { uiLog as log, warn, error as logError } from "../../utils/logger.js";
-import { BookManager } from "./book-manager.js";
 import { BookDomain } from "./domains/book-domain.js";
 import { TTSDomain } from "./domains/tts-domain.js";
 import { SessionDomain } from "./domains/session-domain.js";
@@ -86,7 +85,6 @@ export class SidebarView extends ItemView {
 	private ttsCtrl: TTSController;
 	private ttsDomain: TTSDomain;
 	private sessionDomain: SessionDomain;
-	private bookMgr: BookManager;
 	private bookDomain: BookDomain;
 	private chatPresenter: ChatPresenter | null = null;
 	private voiceInputCtrl: VoiceInputController | null = null;
@@ -299,52 +297,20 @@ export class SidebarView extends ItemView {
 			eventBus: this.eventBus,
 			ttsController: this.ttsCtrl,
 		});
-		this.bookMgr = new BookManager({
-			get app() {
-				return self.app;
-			},
-			get plugin() {
-				return self.plugin;
-			},
-			get messageList() {
-				return self.messageList;
-			},
-			get readingTopbar() {
-				return self.readingTopbar;
-			},
-			get frontendAgent() {
-				return self.frontendAgent;
-			},
-			startNewSession(indexId: string) {
-				return self.sessionDomain?.startNewSession(indexId) ?? Promise.resolve();
-			},
-			restoreFromSessionStore(sessionId: string) {
-				return self.sessionDomain?.restoreSession(sessionId) ?? Promise.resolve(false);
-			},
-			get sessionId() {
-				return self.sessionDomain?.sessionId ?? null;
-			},
-			set sessionId(id: string | null) {
-				if (self.sessionDomain) self.sessionDomain.sessionId = id;
-			},
-			get sessionStore() {
-				return self.sessionDomain?.sessionStore ?? null;
-			},
-			ensureSessionStore() {
-				return self.sessionDomain?.ensureSessionStore() ?? Promise.resolve();
-			},
-			cancelActiveStream() {
-				self.sessionDomain?.cancelStream();
-			},
-			initializeFrontendAgent() {
-				return self.initializeFrontendAgent();
-			},
-		});
 		this.bookDomain = new BookDomain({
 			app: this.app,
 			plugin: this.plugin,
 			eventBus: this.eventBus,
-			bookManager: this.bookMgr,
+			startNewSession: (indexId) => self.sessionDomain?.startNewSession(indexId) ?? Promise.resolve(),
+			restoreFromSessionStore: (sessionId) => self.sessionDomain?.restoreSession(sessionId) ?? Promise.resolve(false),
+			getSessionId: () => self.sessionDomain?.sessionId ?? null,
+			setSessionId: (id) => { if (self.sessionDomain) self.sessionDomain.sessionId = id; },
+			getSessionStore: () => self.sessionDomain?.sessionStore ?? null,
+			ensureSessionStore: () => self.sessionDomain?.ensureSessionStore() ?? Promise.resolve(),
+			cancelActiveStream: () => self.sessionDomain?.cancelStream(),
+			initializeFrontendAgent: () => self.initializeFrontendAgent(),
+			getMessageList: () => self.messageList,
+			getReadingTopbar: () => self.readingTopbar,
 		});
 		this.sessionDomain = new SessionDomain({
 			app: this.app,

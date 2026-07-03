@@ -179,13 +179,8 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                             return sidebarView.indexes || [];
                         }
                     }
-                    const { BookManager } = await import("./views/sidebar/book-manager.js");
-                    const tempBookMgr = new BookManager({
-                        app: this.app,
-                        plugin: this as unknown as DeepReaderPluginInterface
-                    } as any);
-                    await tempBookMgr.handleDeleteIndex(indexId);
-                    return tempBookMgr.indexes;
+                    const { BookDomain } = await import("./views/sidebar/domains/book-domain.js");
+                    return await BookDomain.deleteIndexOnly(this.app, this as unknown as DeepReaderPluginInterface, indexId);
                 },
                 onRefresh: async () => {
                     const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
@@ -196,13 +191,8 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                             return sidebarView.indexes || [];
                         }
                     }
-                    const { BookManager } = await import("./views/sidebar/book-manager.js");
-                    const tempBookMgr = new BookManager({
-                        app: this.app,
-                        plugin: this as unknown as DeepReaderPluginInterface
-                    } as any);
-                    await tempBookMgr.loadIndexes();
-                    return tempBookMgr.indexes;
+                    const { BookDomain } = await import("./views/sidebar/domains/book-domain.js");
+                    return await BookDomain.loadIndexesOnly(this.app, this as unknown as DeepReaderPluginInterface);
                 },
                 onDownloadCover: async (indexId: string, pdfName: string) => {
                     // 封面已由 book-indexer.ts 在索引过程中自动保存，
@@ -1107,13 +1097,8 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         }
 
         if (!loaded) {
-            const { BookManager } = await import("./views/sidebar/book-manager.js");
-            const tempBookMgr = new BookManager({
-                app: this.app,
-                plugin: this as unknown as DeepReaderPluginInterface
-            } as any);
-            await tempBookMgr.loadIndexes();
-            indexes = tempBookMgr.indexes;
+            const { BookDomain } = await import("./views/sidebar/domains/book-domain.js");
+            indexes = await BookDomain.loadIndexesOnly(this.app, this as unknown as DeepReaderPluginInterface);
         }
 
         // 检查是否已有书库视图
