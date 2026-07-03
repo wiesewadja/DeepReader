@@ -25,9 +25,6 @@ export type { DocumentMetadata } from './context/builder.js';
 export type { AgentLoopOptions } from './types.js';
 
 // LangGraph 认知引擎导出
-export {
-  createSharedContext,
-} from './graph/shared-context.js';
 export type {
   SharedContext,
   EngineCallbacks,
@@ -39,13 +36,12 @@ import { agentLog as log } from '../utils/logger.js';
 import { ContextBuilder, type DocumentMetadata } from './context/builder.js';
 import { ContextLoader } from './context/index.js';
 import { cognitiveEngine } from './graph/index.js';
-import type { EngineCallbacks } from './graph/shared-context.js';
-import { createSharedContext } from './graph/shared-context.js';
+import type { EngineCallbacks, SharedContext } from './graph/shared-context.js';
 import { ReadingDepth } from './graph/state.js';
 import type { EngineMode } from './graph/state.js';
 import { processGraphStream as processStream, type StreamProcessorResult } from './graph/stream-processor.js';
 import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
-import { type LLMClient, LLMClientManager, type ModelConfig } from './llm-client.js';
+import { type LLMClient, type LLMClientManager, createLLMClientManager, type ModelConfig } from './llm-client.js';
 import { MemoryStore } from './memory/store.js';
 import { createChatModels } from './models/index.js';
 import { IntentRouter } from './router/index.js';
@@ -120,7 +116,7 @@ export class FrontendAgent {
       };
     }
 
-    this.llmClientManager = new LLMClientManager(mainConfig, fastConfig);
+    this.llmClientManager = createLLMClientManager(mainConfig, fastConfig);
     this.contextLoader = new ContextLoader(options.app);
     this.memoryStore = new MemoryStore(options.app);
     this.contextBuilder = new ContextBuilder(options.app, this.memoryStore, {
@@ -438,7 +434,7 @@ ${currentMemory}
 
     // SharedContext：业务上下文单一来源（见 ADR-0001）。
     // mainModel/fastModel/callbacks 等运行时依赖留 configurable 顶层，不进 ctx。
-    const ctx = createSharedContext({
+    const ctx: SharedContext = {
       rawUserQuery: rawUserQuery || '',
       chatHistory: cleanHistory,
       abortSignal: callbacks.abortSignal,
@@ -447,7 +443,7 @@ ${currentMemory}
       recentHistorySummaries,
       initialPrevSearchedBlockIds,
       userProfileSummary,
-    });
+    };
 
     const engineCallbacks: EngineCallbacks = {
       onProgress: callbacks.onProgress || (() => {}),

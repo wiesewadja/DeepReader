@@ -1,13 +1,5 @@
 /**
- * Text Processing Utilities
- *
- * Shared text processing constants and functions.
- * Single source of truth for CJK stop words across the codebase.
- */
-
-/**
- * CJK stop words used for BM25 tokenization and search filtering.
- * Extracted from analytical-pre-search.ts and bm25.ts to eliminate duplication.
+ * CJK 停用词表 — 用于 BM25 分词和搜索过滤
  */
 export const CJK_STOPWORDS = new Set([
   '的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一',

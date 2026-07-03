@@ -3,7 +3,7 @@
  */
 
 import type { WereadMapping, WereadSyncState } from '../types';
-import { formatReadingTime } from '../utils/time';
+import { formatReadingTime } from '../utils/helpers';
 
 /**
  * 将 syncState 中的同步数据注入到 mapping 条目的 stats 字段。

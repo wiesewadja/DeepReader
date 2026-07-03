@@ -20,7 +20,7 @@ import type { WereadChapter, WereadHighlight, WereadReview ,
 	SyncProgress,
 } from '../types';
 import { downloadWereadCover } from '../utils/cover';
-import { sanitizeFileName } from '../utils/file';
+import { sanitizeFileName } from '../utils/helpers';
 import { htmlToMarkdown } from '../utils/html-to-md';
 import { filterBooksToSync } from './diff';
 import type { VaultAdapter } from './state';

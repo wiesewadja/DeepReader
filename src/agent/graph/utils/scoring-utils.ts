@@ -8,7 +8,7 @@
  * and reuse across nodes.
  */
 
-import { CJK_STOPWORDS } from '../../../utils/text-utils.js';
+import { CJK_STOPWORDS } from '../../../utils/cjk-stopwords.js';
 
 /** Shape of a single hit block used by computeSubstantiveScore. */
 export interface ScoredHit {

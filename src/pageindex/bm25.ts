@@ -1,5 +1,5 @@
 import type { BM25Data } from "./book-types.js";
-import { CJK_STOPWORDS } from "../utils/text-utils.js";
+import { CJK_STOPWORDS } from "../utils/cjk-stopwords.js";
 
 /**
  * Tokenize text for BM25 indexing

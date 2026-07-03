@@ -25,7 +25,7 @@ import { serviceLog } from '../utils/logger.js';
 import { getVaultPath } from '../utils/mobile-fs.js';
 import { fetchWithCorsFallback } from '../utils/safe-request';
 import type { WereadSyncState } from '../weread/types';
-import { sanitizeFileName } from '../weread/utils/file';
+import { sanitizeFileName } from '../weread/utils/helpers';
 import {
 	DEFAULT_DIMENSIONS,
 	type ProfileFactDimension,

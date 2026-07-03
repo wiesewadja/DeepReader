@@ -13,7 +13,7 @@ import { parseCallouts } from '../../../utils/callout-parser.js';
 import { bookExcerptDir } from '../../../utils/book-paths.js';
 import { toolsLog } from '../../../utils/logger.js';
 import { Notice } from 'obsidian';
-import { sanitizeFileName } from '../../../weread/utils/file.js';
+import { sanitizeFileName } from '../../../weread/utils/helpers.js';
 import type { ToolExecutor, ToolContext } from '../types.js';
 
 // === RRF (Reciprocal Rank Fusion) ===

@@ -1,5 +1,5 @@
 import { safeRequest } from '../../utils/safe-request';
-import { sanitizeFileName } from './file';
+import { sanitizeFileName } from './helpers';
 
 /** 从 cover URL 提取扩展名 */
 export function extractCoverExt(cover: string): string {

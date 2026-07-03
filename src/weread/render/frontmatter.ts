@@ -5,7 +5,7 @@
  */
 import type { WereadBook } from '../types';
 import { extractCoverExt } from '../utils/cover';
-import { sanitizeFileName } from '../utils/file';
+import { sanitizeFileName } from '../utils/helpers';
 
 /** YAML 字符串转义 */
 function yamlString(value: string): string {

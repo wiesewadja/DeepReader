@@ -473,45 +473,32 @@ export class LLMClient {
 }
 
 /**
- * LLMClientManager - 管理多个 LLM 客户端实例
+ * LLMClientManager — 管理多个 LLM 客户端实例
  *
  * 用于支持不同认知状态使用不同的模型：
  * - main: 用于 Analytical + Formatter（深度分析）
  * - fast: 用于 Router + Inspectional（快速分类）
  */
-export class LLMClientManager {
-  private mainClient: LLMClient;
-  private fastClient: LLMClient | null = null;
+export interface LLMClientManager {
+  getClient(modelType: 'fast' | 'main'): LLMClient;
+  getMainClient(): LLMClient;
+  hasFastClient(): boolean;
+}
 
-  constructor(mainConfig: ModelConfig, fastConfig?: ModelConfig) {
-    this.mainClient = new LLMClient(mainConfig);
-    if (fastConfig) {
-      this.fastClient = new LLMClient(fastConfig);
-    }
-  }
+export function createLLMClientManager(mainConfig: ModelConfig, fastConfig?: ModelConfig): LLMClientManager {
+  const mainClient = new LLMClient(mainConfig);
+  const fastClient = fastConfig ? new LLMClient(fastConfig) : null;
 
-  /**
-   * 根据模型类型获取对应的客户端
-   * 如果 fast 客户端未配置，回退到 main 客户端
-   */
-  getClient(modelType: 'fast' | 'main'): LLMClient {
-    if (modelType === 'fast' && this.fastClient) {
-      return this.fastClient;
-    }
-    return this.mainClient;
-  }
-
-  /**
-   * 获取主客户端（用于向后兼容）
-   */
-  getMainClient(): LLMClient {
-    return this.mainClient;
-  }
-
-  /**
-   * 检查是否配置了独立的 fast 客户端
-   */
-  hasFastClient(): boolean {
-    return this.fastClient !== null;
-  }
+  return {
+    getClient(modelType: 'fast' | 'main'): LLMClient {
+      if (modelType === 'fast' && fastClient) return fastClient;
+      return mainClient;
+    },
+    getMainClient(): LLMClient {
+      return mainClient;
+    },
+    hasFastClient(): boolean {
+      return fastClient !== null;
+    },
+  };
 }

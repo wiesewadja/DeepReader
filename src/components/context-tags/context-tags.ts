@@ -3,7 +3,7 @@
  * 显示已加载到对话上下文的文档标签
  */
 
-import { type LoadedDocument } from '../../services/context-manager.js';
+import { type LoadedDocument } from '../../views/sidebar/services/chat-document-service.js';
 
 export interface ContextTagsOptions {
     /** 文档移除回调 */

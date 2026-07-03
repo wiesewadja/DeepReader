@@ -66,28 +66,3 @@ export interface SharedContext {
   /** 用户取消信号。 */
   abortSignal?: AbortSignal;
 }
-
-/**
- * Factory function to create a new SharedContext
- */
-export function createSharedContext(params: {
-  rawUserQuery: string;
-  chatHistory?: ChatMessage[];
-  abortSignal?: AbortSignal;
-  memoryContext?: string;
-  toolContext?: ToolContext;
-  recentHistorySummaries?: HistorySummary[];
-  initialPrevSearchedBlockIds?: string[];
-  userProfileSummary?: string;
-}): SharedContext {
-  return {
-    chatHistory: params.chatHistory || [],
-    rawUserQuery: params.rawUserQuery,
-    abortSignal: params.abortSignal,
-    memoryContext: params.memoryContext,
-    toolContext: params.toolContext,
-    recentHistorySummaries: params.recentHistorySummaries,
-    initialPrevSearchedBlockIds: params.initialPrevSearchedBlockIds,
-    userProfileSummary: params.userProfileSummary,
-  };
-}

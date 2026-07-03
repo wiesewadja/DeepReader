@@ -1,5 +1,5 @@
 /**
- * 阅读时长格式化
+ * Weread 通用工具函数
  */
 
 /**
@@ -17,4 +17,19 @@ export function formatReadingTime(seconds: number): string {
 		return `${hours}小时${minutes}分钟`;
 	}
 	return `${minutes}分钟`;
+}
+
+/**
+ * 文件名清理：移除不合法字符
+ */
+export function sanitizeFileName(name: string): string {
+	let sanitized = name
+		.replace(/[\x00-\x1f\\/:*?"<>|]/g, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+	const maxBytes = 240;
+	while (new TextEncoder().encode(sanitized).byteLength > maxBytes) {
+		sanitized = sanitized.slice(0, -1);
+	}
+	return sanitized || 'untitled';
 }

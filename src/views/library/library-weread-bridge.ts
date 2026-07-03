@@ -15,7 +15,7 @@ import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../../pageindex/default
 import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
 import type { IndexListItem } from '../../types/index.js';
 import { SyncStateManager } from '../../weread/sync/state.js';
-import { sanitizeFileName } from '../../weread/utils/file.js';
+import { sanitizeFileName } from '../../weread/utils/helpers.js';
 import type { ZLibraryBook } from '../../zlibrary/types.js';
 import { ZLibrarySearchModal } from '../zlibrary-search-modal.js';
 import type { ZLibraryClient } from '../../zlibrary/client.js';

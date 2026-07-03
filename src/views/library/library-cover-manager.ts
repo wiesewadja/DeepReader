@@ -13,7 +13,7 @@ import { getVaultAdapter } from '../../utils/vault.js';
 import { SyncStateManager } from '../../weread/sync/state.js';
 import type { VaultAdapter } from '../../weread/sync/state.js';
 import { downloadWereadCover } from '../../weread/utils/cover.js';
-import { sanitizeFileName } from '../../weread/utils/file.js';
+import { sanitizeFileName } from '../../weread/utils/helpers.js';
 
 export interface CoverManagerCallbacks {
 	getIndexes: () => IndexListItem[];

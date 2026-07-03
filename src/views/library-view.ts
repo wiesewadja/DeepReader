@@ -18,7 +18,7 @@ import { error as logError, uiLog } from "../utils/logger.js";
 import { getVaultPath } from "../utils/mobile-fs.js";
 import { getVaultAdapter } from "../utils/vault.js";
 import { SyncStateManager } from "../weread/sync/state.js";
-import { sanitizeFileName } from "../weread/utils/file.js";
+import { sanitizeFileName } from "../weread/utils/helpers.js";
 import {
 	createBookCard,
 	createBooklistCard,
