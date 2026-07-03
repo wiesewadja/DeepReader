@@ -170,6 +170,22 @@ describe("SessionDomain", () => {
 		);
 	});
 
+	it("生成的 messageId 等于 agentChatHistory 条目的 timestamp（保证 regenerate/delete 可定位）", async () => {
+		// 防回归：messageId 若改回 `assistant-${Date.now()}` 等格式，会与 history 的
+		// ISO timestamp 不一致，导致 handleRegenerate / handleDeleteMessagePair 静默失败。
+		const domain = createDomain();
+		const startedHandler = vi.fn();
+		eventBus.on("chat:assistant-message-started", startedHandler);
+
+		await domain.sendUserMessage("hello");
+
+		const aiMessageId = startedHandler.mock.calls[0]?.[0]?.messageId;
+		expect(aiMessageId).toBeTruthy();
+		expect(
+			domain.agentChatHistory.some((m) => m.timestamp === aiMessageId),
+		).toBe(true);
+	});
+
 	it("handleRegenerate truncates history to the preceding user message and restarts the assistant stream", async () => {
 		const domain = createDomain();
 		domain.agentChatHistory = [

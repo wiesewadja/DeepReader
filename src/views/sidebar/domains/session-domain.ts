@@ -219,11 +219,14 @@ export class SessionDomain {
 
 		await this.parseAndLoadReferences(message);
 
-		const userMessageId = `user-${Date.now()}`;
+		// messageId 直接用 timestamp，保证 MessageList 消息 id 与 _agentChatHistory
+		// 条目的 timestamp 一致，handleRegenerate / handleDeleteMessagePair 才能匹配。
+		const userTimestamp = new Date().toISOString();
+		const userMessageId = userTimestamp;
 		const userMsgObj: ChatMessage = {
 			role: "user",
 			content: message,
-			timestamp: new Date().toISOString(),
+			timestamp: userTimestamp,
 		};
 		this._agentChatHistory.push(userMsgObj);
 
@@ -248,7 +251,8 @@ export class SessionDomain {
 		this._isAiStreaming = true;
 		this.abortController = new AbortController();
 
-		const aiMessageId = `assistant-${Date.now()}`;
+		const aiTimestamp = new Date().toISOString();
+		const aiMessageId = aiTimestamp;
 		this.eventBus.emit("chat:assistant-message-started", {
 			messageId: aiMessageId,
 			status: this._crossBookMode ? STATUS_CROSS_BOOK : STATUS_READING,
@@ -410,12 +414,11 @@ export class SessionDomain {
 			return false;
 		});
 
-		let restoredIndex = 0;
 		this.eventBus.emit("chat:history-restored", {
 			messages: displayMessages.map((m) => ({
-				id: m.timestamp
-					? `${m.timestamp}-${restoredIndex++}`
-					: `restored-${Date.now()}-${restoredIndex++}`,
+				// id 直接用 timestamp，与 _agentChatHistory 的 timestamp 对齐，
+				// 使 handleRegenerate 能定位到对应历史条目。
+				id: m.timestamp || `restored-${Date.now()}`,
 				role: m.role as "user" | "assistant",
 				content: m.content || "",
 				timestamp: m.timestamp,
@@ -744,7 +747,8 @@ export class SessionDomain {
 		const aiMsgObj: ChatMessage = {
 			role: "assistant",
 			content: correctedContent,
-			timestamp: new Date().toISOString(),
+			// aiMessageId 已是 ISO timestamp，复用保证与 MessageList id 一致
+			timestamp: aiMessageId,
 		};
 		this._agentChatHistory.push(aiMsgObj);
 
