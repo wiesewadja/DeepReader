@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-07-03T10:53:50.630Z",
+  "results": {
+    "pluginLoad": {
+      "total": 3,
+      "successful": 3,
+      "failed": 0,
+      "avgDuration": "209.89",
+      "minDuration": "191.64",
+      "maxDuration": "233.94"
+    },
+    "llmResponse": {
+      "total": 3,
+      "successful": 3,
+      "failed": 0,
+      "avgDuration": "202.73",
+      "minDuration": "197.65",
+      "maxDuration": "205.33"
+    },
+    "search": {
+      "total": 3,
+      "successful": 3,
+      "failed": 0,
+      "avgDuration": "201.19",
+      "minDuration": "192.51",
+      "maxDuration": "206.62"
+    },
+    "memory": {
+      "total": 1,
+      "successful": 1,
+      "failed": 0,
+      "avgDuration": "200.83",
+      "minDuration": "200.83",
+      "maxDuration": "200.83"
+    }
+  },
+  "summary": {}
+}
