@@ -16,7 +16,6 @@ import type { TTSDomain } from "./tts-domain.js";
 import type { DeepReaderPluginInterface } from "../../../agent/tools/context/vault.js";
 import type { ToolContext } from "../../../agent/tools/types.js";
 import { validateWikiLinks } from "../../../agent/utils/wiki-link-hook.js";
-import { StreamingThinkParser } from "../../../utils/streaming-think.js";
 import { uiLog as log, warn, error as logError } from "../../../utils/logger.js";
 
 // Memory & Mode constants/stores
@@ -220,11 +219,14 @@ export class SessionDomain {
 
 		await this.parseAndLoadReferences(message);
 
-		const userMessageId = `user-${Date.now()}`;
+		// messageId 直接用 timestamp，保证 MessageList 消息 id 与 _agentChatHistory
+		// 条目的 timestamp 一致，handleRegenerate / handleDeleteMessagePair 才能匹配。
+		const userTimestamp = new Date().toISOString();
+		const userMessageId = userTimestamp;
 		const userMsgObj: ChatMessage = {
 			role: "user",
 			content: message,
-			timestamp: new Date().toISOString(),
+			timestamp: userTimestamp,
 		};
 		this._agentChatHistory.push(userMsgObj);
 
@@ -249,7 +251,8 @@ export class SessionDomain {
 		this._isAiStreaming = true;
 		this.abortController = new AbortController();
 
-		const aiMessageId = `assistant-${Date.now()}`;
+		const aiTimestamp = new Date().toISOString();
+		const aiMessageId = aiTimestamp;
 		this.eventBus.emit("chat:assistant-message-started", {
 			messageId: aiMessageId,
 			status: this._crossBookMode ? STATUS_CROSS_BOOK : STATUS_READING,
@@ -257,7 +260,7 @@ export class SessionDomain {
 
 		this.resetDiagramState();
 
-		const thinkParser = new StreamingThinkParser();
+		let latestContent = "";
 		let reasoningContent = "";
 		let currentStatus = "";
 
@@ -267,21 +270,14 @@ export class SessionDomain {
 			for await (const event of this.agentDomain.stream(request)) {
 				switch (event.type) {
 					case "text": {
-						const { reasoning, cleanedContent } = thinkParser.append(event.content);
+						// main 上 stream-processor 的 onContent 发送的是 formatter 的全量
+						// formattedOutput（覆盖式赋值），text event 必须按全量处理，不能累积。
+						latestContent = event.content;
 						this.eventBus.emit("chat:assistant-text-chunk", {
 							messageId: aiMessageId,
-							content: cleanedContent,
+							content: latestContent,
 							isIncremental: false,
 						});
-						const displayStatus = reasoning.trim()
-							? `${STATUS_THINKING_PREFIX} ${reasoning.split("\n")[0].slice(0, 50)}...`
-							: currentStatus;
-						if (displayStatus) {
-							this.eventBus.emit("chat:assistant-status-changed", {
-								messageId: aiMessageId,
-								status: displayStatus,
-							});
-						}
 						break;
 					}
 					case "reasoning": {
@@ -325,8 +321,7 @@ export class SessionDomain {
 				}
 			}
 
-			const { cleanedContent } = thinkParser.finalize();
-			const correctedContent = await this.correctWikiLinks(cleanedContent);
+			const correctedContent = await this.correctWikiLinks(latestContent);
 
 			this.finalizeAssistantMessage(aiMessageId, correctedContent);
 
@@ -419,12 +414,11 @@ export class SessionDomain {
 			return false;
 		});
 
-		let restoredIndex = 0;
 		this.eventBus.emit("chat:history-restored", {
 			messages: displayMessages.map((m) => ({
-				id: m.timestamp
-					? `${m.timestamp}-${restoredIndex++}`
-					: `restored-${Date.now()}-${restoredIndex++}`,
+				// id 直接用 timestamp，与 _agentChatHistory 的 timestamp 对齐，
+				// 使 handleRegenerate 能定位到对应历史条目。
+				id: m.timestamp || `restored-${Date.now()}`,
 				role: m.role as "user" | "assistant",
 				content: m.content || "",
 				timestamp: m.timestamp,
@@ -753,7 +747,8 @@ export class SessionDomain {
 		const aiMsgObj: ChatMessage = {
 			role: "assistant",
 			content: correctedContent,
-			timestamp: new Date().toISOString(),
+			// aiMessageId 已是 ISO timestamp，复用保证与 MessageList id 一致
+			timestamp: aiMessageId,
 		};
 		this._agentChatHistory.push(aiMsgObj);
 
