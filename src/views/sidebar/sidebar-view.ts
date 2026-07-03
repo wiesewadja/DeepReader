@@ -33,7 +33,6 @@ import { PushToTalkController } from "../../services/push-to-talk.js";
 import type { ExcerptContent, ExcerptMetadata } from "../../types/excerpt.js";
 import {
 	IndexListItem,
-	type ContextDoc,
 	type Booklist,
 	stripFileExtension,
 } from "../../types/index.js";
@@ -71,11 +70,6 @@ export class SidebarView extends ItemView {
 	// 引用卡片管理
 	private quotesContainer: HTMLElement | null = null;
 
-	// 前端 Agent
-	private frontendAgent: FrontendAgent | null = null;
-
-
-
 	// ── 子系统 controller ──
 	private quoteManager: QuoteManager;
 	private ttsDomain: TTSDomain;
@@ -89,20 +83,6 @@ export class SidebarView extends ItemView {
 	private chatContainerEl: HTMLElement | null = null;
 	private mobileKeyboardCleanup: (() => void) | null = null;
 
-	/**
-	 * 初始化前端 Agent
-	 * 使用 plugin 统一管理的 Agent 实例
-	 */
-	private async initializeFrontendAgent(): Promise<void> {
-		// 每次都从 plugin 获取最新的 Agent（支持设置切换后立即生效）
-		const agent = await this.plugin.getFrontendAgent();
-		this.frontendAgent = agent;
-		log("[DeepPDF] FrontendAgent 初始化完成");
-	}
-
-	/**
-	 * 初始化里程碑记录器
-	 */
 	/**
 	 * 删除索引（本地实现）
 	 */
@@ -183,17 +163,7 @@ export class SidebarView extends ItemView {
 		}
 	}
 
-	/**
-	 * 处理系统文件上传（已弃用 - Page Index 不需要上传）
-	 */
-	private async handleSystemUpload(): Promise<void> {
-		new Notice("请使用我的书库添加书籍", 3000);
-	}
 
-	/** 从 SessionStore 恢复历史记录到视图 */
-	private async restoreFromSessionStore(sessionId: string): Promise<boolean> {
-		return this.sessionDomain.restoreSession(sessionId);
-	}
 
 	constructor(leaf: WorkspaceLeaf, plugin: DeepReaderPluginInterface) {
 		super(leaf);
@@ -222,8 +192,22 @@ export class SidebarView extends ItemView {
 				const contentEl = messageEl?.querySelector('.deeppdf-message-content') as HTMLElement | null;
 				if (!contentEl) return [];
 				const allElements = Array.from(contentEl.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6, blockquote'));
-				const leafElements = allElements.filter(el => !allElements.some(other => other !== el && el.contains(other)));
-				return leafElements.map(el => el.textContent || '');
+				// 选出叶子块级元素（其子树内不含其他块级元素）。
+				// querySelectorAll 按文档先序返回，用祖先栈一次遍历标记非叶子节点，O(n)。
+				const nonLeaf = new Set<Element>();
+				const ancestorStack: Element[] = [];
+				for (const el of allElements) {
+					while (ancestorStack.length > 0 && !ancestorStack[ancestorStack.length - 1].contains(el)) {
+						ancestorStack.pop();
+					}
+					if (ancestorStack.length > 0) {
+						nonLeaf.add(ancestorStack[ancestorStack.length - 1]);
+					}
+					ancestorStack.push(el);
+				}
+				return allElements
+					.filter((el) => !nonLeaf.has(el))
+					.map((el) => el.textContent || "");
 			},
 			highlightElement: (el) => self.highlightReadingElement(el),
 			clearHighlight: () => self.clearReadingHighlight(),
@@ -252,9 +236,6 @@ export class SidebarView extends ItemView {
 			getSessionStore: () => self.sessionDomain?.sessionStore ?? null,
 			ensureSessionStore: () => self.sessionDomain?.ensureSessionStore() ?? Promise.resolve(),
 			cancelActiveStream: () => self.sessionDomain?.cancelStream(),
-			initializeFrontendAgent: () => self.initializeFrontendAgent(),
-			getMessageList: () => self.messageList,
-			getReadingTopbar: () => self.readingTopbar,
 		});
 		this.sessionDomain = new SessionDomain({
 			app: this.app,
@@ -263,9 +244,6 @@ export class SidebarView extends ItemView {
 			chatDocumentService: this.chatDocumentService,
 			bookDomain: this.bookDomain,
 			ttsDomain: this.ttsDomain,
-		});
-		this.eventBus.on("book:changed", (context) => {
-			log("[SidebarView] book:changed", context);
 		});
 	}
 
@@ -279,40 +257,6 @@ export class SidebarView extends ItemView {
 
 	getIcon() {
 		return "lucide-book-open";
-	}
-
-	/**
-	 * 打开书库（改为 Tab 视图）
-	 */
-
-	/**
-	 * 检查书籍章节是否已下载到本地
-	 * @param pdfName PDF 文件名
-	 * @returns 是否存在章节文件
-	 */
-	private async checkBookChaptersExist(pdfName: string): Promise<boolean> {
-		return this.bookDomain.checkBookChaptersExist(pdfName);
-	}
-
-	/**
-	 * 加载书籍封面
-	 * @param bookName 书籍名称（不含扩展名）
-	 *
-	 * 从本地 Obsidian vault 加载 (DeepReader/covers/{bookName}.png)
-	 */
-
-	/**
-	 * 通过 indexId 扫描 Vault 找到对应书籍的实际目录名和元数据
-	 * 用户可能重命名了目录，因此不能仅依赖静态的 book-meta.json
-	 */
-	/**
-	 * 同步顶栏书名到最新状态（用户可能在书库中修改了书名/目录名）
-	 */
-
-	private async findBookDirectoryByIndexId(
-		indexId: string,
-	): Promise<{ dirName: string; author?: string; bookName?: string } | null> {
-		return this.bookDomain.findBookDirectoryByIndexId(indexId);
 	}
 
 	/**
@@ -375,9 +319,7 @@ export class SidebarView extends ItemView {
 			this.plugin.settings.lastActiveBooklistId = booklist.id;
 			await this.plugin.saveSettings();
 
-			if (!this.frontendAgent) {
-				await this.initializeFrontendAgent();
-			}
+
 
 			const restored =
 				await this.sessionDomain.restoreSession(savedSessionId);
@@ -466,19 +408,6 @@ export class SidebarView extends ItemView {
 	get indexes(): import("../../types/index.js").IndexListItem[] {
 		return this.bookDomain.indexes;
 	}
-
-	public async notifyHighlight(text: string): Promise<void> {
-		// Proactive engine removed
-	}
-
-	/**
-	 * 清除顶栏书名显示（阅读模式停用时调用）
-	 * 不重置 currentPdfName/currentIndexId，保持用户通过书库选中的书籍
-	 */
-
-	/**
-	 * 清除所有书籍信息（删除索引时调用）
-	 */
 
 	/**
 	 * 通过书名选择索引（自动切换时使用）
@@ -600,9 +529,6 @@ export class SidebarView extends ItemView {
 			await this.sessionDomain.restoreGeneralChatSession();
 		}
 
-		// 设置滚动监听：滚动时隐藏输入框
-		this.setupScrollHandler(container);
-
 		// 监听 URI 协议触发的索引切换事件
 		// 自定义事件，Obsidian 类型定义不支持，使用 any 绕过
 		const workspace = this.app.workspace as any;
@@ -668,19 +594,6 @@ export class SidebarView extends ItemView {
 			}),
 		);
 	}
-
-	/**
-	 * 处理引用选中文字
-	 * 在输入框上方显示引用卡片，更新 placeholder 提示
-	 */
-
-	/**
-	 * 移除引用
-	 */
-
-	/**
-	 * 清空所有引用
-	 */
 
 	/**
 	 * 更新输入框 placeholder 反映引用数量
@@ -769,16 +682,6 @@ export class SidebarView extends ItemView {
 		} catch (err) {
 			log("[DeepPDF] Failed to mark excerpt text:", err);
 		}
-	}
-
-	/**
-	 * 设置滚动监听逻辑
-	 * 当消息列表滚动时隐藏输入框，停止滚动后显示
-	 * AI 回复期间，输入框最小化并暂停滚动监听
-	 */
-	private setupScrollHandler(_container: HTMLElement) {
-		// 保留接口位置，但当前不隐藏任何元素。
-		// 用户反馈：不要隐藏输入框（即使滚动对话时也应保持可见）。
 	}
 
 	/**
@@ -1134,65 +1037,6 @@ export class SidebarView extends ItemView {
 	}
 
 	/**
-	 * 解析消息中的文档引用并自动加载
-	 * 支持 [[文件名]] 格式的引用
-	 */
-	private async parseAndLoadReferences(message: string): Promise<void> {
-		if (!this.chatDocumentService) return;
-
-		// 匹配 [[文件名]] 格式
-		const wikilinkRegex = /\[\[([^\]]+)\]\]/g;
-		const matches = [...message.matchAll(wikilinkRegex)];
-
-		if (matches.length === 0) return;
-
-		// 获取所有 Markdown 文件
-		const files = this.app.vault.getMarkdownFiles();
-		const loadedNames: string[] = [];
-
-		for (const match of matches) {
-			const fileName = match[1];
-
-			// 查找匹配的文件
-			const file = files.find(
-				(f) =>
-					f.basename === fileName ||
-					f.basename.toLowerCase() === fileName.toLowerCase() ||
-					f.path.endsWith(fileName) ||
-					f.path.toLowerCase().endsWith(fileName.toLowerCase()),
-			);
-
-			if (file) {
-				const doc = await this.chatDocumentService.loadByPath(file.path, "wikilink");
-				if (doc) {
-					loadedNames.push(doc.name);
-				}
-			}
-		}
-
-		// 显示加载提示
-		// if (loadedNames.length > 0) {
-		//     new Notice(`已加载引用文档: ${loadedNames.join(', ')}`);
-		// }
-	}
-
-	/**
-	 * 获取上下文文档列表（用于 API 调用）
-	 */
-	private getContextDocs(): ContextDoc[] | undefined {
-		if (!this.chatDocumentService) return undefined;
-
-		const docs = this.chatDocumentService.getLoadedDocuments();
-		if (docs.size === 0) return undefined;
-
-		return Array.from(docs.values()).map((doc) => ({
-			path: doc.path,
-			name: doc.name,
-			content: doc.content,
-		}));
-	}
-
-	/**
 	 * 切换深度思考模式
 	 */
 	public async toggleDeepSearchMode(): Promise<void> {
@@ -1235,13 +1079,6 @@ export class SidebarView extends ItemView {
 	async loadIndexes(): Promise<void> {
 		await this.bookDomain.loadIndexes();
 	}
-	/**
-	 * 处理 TTS 播放/暂停请求
-	 */
-
-	/**
-	 * 根据 AI 消息 ID 找到对应的用户提问
-	 */
 
 	/**
 	 * 显示错误消息

@@ -133,24 +133,6 @@ describe("ChatDocumentService", () => {
 		expect(changeHandler).toHaveBeenCalledWith({ documents: [] });
 	});
 
-	it("clears all loaded documents and publishes a change event", async () => {
-		const app = createMockApp({
-			files: [
-				{ path: "notes/a.md", content: "A" },
-				{ path: "notes/b.md", content: "B" },
-			],
-		});
-		const service = new ChatDocumentService({ app, eventBus });
-		await service.loadByPath("notes/a.md", "mention");
-		await service.loadByPath("notes/b.md", "mention");
-		changeHandler.mockClear();
-
-		service.clearAll();
-
-		expect(service.getLoadedDocuments().size).toBe(0);
-		expect(changeHandler).toHaveBeenCalledWith({ documents: [] });
-	});
-
 	it("combines loaded documents into a single context string", async () => {
 		const app = createMockApp({
 			files: [

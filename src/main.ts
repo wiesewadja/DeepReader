@@ -180,7 +180,14 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                         }
                     }
                     const { BookDomain } = await import("./views/sidebar/domains/book-domain.js");
-                    return await BookDomain.deleteIndexOnly(this.app, this as unknown as DeepReaderPluginInterface, indexId);
+                    try {
+                        const res = await BookDomain.deleteIndexOnly(this.app, this as unknown as DeepReaderPluginInterface, indexId);
+                        new Notice("索引已删除");
+                        return res;
+                    } catch (e) {
+                        new Notice("删除失败");
+                        return [];
+                    }
                 },
                 onRefresh: async () => {
                     const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
@@ -338,11 +345,6 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                     this.highlightService = new HighlightService(this.app, this.excerptService);
                 }
                 await this.highlightService.saveHighlight(text, color);
-                const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
-                if (leaves.length > 0) {
-                    const sidebarView = leaves[0].view as SidebarView;
-                    await sidebarView.notifyHighlight(text);
-                }
             },
             onRemoveHighlight: async (text: string) => {
                 if (!this.highlightService) {

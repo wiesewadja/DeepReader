@@ -98,15 +98,6 @@ export class ChatDocumentService {
 	}
 
 	/**
-	 * Remove all loaded documents.
-	 */
-	clearAll(): void {
-		if (this.loadedDocs.size === 0) return;
-		this.loadedDocs.clear();
-		this.notifyChange();
-	}
-
-	/**
 	 * Get all loaded documents as a map.
 	 */
 	getLoadedDocuments(): Map<string, LoadedDocument> {
@@ -125,13 +116,6 @@ export class ChatDocumentService {
 	 */
 	hasDocument(path: string): boolean {
 		return this.loadedDocs.has(path);
-	}
-
-	/**
-	 * Check whether any documents are loaded.
-	 */
-	hasDocuments(): boolean {
-		return this.loadedDocs.size > 0;
 	}
 
 	/**

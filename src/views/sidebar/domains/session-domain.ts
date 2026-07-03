@@ -338,6 +338,7 @@ export class SessionDomain {
 			}
 		} catch (error) {
 			logError("[SessionDomain] Failed during stream processing:", error);
+			this.abortController = null;
 			this._isProcessing = false;
 			this._isAiStreaming = false;
 			this.emitStreamStopped("error");
@@ -562,6 +563,11 @@ export class SessionDomain {
 	// ── Agent operations ──
 
 	handleRegenerate(messageId: string): void {
+		// 流式期间禁止重新生成：streamAssistantResponse 会无条件 new 新的
+		// abortController，覆盖正在使用的引用，导致旧 stream 失去取消句柄、
+		// _isProcessing / _isAiStreaming 状态错乱。
+		if (this._isProcessing) return;
+
 		const index = this._agentChatHistory.findIndex(
 			(m) => m.timestamp === messageId || m.content === messageId,
 		);
@@ -816,6 +822,9 @@ export class SessionDomain {
 	}
 
 	private emitStreamStopped(reason: "cancelled" | "completed" | "error"): void {
+		// 注意：messageId 这里传 sessionId 仅作占位（cancel/完成时无法定位具体
+		// aiMessageId）。当前 ChatPresenter 的 stream-stopped 订阅不读该字段，
+		// 仅为满足 StreamStoppedEvent 类型契约。
 		this.eventBus.emit("chat:stream-stopped", {
 			messageId: this._sessionId || "unknown",
 			reason,
