@@ -184,6 +184,22 @@ export class SessionStore implements ISessionStore {
 	}
 
 	/**
+	 * 找同 indexId 下 messageCount 最大的 session（用于自愈被污染的 savedSessions 指向）。
+	 * 排除 excludeId，且要求 messageCount > 1（有真实对话，非纯 welcome 的 fallback session）。
+	 */
+	async findBestSessionForIndex(indexId: string, excludeId?: string): Promise<string | null> {
+		try {
+			const index = await this.readIndex();
+			const candidates = index.sessions
+				.filter((s) => s.indexId === indexId && s.sessionId !== excludeId && s.messageCount > 1)
+				.sort((a, b) => b.messageCount - a.messageCount);
+			return candidates[0]?.sessionId ?? null;
+		} catch {
+			return null;
+		}
+	}
+
+	/**
 	 * 写入索引文件
 	 */
 	private async writeIndex(index: SessionsIndex): Promise<void> {

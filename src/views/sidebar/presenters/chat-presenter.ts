@@ -135,6 +135,10 @@ export class ChatPresenter {
 				messageList?.updateMessage(event.messageId, {
 					content: event.embed,
 					isDiagramPlaceholder: false,
+					// 占位气泡创建时 isStreaming=true（显示 thinking-bar 动画）；
+					// 替换为图表时必须置 false，否则 Message.update 走流式轻量分支，
+					// 跳过 finalizeStreamingEnd 的 MarkdownRenderer 渲染，embed 显示不出来。
+					isStreaming: false,
 					currentStatus: undefined,
 					timestamp: new Date().toISOString(),
 				});
@@ -143,13 +147,9 @@ export class ChatPresenter {
 
 		this.unsubscribe.push(
 			this.eventBus.on("chat:diagram-failed", (event) => {
+				// 失败降级：移除占位气泡，不显示任何绘图信息
 				const messageList = this.getMessageList();
-				messageList?.updateMessage(event.messageId, {
-					content: `*图表生成失败：${event.reason}*`,
-					isDiagramPlaceholder: false,
-					currentStatus: undefined,
-					timestamp: new Date().toISOString(),
-				});
+				messageList?.removeMessage(event.messageId);
 			}),
 		);
 

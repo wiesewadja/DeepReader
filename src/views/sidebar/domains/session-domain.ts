@@ -77,6 +77,10 @@ export class SessionDomain {
 
 	// Diagram generation state
 	private activeDiagramMessageId: string | null = null;
+	// display messageId ↔ _agentChatHistory 条目引用映射（仅历史恢复消息）。
+	// 历史消息 id 形如 `${timestamp}-${index}`，同秒消息共享 timestamp 前缀，
+	// 用引用精确定位避免 regenerate/delete 命中同秒的其他条目。
+	private messageRegistry = new Map<string, ChatMessage>();
 	private diagramPending = false;
 	private diagramEmbedReady: string | null = null;
 	private diagramFailReason: string | null = null;
@@ -414,18 +418,6 @@ export class SessionDomain {
 			return false;
 		});
 
-		this.eventBus.emit("chat:history-restored", {
-			messages: displayMessages.map((m) => ({
-				// id 直接用 timestamp，与 _agentChatHistory 的 timestamp 对齐，
-				// 使 handleRegenerate 能定位到对应历史条目。
-				id: m.timestamp || `restored-${Date.now()}`,
-				role: m.role as "user" | "assistant",
-				content: m.content || "",
-				timestamp: m.timestamp,
-				isAgentMessage: m.role === "assistant",
-			})),
-		});
-
 		const llmHistory = await this._sessionStore!.getLLMHistory(sessionId);
 		const frontendAgent = await this.plugin.getFrontendAgent();
 		const systemPrompt = await frontendAgent.getSystemPromptAsync();
@@ -433,6 +425,29 @@ export class SessionDomain {
 			{ role: "system", content: systemPrompt },
 			...llmHistory,
 		];
+
+		// 建立 display id ↔ history 引用映射：history 重建后按 timestamp+content 对齐，
+		// 使 handleRegenerate/handleDeleteMessagePair 能精确定位（不受同秒 timestamp 冲突影响）。
+		this.messageRegistry.clear();
+		let restoredIndex = 0;
+		this.eventBus.emit("chat:history-restored", {
+			messages: displayMessages.map((m) => {
+				const id = m.timestamp
+					? `${m.timestamp}-${restoredIndex++}`
+					: `restored-${Date.now()}-${restoredIndex++}`;
+				const ref = this._agentChatHistory.find(
+					(h) => h.timestamp === m.timestamp && h.content === m.content,
+				);
+				if (ref) this.messageRegistry.set(id, ref);
+				return {
+					id,
+					role: m.role as "user" | "assistant",
+					content: m.content || "",
+					timestamp: m.timestamp,
+					isAgentMessage: m.role === "assistant",
+				};
+			}),
+		});
 
 		return true;
 	}
@@ -562,9 +577,13 @@ export class SessionDomain {
 		// _isProcessing / _isAiStreaming 状态错乱。
 		if (this._isProcessing) return;
 
-		const index = this._agentChatHistory.findIndex(
-			(m) => m.timestamp === messageId || m.content === messageId,
-		);
+		// 优先用 messageRegistry 精确定位（历史消息，避免同秒 timestamp 冲突）；
+		// fallback 用 timestamp === 定位新消息（id=ISO timestamp，毫秒精度唯一）。
+		const ref = this.messageRegistry.get(messageId);
+		let index = ref ? this._agentChatHistory.indexOf(ref) : -1;
+		if (index === -1) {
+			index = this._agentChatHistory.findIndex((m) => m.timestamp === messageId);
+		}
 		if (index === -1) return;
 
 		let userMsgIndex = index - 1;
@@ -609,10 +628,14 @@ export class SessionDomain {
 
 	handleDeleteMessagePair(messageId: string): void {
 		const initialLength = this._agentChatHistory.length;
+		// 用 messageRegistry 精确定位要删除的条目（避免同秒 timestamp 误删其他条目）；
+		// fallback timestamp === 兜底新消息。
+		const ref = this.messageRegistry.get(messageId);
 		this._agentChatHistory = this._agentChatHistory.filter(
-			(m) => m.timestamp !== messageId && m.content !== messageId,
+			(m) => m !== ref && m.timestamp !== messageId,
 		);
 		if (this._agentChatHistory.length < initialLength) {
+			this.messageRegistry.delete(messageId);
 			this.saveToCache().catch((err) =>
 				logError("[SessionDomain] Failed to save after delete:", err),
 			);
@@ -691,9 +714,13 @@ export class SessionDomain {
 	}
 
 	private async handleDiagramReady(embed: string): Promise<void> {
-		const timestamp = Date.now();
-		this.activeDiagramMessageId = `msg-${timestamp}-diagram`;
 		if (this.diagramCompleted) {
+			// 占位已在 finalize 创建，复用其 id 替换为图表（不可重新生成 id，否则 updateMessage 找不到目标）
+			if (!this.activeDiagramMessageId) {
+				log("[SessionDomain] onDiagramReady 到达但占位已清理，忽略");
+				return;
+			}
+			log(`[SessionDomain] 图表就绪，替换占位: ${this.activeDiagramMessageId}`);
 			this.eventBus.emit("chat:diagram-ready", {
 				messageId: this.activeDiagramMessageId,
 				embed,
@@ -707,9 +734,13 @@ export class SessionDomain {
 	}
 
 	private async handleDiagramFailed(reason: string): Promise<void> {
-		const timestamp = Date.now();
-		this.activeDiagramMessageId = `msg-${timestamp}-diagram`;
 		if (this.diagramCompleted) {
+			// 复用占位 id，让 ChatPresenter 移除占位气泡（不显示绘图信息）
+			if (!this.activeDiagramMessageId) {
+				log("[SessionDomain] onDiagramFailed 到达但占位已清理，忽略");
+				return;
+			}
+			log(`[SessionDomain] 图表失败，移除占位: ${this.activeDiagramMessageId}`);
 			this.eventBus.emit("chat:diagram-failed", {
 				messageId: this.activeDiagramMessageId,
 				reason,
@@ -754,27 +785,32 @@ export class SessionDomain {
 
 		this.diagramCompleted = true;
 		if (this.diagramPending) {
+			// 所有 diagram 消息都基于占位气泡：先创建占位（保证 messageId 存在于
+			// messageList），再用 ready/failed 替换或移除。避免 updateMessage 找不到目标。
 			const timestamp = Date.now();
 			this.activeDiagramMessageId = `msg-${timestamp}-diagram`;
+			this.eventBus.emit("chat:assistant-message-started", {
+				messageId: this.activeDiagramMessageId,
+				status: STATUS_DIAGRAM,
+				isDiagramPlaceholder: true,
+			});
+
 			if (this.diagramEmbedReady) {
+				// 图先于 finalize 完成 → 立即把占位替换为图表
 				this.eventBus.emit("chat:diagram-ready", {
 					messageId: this.activeDiagramMessageId,
 					embed: this.diagramEmbedReady,
 				});
 				this.resetDiagramState();
 			} else if (this.diagramFailReason) {
+				// 图先于 finalize 失败 → 移除占位（不显示任何绘图信息）
 				this.eventBus.emit("chat:diagram-failed", {
 					messageId: this.activeDiagramMessageId,
 					reason: this.diagramFailReason,
 				});
 				this.resetDiagramState();
-			} else {
-				this.eventBus.emit("chat:assistant-message-started", {
-					messageId: this.activeDiagramMessageId,
-					status: STATUS_DIAGRAM,
-					isDiagramPlaceholder: true,
-				});
 			}
+			// 否则保留占位，等 onDiagramReady/Failed 到达后替换/移除
 		}
 
 		this._isProcessing = false;

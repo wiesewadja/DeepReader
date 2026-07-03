@@ -118,6 +118,7 @@ describe("BookDomain", () => {
 		plugin.settings.savedSessions = { "Test Book": "saved-session-123" };
 		const sessionStore = {
 			get: vi.fn(async () => ({ indexId: "book-1", messages: [] })),
+			findBestSessionForIndex: vi.fn(async () => null),
 		};
 
 		const domain = createDomain(sessionStore);

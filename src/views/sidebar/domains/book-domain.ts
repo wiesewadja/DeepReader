@@ -484,7 +484,27 @@ export class BookDomain {
 		if (savedSessionId) {
 			try {
 				await this.options.ensureSessionStore();
-				const session = this.options.getSessionStore() ? await this.options.getSessionStore().get(savedSessionId) : null;
+				const store = this.options.getSessionStore();
+				let session = store ? await store.get(savedSessionId) : null;
+				let activeSessionId = savedSessionId;
+
+				// 自愈：savedSession 仅含 welcome（messages<=1，多由恢复失败 fallback 污染），
+				// 找同 indexId 下更完整的历史 session 迁移指向，恢复真实历史对话。
+				if (session && session.messages.length <= 1 && store) {
+					const betterId = await store.findBestSessionForIndex(indexId, savedSessionId);
+					if (betterId) {
+						const better = await store.get(betterId);
+						if (better && better.messages.length > 1) {
+							log(`[BookDomain] 自愈：savedSession ${savedSessionId} 仅 ${session.messages.length} 条，迁移到 ${betterId} (${better.messages.length} 条)`);
+							session = better;
+							activeSessionId = betterId;
+							savedSessions[normalizedBookName] = betterId;
+							savedSessions[indexId] = betterId;
+							await this.plugin.saveSettings();
+						}
+					}
+				}
+
 				if (session) {
 					const sessionIndexId = String(session.indexId);
 					const sessionBookName = sessionIndexId.replace(/\.pdf$/i, "").replace(/\.epub$/i, "");
@@ -499,8 +519,8 @@ export class BookDomain {
 						return;
 					}
 
-					this.options.setSessionId(savedSessionId);
-					const restored = await this.options.restoreFromSessionStore(savedSessionId);
+					this.options.setSessionId(activeSessionId);
+					const restored = await this.options.restoreFromSessionStore(activeSessionId);
 					if (restored) {
 						this.emitChanged(false);
 						return;
