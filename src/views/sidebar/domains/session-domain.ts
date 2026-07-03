@@ -4,7 +4,7 @@
  * Owns chat session lifecycle and orchestration. Emits semantic chat lifecycle events.
  */
 
-import { App, Notice } from "obsidian";
+import { App } from "obsidian";
 import type { ChatMessage } from "../../../agent/types.js";
 import { SessionStore } from "../../../agent/session/index.js";
 import { EventBus } from "../event-bus.js";
@@ -16,6 +16,7 @@ import type { TTSDomain } from "./tts-domain.js";
 import type { DeepReaderPluginInterface } from "../../../agent/tools/context/vault.js";
 import type { ToolContext } from "../../../agent/tools/types.js";
 import { validateWikiLinks } from "../../../agent/utils/wiki-link-hook.js";
+import { StreamingThinkParser } from "../../../utils/streaming-think.js";
 import { uiLog as log, warn, error as logError } from "../../../utils/logger.js";
 
 // Memory & Mode constants/stores
@@ -23,6 +24,15 @@ import { GENERAL_MODE_INDEX_ID } from "../../../agent/config/agent-constants.js"
 import { MemoryConsolidator } from "../../../agent/memory/consolidator.js";
 import { MemoryStore } from "../../../agent/memory/store.js";
 import { DEFAULT_CONSOLIDATOR_CONFIG } from "../../../agent/memory/types.js";
+
+const STATUS_THINKING_PREFIX = "💭";
+const STATUS_READING = "📖 正在翻阅...";
+const STATUS_CROSS_BOOK = "🔍 正在跨书籍查阅...";
+const STATUS_DIAGRAM = "让我画张图给你看...";
+
+const WELCOME_MESSAGE = "你好！我是奚童，你的 AI 伴读。";
+const WELCOME_MESSAGE_GENERAL =
+	"你好！我是奚童，你的 AI 伴读。\n\n虽然还没有选中书籍，但我们可以聊聊阅读相关的话题——推荐书单、讨论读书方法、或者整理你的读书笔记。";
 
 export type GuidanceType =
 	| "overview"
@@ -204,12 +214,10 @@ export class SessionDomain {
 		this._isProcessing = true;
 		this._isAiStreaming = true;
 
-		// Notify reading mode that chat has started
 		if (this.plugin.readingModeService) {
 			this.plugin.readingModeService.notifyChatStarted();
 		}
 
-		// Parse references in message
 		await this.parseAndLoadReferences(message);
 
 		const userMessageId = `user-${Date.now()}`;
@@ -226,217 +234,105 @@ export class SessionDomain {
 			role: "user",
 		});
 
+		await this.streamAssistantResponse(message, quotes);
+	}
+
+	async sendUserMessageWithInput(message: string): Promise<void> {
+		await this.sendUserMessage(message, undefined);
+	}
+
+	private async streamAssistantResponse(
+		userMessage: string,
+		quotes?: QuoteItem[],
+	): Promise<void> {
+		this._isProcessing = true;
+		this._isAiStreaming = true;
 		this.abortController = new AbortController();
 
 		const aiMessageId = `assistant-${Date.now()}`;
 		this.eventBus.emit("chat:assistant-message-started", {
 			messageId: aiMessageId,
-			status: this._crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
+			status: this._crossBookMode ? STATUS_CROSS_BOOK : STATUS_READING,
 		});
 
-		let fullContent = "";
+		this.resetDiagramState();
+
+		const thinkParser = new StreamingThinkParser();
 		let reasoningContent = "";
 		let currentStatus = "";
 
-		this.diagramPending = false;
-		this.diagramEmbedReady = null;
-		this.diagramFailReason = null;
-		this.diagramCompleted = false;
-		this.activeDiagramMessageId = null;
-
 		try {
-			const activeFile = this.app.workspace.getActiveFile();
-			let currentNodeId: string | undefined;
-			if (activeFile) {
-				const cache = this.app.metadataCache.getFileCache(activeFile);
-				const rawNodeId = cache?.frontmatter?.node_id;
-				if (rawNodeId) currentNodeId = String(rawNodeId);
-			}
-
-			// Prepare context
-			const context: ToolContext = {
-				vault: {
-					app: this.app,
-					plugin: this.plugin,
-				},
-				book: {
-					indexId: this.bookDomain.currentIndexId || "",
-					pdfName: this.bookDomain.currentPdfName || "",
-					markdownFiles: this._currentMarkdownFiles,
-					currentNodeId,
-					documentMetadata: {
-						title: this.bookDomain.currentPdfName || "",
-					},
-					docDescription: this.bookDomain.currentDocDescription || undefined,
-				},
-				crossBook: (() => {
-					const ids = this.bookDomain.currentBooklistBookIds;
-					const isGeneral = this.bookDomain.currentIndexId === GENERAL_MODE_INDEX_ID || this._generalChatMode;
-					if (!ids && !isGeneral) return undefined;
-					return {
-						booklistBookIds: ids ?? undefined,
-						crossBookMode: !!ids,
-						bookshelfSummary: isGeneral ? this.bookDomain.getBookshelfSummary() : undefined,
-						indexedBooks: this.bookDomain.indexes?.length
-							? this.bookDomain.indexes.filter((i) => i.status === "ready").map((i) => ({ id: i.id, name: i.pdf_name }))
-							: undefined,
-					};
-				})(),
-				visual: undefined, // 图表生成已迁移到 Hermes
-				useLLMTreeSearch: this._useLLMTreeSearch,
-			};
-
-			const referencedDocs = this.chatDocumentService.getLoadedDocumentsArray().map((doc) => ({
-				name: doc.name,
-				content: doc.content,
-			}));
-
-			const request = {
-				userMessage: message,
-				context,
-				history: this._agentChatHistory.filter(m => m.role !== 'system'),
-				quotes,
-				referencedDocs,
-				abortSignal: this.abortController.signal,
-			};
+			const request = this.buildAgentRequest(userMessage, quotes);
 
 			for await (const event of this.agentDomain.stream(request)) {
-				if (event.type === "text") {
-					fullContent += event.content;
-					const { reasoning, cleanedContent } = extractStreamingThink(fullContent);
-					this.eventBus.emit("chat:assistant-text-chunk", {
-						messageId: aiMessageId,
-						content: cleanedContent,
-						isIncremental: false,
-					});
-
-					const displayStatus = reasoning.trim()
-						? `💭 ${reasoning.split("\n")[0].slice(0, 50)}...`
-						: currentStatus;
-					if (displayStatus) {
+				switch (event.type) {
+					case "text": {
+						const { reasoning, cleanedContent } = thinkParser.append(event.content);
+						this.eventBus.emit("chat:assistant-text-chunk", {
+							messageId: aiMessageId,
+							content: cleanedContent,
+							isIncremental: false,
+						});
+						const displayStatus = reasoning.trim()
+							? `${STATUS_THINKING_PREFIX} ${reasoning.split("\n")[0].slice(0, 50)}...`
+							: currentStatus;
+						if (displayStatus) {
+							this.eventBus.emit("chat:assistant-status-changed", {
+								messageId: aiMessageId,
+								status: displayStatus,
+							});
+						}
+						break;
+					}
+					case "reasoning": {
+						reasoningContent += event.content;
+						const displayReasoning = reasoningContent.split("\n")[0].slice(0, 50);
 						this.eventBus.emit("chat:assistant-status-changed", {
 							messageId: aiMessageId,
-							status: displayStatus,
+							status: displayReasoning
+								? `${STATUS_THINKING_PREFIX} ${displayReasoning}...`
+								: "思考中...",
 						});
+						break;
 					}
-				} else if (event.type === "reasoning") {
-					reasoningContent += event.content;
-					const displayReasoning = reasoningContent.split("\n")[0].slice(0, 50);
-					this.eventBus.emit("chat:assistant-status-changed", {
-						messageId: aiMessageId,
-						status: displayReasoning ? `💭 ${displayReasoning}...` : "思考中...",
-					});
-				} else if (event.type === "progress") {
-					currentStatus = event.status;
-					this.eventBus.emit("chat:assistant-status-changed", {
-						messageId: aiMessageId,
-						status: event.status,
-					});
-				} else if (event.type === "diagram-start") {
-					this.diagramPending = true;
-				} else if (event.type === "diagram-ready") {
-					const timestamp = Date.now();
-					this.activeDiagramMessageId = `msg-${timestamp}-diagram`;
-					if (this.diagramCompleted) {
-						this.eventBus.emit("chat:diagram-ready", {
-							messageId: this.activeDiagramMessageId,
-							embed: event.embed,
+					case "progress": {
+						currentStatus = event.status;
+						this.eventBus.emit("chat:assistant-status-changed", {
+							messageId: aiMessageId,
+							status: event.status,
 						});
-						this.activeDiagramMessageId = null;
-						this.diagramPending = false;
-						await this.saveToCache();
-					} else {
-						this.diagramEmbedReady = event.embed;
+						break;
 					}
-				} else if (event.type === "diagram-failed") {
-					const timestamp = Date.now();
-					this.activeDiagramMessageId = `msg-${timestamp}-diagram`;
-					if (this.diagramCompleted) {
-						this.eventBus.emit("chat:diagram-failed", {
-							messageId: this.activeDiagramMessageId,
-							reason: event.reason,
+					case "diagram-start": {
+						this.diagramPending = true;
+						break;
+					}
+					case "diagram-ready": {
+						await this.handleDiagramReady(event.embed);
+						break;
+					}
+					case "diagram-failed": {
+						await this.handleDiagramFailed(event.reason);
+						break;
+					}
+					case "error": {
+						this.eventBus.emit("chat:error", {
+							messageId: aiMessageId,
+							message: event.message,
 						});
-						this.activeDiagramMessageId = null;
-						this.diagramPending = false;
-						await this.saveToCache();
-					} else {
-						this.diagramFailReason = event.reason;
+						break;
 					}
-				} else if (event.type === "error") {
-					this.eventBus.emit("chat:error", {
-						messageId: aiMessageId,
-						message: event.message,
-					});
 				}
 			}
 
-			// Clean output WikiLinks
-			const { cleanedContent } = extractStreamingThink(fullContent);
-			let correctedContent = cleanedContent;
-			if (this.bookDomain.currentPdfName) {
-				try {
-					const wikiLinkResult = await validateWikiLinks(cleanedContent, {
-						app: this.app,
-						bookName: this.bookDomain.currentPdfName,
-						vaultPath: this.getVaultPath(),
-						toolResults: [],
-					});
-					correctedContent = wikiLinkResult.correctedContent;
-				} catch (err) {
-					logError("[SessionDomain] WikiLink validation failed:", err);
-				}
-			}
+			const { cleanedContent } = thinkParser.finalize();
+			const correctedContent = await this.correctWikiLinks(cleanedContent);
 
-			this.eventBus.emit("chat:assistant-message-completed", {
-				messageId: aiMessageId,
-				content: correctedContent,
-			});
-
-			const aiMsgObj: ChatMessage = {
-				role: "assistant",
-				content: correctedContent,
-				timestamp: new Date().toISOString(),
-			};
-			this._agentChatHistory.push(aiMsgObj);
-
-			this.diagramCompleted = true;
-			if (this.diagramPending) {
-				const timestamp = Date.now();
-				this.activeDiagramMessageId = `msg-${timestamp}-diagram`;
-				if (this.diagramEmbedReady) {
-					this.eventBus.emit("chat:diagram-ready", {
-						messageId: this.activeDiagramMessageId,
-						embed: this.diagramEmbedReady,
-					});
-					this.diagramPending = false;
-					this.diagramEmbedReady = null;
-					this.activeDiagramMessageId = null;
-				} else if (this.diagramFailReason) {
-					this.eventBus.emit("chat:diagram-failed", {
-						messageId: this.activeDiagramMessageId,
-						reason: this.diagramFailReason,
-					});
-					this.diagramPending = false;
-					this.diagramFailReason = null;
-					this.activeDiagramMessageId = null;
-				} else {
-					// Visualizer is still running, show a placeholder on UI
-					this.eventBus.emit("chat:assistant-message-started", {
-						messageId: this.activeDiagramMessageId,
-						status: "让我画张图给你看...",
-						isDiagramPlaceholder: true,
-					});
-				}
-			}
-
-			this._isProcessing = false;
-			this._isAiStreaming = false;
-			this.emitStreamStopped("completed");
+			this.finalizeAssistantMessage(aiMessageId, correctedContent);
 
 			await this.saveToCache();
 			await this.maybeConsolidateMemory();
 
-			// Auto TTS reading
 			if (this.plugin.settings.autoTTS) {
 				this.ttsDomain.speak(aiMessageId, correctedContent);
 			}
@@ -447,10 +343,6 @@ export class SessionDomain {
 			this.emitStreamStopped("error");
 			throw error;
 		}
-	}
-
-	async sendUserMessageWithInput(message: string): Promise<void> {
-		await this.sendUserMessage(message, undefined);
 	}
 
 	// ── Session lifecycle ──
@@ -488,10 +380,7 @@ export class SessionDomain {
 
 		// Welcome message
 		const welcomeId = `welcome-${Date.now()}`;
-		let welcomeContent = "你好！我是奚童，你的 AI 伴读。";
-		if (this._generalChatMode) {
-			welcomeContent = "你好！我是奚童，你的 AI 伴读。\n\n虽然还没有选中书籍，但我们可以聊聊阅读相关的话题——推荐书单、讨论读书方法、或者整理你的读书笔记。";
-		}
+		const welcomeContent = this._generalChatMode ? WELCOME_MESSAGE_GENERAL : WELCOME_MESSAGE;
 		const welcomeMsg: ChatMessage = {
 			role: "assistant",
 			content: welcomeContent,
@@ -501,7 +390,13 @@ export class SessionDomain {
 
 		// Publish restored history event containing just the welcome message
 		this.eventBus.emit("chat:history-restored", {
-			messages: [welcomeMsg],
+			messages: [{
+				id: welcomeId,
+				role: "assistant",
+				content: welcomeContent,
+				timestamp: welcomeMsg.timestamp,
+				isAgentMessage: true,
+			}],
 		});
 	}
 
@@ -523,10 +418,15 @@ export class SessionDomain {
 			return false;
 		});
 
+		let restoredIndex = 0;
 		this.eventBus.emit("chat:history-restored", {
-			messages: displayMessages.map(m => ({
-				...m,
-				id: m.timestamp || `restored-${Date.now()}`,
+			messages: displayMessages.map((m) => ({
+				id: m.timestamp
+					? `${m.timestamp}-${restoredIndex++}`
+					: `restored-${Date.now()}-${restoredIndex++}`,
+				role: m.role as "user" | "assistant",
+				content: m.content || "",
+				timestamp: m.timestamp,
 				isAgentMessage: m.role === "assistant",
 			})),
 		});
@@ -662,21 +562,22 @@ export class SessionDomain {
 	// ── Agent operations ──
 
 	handleRegenerate(messageId: string): void {
-		const index = this._agentChatHistory.findIndex((m) => m.timestamp === messageId || m.content === messageId);
-		if (index !== -1) {
-			let userMsgIndex = index - 1;
-			while (userMsgIndex >= 0 && this._agentChatHistory[userMsgIndex].role !== "user") {
-				userMsgIndex--;
-			}
-			if (userMsgIndex >= 0) {
-				const userMsg = this._agentChatHistory[userMsgIndex];
-				this.sendUserMessage(userMsg.content);
-			}
-		}
-	}
+		const index = this._agentChatHistory.findIndex(
+			(m) => m.timestamp === messageId || m.content === messageId,
+		);
+		if (index === -1) return;
 
-	handleCopy(messageId: string): void {
-		// Handled by UI clipboard utils directly
+		let userMsgIndex = index - 1;
+		while (userMsgIndex >= 0 && this._agentChatHistory[userMsgIndex].role !== "user") {
+			userMsgIndex--;
+		}
+		if (userMsgIndex < 0) return;
+
+		// Drop the assistant message being regenerated and everything after it,
+		// then re-stream a response for the preceding user message.
+		this._agentChatHistory = this._agentChatHistory.slice(0, userMsgIndex + 1);
+		const userMsg = this._agentChatHistory[userMsgIndex];
+		this.streamAssistantResponse(userMsg.content);
 	}
 
 	handleQuestionClick(question: string): void {
@@ -706,19 +607,179 @@ export class SessionDomain {
 		}
 	}
 
-	handleExcerpt(
-		messageId: string,
-		content: import("../../../types/excerpt.js").ExcerptContent,
-		metadata: import("../../../types/excerpt.js").ExcerptMetadata,
-	): void {
-		// Handled in referencing
-	}
-
 	handleDeleteMessagePair(messageId: string): void {
-		// Implementation for deleting a message pair from local stores
+		const initialLength = this._agentChatHistory.length;
+		this._agentChatHistory = this._agentChatHistory.filter(
+			(m) => m.timestamp !== messageId && m.content !== messageId,
+		);
+		if (this._agentChatHistory.length < initialLength) {
+			this.saveToCache().catch((err) =>
+				logError("[SessionDomain] Failed to save after delete:", err),
+			);
+		}
 	}
 
 	// ── Helper methods ──
+
+	private resetDiagramState(): void {
+		this.diagramPending = false;
+		this.diagramEmbedReady = null;
+		this.diagramFailReason = null;
+		this.diagramCompleted = false;
+		this.activeDiagramMessageId = null;
+	}
+
+	private buildAgentRequest(message: string, quotes?: QuoteItem[]) {
+		const activeFile = this.app.workspace.getActiveFile();
+		let currentNodeId: string | undefined;
+		if (activeFile) {
+			const cache = this.app.metadataCache.getFileCache(activeFile);
+			const rawNodeId = cache?.frontmatter?.node_id;
+			if (rawNodeId) currentNodeId = String(rawNodeId);
+		}
+
+		const context: ToolContext = {
+			vault: {
+				app: this.app,
+				plugin: this.plugin,
+			},
+			book: {
+				indexId: this.bookDomain.currentIndexId || "",
+				pdfName: this.bookDomain.currentPdfName || "",
+				markdownFiles: this._currentMarkdownFiles,
+				currentNodeId,
+				documentMetadata: {
+					title: this.bookDomain.currentPdfName || "",
+				},
+				docDescription: this.bookDomain.currentDocDescription || undefined,
+			},
+			crossBook: (() => {
+				const ids = this.bookDomain.currentBooklistBookIds;
+				const isGeneral =
+					this.bookDomain.currentIndexId === GENERAL_MODE_INDEX_ID ||
+					this._generalChatMode;
+				if (!ids && !isGeneral) return undefined;
+				return {
+					booklistBookIds: ids ?? undefined,
+					crossBookMode: !!ids,
+					bookshelfSummary: isGeneral
+						? this.bookDomain.getBookshelfSummary()
+						: undefined,
+					indexedBooks: this.bookDomain.indexes?.length
+						? this.bookDomain.indexes
+								.filter((i) => i.status === "ready")
+								.map((i) => ({ id: i.id, name: i.pdf_name }))
+						: undefined,
+				};
+			})(),
+			visual: undefined,
+			useLLMTreeSearch: this._useLLMTreeSearch,
+		};
+
+		const referencedDocs = this.chatDocumentService
+			.getLoadedDocumentsArray()
+			.map((doc) => ({ name: doc.name, content: doc.content }));
+
+		return {
+			userMessage: message,
+			context,
+			history: this._agentChatHistory.filter((m) => m.role !== "system"),
+			quotes,
+			referencedDocs,
+			abortSignal: this.abortController!.signal,
+		};
+	}
+
+	private async handleDiagramReady(embed: string): Promise<void> {
+		const timestamp = Date.now();
+		this.activeDiagramMessageId = `msg-${timestamp}-diagram`;
+		if (this.diagramCompleted) {
+			this.eventBus.emit("chat:diagram-ready", {
+				messageId: this.activeDiagramMessageId,
+				embed,
+			});
+			this.activeDiagramMessageId = null;
+			this.diagramPending = false;
+			await this.saveToCache();
+		} else {
+			this.diagramEmbedReady = embed;
+		}
+	}
+
+	private async handleDiagramFailed(reason: string): Promise<void> {
+		const timestamp = Date.now();
+		this.activeDiagramMessageId = `msg-${timestamp}-diagram`;
+		if (this.diagramCompleted) {
+			this.eventBus.emit("chat:diagram-failed", {
+				messageId: this.activeDiagramMessageId,
+				reason,
+			});
+			this.activeDiagramMessageId = null;
+			this.diagramPending = false;
+			await this.saveToCache();
+		} else {
+			this.diagramFailReason = reason;
+		}
+	}
+
+	private async correctWikiLinks(content: string): Promise<string> {
+		if (!this.bookDomain.currentPdfName) return content;
+		try {
+			const wikiLinkResult = await validateWikiLinks(content, {
+				app: this.app,
+				bookName: this.bookDomain.currentPdfName,
+				vaultPath: this.getVaultPath(),
+				toolResults: [],
+			});
+			return wikiLinkResult.correctedContent;
+		} catch (err) {
+			logError("[SessionDomain] WikiLink validation failed:", err);
+			return content;
+		}
+	}
+
+	private finalizeAssistantMessage(aiMessageId: string, correctedContent: string): void {
+		this.eventBus.emit("chat:assistant-message-completed", {
+			messageId: aiMessageId,
+			content: correctedContent,
+		});
+
+		const aiMsgObj: ChatMessage = {
+			role: "assistant",
+			content: correctedContent,
+			timestamp: new Date().toISOString(),
+		};
+		this._agentChatHistory.push(aiMsgObj);
+
+		this.diagramCompleted = true;
+		if (this.diagramPending) {
+			const timestamp = Date.now();
+			this.activeDiagramMessageId = `msg-${timestamp}-diagram`;
+			if (this.diagramEmbedReady) {
+				this.eventBus.emit("chat:diagram-ready", {
+					messageId: this.activeDiagramMessageId,
+					embed: this.diagramEmbedReady,
+				});
+				this.resetDiagramState();
+			} else if (this.diagramFailReason) {
+				this.eventBus.emit("chat:diagram-failed", {
+					messageId: this.activeDiagramMessageId,
+					reason: this.diagramFailReason,
+				});
+				this.resetDiagramState();
+			} else {
+				this.eventBus.emit("chat:assistant-message-started", {
+					messageId: this.activeDiagramMessageId,
+					status: STATUS_DIAGRAM,
+					isDiagramPlaceholder: true,
+				});
+			}
+		}
+
+		this._isProcessing = false;
+		this._isAiStreaming = false;
+		this.emitStreamStopped("completed");
+	}
 
 	private async parseAndLoadReferences(message: string): Promise<void> {
 		const wikilinkRegex = /\[\[([^\]]+)\]\]/g;
@@ -735,7 +796,7 @@ export class SessionDomain {
 			}
 		}
 		if (loadedNames.length > 0) {
-			new Notice(`已自动关联文档: ${loadedNames.join(", ")}`);
+			this.eventBus.emit("chat:documents-loaded", { names: loadedNames });
 		}
 	}
 
@@ -760,25 +821,4 @@ export class SessionDomain {
 			reason,
 		});
 	}
-}
-
-function extractStreamingThink(text: string): { reasoning: string; cleanedContent: string } {
-	const startTag = "<think>";
-	const endTag = "</think>";
-
-	const startIndex = text.indexOf(startTag);
-	if (startIndex === -1) {
-		return { reasoning: "", cleanedContent: text };
-	}
-
-	const endIndex = text.indexOf(endTag, startIndex + startTag.length);
-	if (endIndex === -1) {
-		const reasoning = text.slice(startIndex + startTag.length);
-		const cleaned = text.slice(0, startIndex);
-		return { reasoning, cleanedContent: cleaned };
-	}
-
-	const reasoning = text.slice(startIndex + startTag.length, endIndex);
-	const cleaned = text.slice(0, startIndex) + text.slice(endIndex + endTag.length);
-	return { reasoning, cleanedContent: cleaned };
 }

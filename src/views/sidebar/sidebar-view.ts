@@ -214,6 +214,10 @@ export class SidebarView extends ItemView {
 				self.updateMessageListPadding(hasContextTags);
 			},
 		});
+		this.chatDocumentService = new ChatDocumentService({
+			app: this.app,
+			eventBus: this.eventBus,
+		});
 		this.ttsCtrl = new TTSController({
 			get app() {
 				return self.app;
@@ -295,14 +299,6 @@ export class SidebarView extends ItemView {
 			eventBus: this.eventBus,
 			ttsController: this.ttsCtrl,
 		});
-		this.sessionDomain = new SessionDomain({
-			app: this.app,
-			plugin: this.plugin,
-			eventBus: this.eventBus,
-			chatDocumentService: this.chatDocumentService!,
-			bookDomain: this.bookDomain,
-			ttsDomain: this.ttsDomain,
-		});
 		this.bookMgr = new BookManager({
 			get app() {
 				return self.app;
@@ -320,25 +316,25 @@ export class SidebarView extends ItemView {
 				return self.frontendAgent;
 			},
 			startNewSession(indexId: string) {
-				return self.sessionDomain.startNewSession(indexId);
+				return self.sessionDomain?.startNewSession(indexId) ?? Promise.resolve();
 			},
 			restoreFromSessionStore(sessionId: string) {
-				return self.sessionDomain.restoreSession(sessionId);
+				return self.sessionDomain?.restoreSession(sessionId) ?? Promise.resolve(false);
 			},
 			get sessionId() {
-				return self.sessionDomain.sessionId;
+				return self.sessionDomain?.sessionId ?? null;
 			},
 			set sessionId(id: string | null) {
-				self.sessionDomain.sessionId = id;
+				if (self.sessionDomain) self.sessionDomain.sessionId = id;
 			},
 			get sessionStore() {
-				return self.sessionDomain.sessionStore;
+				return self.sessionDomain?.sessionStore ?? null;
 			},
 			ensureSessionStore() {
-				return self.sessionDomain.ensureSessionStore();
+				return self.sessionDomain?.ensureSessionStore() ?? Promise.resolve();
 			},
 			cancelActiveStream() {
-				self.sessionDomain.cancelStream();
+				self.sessionDomain?.cancelStream();
 			},
 			initializeFrontendAgent() {
 				return self.initializeFrontendAgent();
@@ -349,6 +345,14 @@ export class SidebarView extends ItemView {
 			plugin: this.plugin,
 			eventBus: this.eventBus,
 			bookManager: this.bookMgr,
+		});
+		this.sessionDomain = new SessionDomain({
+			app: this.app,
+			plugin: this.plugin,
+			eventBus: this.eventBus,
+			chatDocumentService: this.chatDocumentService,
+			bookDomain: this.bookDomain,
+			ttsDomain: this.ttsDomain,
 		});
 		this.eventBus.on("book:changed", (context) => {
 			log("[SidebarView] book:changed", context);
@@ -632,11 +636,6 @@ export class SidebarView extends ItemView {
 		container.empty();
 		this.chatContainerEl = container;
 
-		// 初始化聊天上下文文档服务（章节辅助阅读）
-		this.chatDocumentService = new ChatDocumentService({
-			app: this.app,
-			eventBus: this.eventBus,
-		});
 		this.registerEvent(
 			this.eventBus.on("chat:documents-changed", ({ documents }) => {
 				// 同步文档内容到 currentMarkdownFiles 供 Agent 搜索使用
@@ -888,7 +887,11 @@ export class SidebarView extends ItemView {
 					this.sessionDomain.handleRegenerate(messageId);
 				},
 				onCopy: (messageId: string) => {
-					this.sessionDomain.handleCopy(messageId);
+					const message = this.messageList?.getMessage(messageId);
+					const content = message?.getData().content;
+					if (content) {
+						_copyToClipboard(content);
+					}
 				},
 				onQuestionClick: (question: string) => {
 					this.sessionDomain.handleQuestionClick(question);
@@ -904,7 +907,23 @@ export class SidebarView extends ItemView {
 					content: ExcerptContent,
 					metadata: ExcerptMetadata,
 				) => {
-					this.sessionDomain.handleExcerpt(messageId, content, metadata);
+					const message = this.messageList?.getMessage(messageId);
+					const data = message?.getData();
+					if (data?.pdfName) {
+						metadata.sourcePdf = data.pdfName;
+					}
+					metadata.sourceType = "chat";
+					delete (metadata as any).chapterPath;
+					delete (metadata as any).chapterName;
+					const modal = new ExcerptModal({
+						content,
+						metadata,
+						app: this.app,
+						onSave: (path: string) => {
+							new Notice(`摘录已保存到 ${path}`);
+						},
+					});
+					modal.open();
 				},
 				onQuote: (
 					metadata: import("../../components/chat-input/chat-input.js").QuoteMetadata,
@@ -912,7 +931,15 @@ export class SidebarView extends ItemView {
 					this.quoteManager.handleQuoteSelection(metadata);
 				},
 				onDelete: (messageId: string) => {
-					this.sessionDomain.handleDeleteMessagePair(messageId);
+					new ConfirmModal(
+						this.app,
+						"删除对话",
+						"此操作不可撤销",
+						() => {
+							this.sessionDomain.handleDeleteMessagePair(messageId);
+							this.messageList?.removeMessage(messageId);
+						},
+					).open();
 				},
 				onTTS: async (messageId: string, content: string) => {
 					// 喇叭按钮始终直接朗读原文，不走摘要模式

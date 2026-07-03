@@ -6,6 +6,7 @@
  * into UI changes.
  */
 
+import { Notice } from "obsidian";
 import type { ChatInput } from "../../../components/chat-input/chat-input.js";
 import type { MessageList } from "../../../components/message-list/message-list.js";
 import type { ReadingTopbar } from "../../../components/reading-topbar/index.js";
@@ -169,14 +170,21 @@ export class ChatPresenter {
 				const messageList = this.getMessageList();
 				messageList?.clear();
 				for (const msg of event.messages) {
-					if (msg.role !== "user" && msg.role !== "assistant") continue;
 					messageList?.addMessage({
-						id: msg.timestamp || `restored-${Date.now()}`,
+						id: msg.id,
 						role: msg.role,
-						content: msg.content || "",
+						content: msg.content,
 						timestamp: msg.timestamp || new Date().toISOString(),
-						isAgentMessage: msg.role === "assistant",
+						isAgentMessage: msg.isAgentMessage,
 					});
+				}
+			}),
+		);
+
+		this.unsubscribe.push(
+			this.eventBus.on("chat:documents-loaded", (event) => {
+				if (event.names.length > 0) {
+					new Notice(`已自动关联文档: ${event.names.join(", ")}`);
 				}
 			}),
 		);

@@ -1,5 +1,4 @@
 import type { LoadedDocument } from "./services/chat-document-service.js";
-import type { ChatMessage } from "../../agent/types.js";
 
 /**
  * Per-SidebarView event vocabulary.
@@ -83,6 +82,22 @@ export interface StreamStoppedEvent {
 	reason: "cancelled" | "completed" | "error";
 }
 
+export interface DocumentsLoadedEvent {
+	names: string[];
+}
+
+export interface RestoredMessage {
+	id: string;
+	role: "user" | "assistant";
+	content: string;
+	timestamp?: string;
+	isAgentMessage: boolean;
+}
+
+export interface HistoryRestoredEvent {
+	messages: RestoredMessage[];
+}
+
 export interface SidebarEventMap {
 	"chat:documents-changed": { documents: LoadedDocument[] };
 	"book:changed": BookChangedEvent;
@@ -98,5 +113,6 @@ export interface SidebarEventMap {
 	"chat:diagram-failed": DiagramFailedEvent;
 	"chat:error": ChatErrorEvent;
 	"chat:stream-stopped": StreamStoppedEvent;
-	"chat:history-restored": { messages: ChatMessage[] };
+	"chat:history-restored": HistoryRestoredEvent;
+	"chat:documents-loaded": DocumentsLoadedEvent;
 }
