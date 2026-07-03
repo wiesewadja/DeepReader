@@ -50,10 +50,11 @@ describe('ChatInput', () => {
 			expect(sendButton?.tagName).toBe('BUTTON');
 		});
 
-		it('初始状态发送按钮应该被禁用', () => {
+		it('初始状态发送按钮应该启用（显示麦克风图标）', () => {
 			const el = chatInput.getElement();
 			const sendButton = el?.querySelector('.deeppdf-chat-input-send-btn') as HTMLButtonElement;
-			expect(sendButton.disabled).toBe(true);
+			expect(sendButton.disabled).toBe(false);
+			expect(sendButton.getAttribute('aria-label')).toBe('语音输入');
 		});
 
 		it('应该使用自定义占位符', () => {
@@ -82,12 +83,13 @@ describe('ChatInput', () => {
 			expect(chatInput.getValue()).toBe('');
 		});
 
-		it('清空后发送按钮应该被禁用', () => {
+		it('清空后发送按钮应该显示麦克风图标', () => {
 			chatInput.setValue('Some text');
 			chatInput.clear();
 			const el = chatInput.getElement();
 			const sendButton = el?.querySelector('.deeppdf-chat-input-send-btn') as HTMLButtonElement;
-			expect(sendButton.disabled).toBe(true);
+			expect(sendButton.disabled).toBe(false);
+			expect(sendButton.getAttribute('aria-label')).toBe('语音输入');
 		});
 	});
 
@@ -328,6 +330,11 @@ describe('ChatInput', () => {
 			const el = chatInput.getElement();
 			const sendButton = el?.querySelector('.deeppdf-chat-input-send-btn') as HTMLButtonElement;
 
+			// 初始状态无内容，显示语音输入按钮
+			expect(sendButton.getAttribute('aria-label')).toBe('语音输入');
+
+			// 输入内容后显示发送按钮
+			chatInput.setValue('Test');
 			expect(sendButton.getAttribute('aria-label')).toBe('发送消息');
 		});
 	});

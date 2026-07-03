@@ -304,18 +304,24 @@ export class ChatInput {
 		const container = document.createElement('div');
 		container.addClass('deeppdf-chat-input');
 
-		// 整体容器 (deeppdf-chat-input-container)
+		// 单行 flex 容器
 		this.inputContainer = container.createEl('div', {
 			cls: 'deeppdf-chat-input-container'
 		});
 		const inputContainer = this.inputContainer;
 
-		// 1. 输入区域
-		const inputArea = inputContainer.createEl('div', {
-			cls: 'deeppdf-input-area'
-		});
+		// 1. 左侧：加载文档按钮（可选）
+		if (this.options.onLoadCurrentDoc) {
+			this.loadDocButton = inputContainer.createEl('button', {
+				cls: 'deeppdf-load-doc-btn'
+			});
+			this.loadDocButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`;
+			this.loadDocButton.setAttribute('aria-label', '加载当前文档到上下文');
+			this.loadDocButton.type = 'button';
+		}
 
-		this.textarea = inputArea.createEl('textarea', {
+		// 2. 中间：文本输入框（flex: 1）
+		this.textarea = inputContainer.createEl('textarea', {
 			cls: 'deeppdf-chat-input-textarea'
 		});
 		this.textarea.placeholder = this.options.placeholder || '';
@@ -325,33 +331,8 @@ export class ChatInput {
 		this.textarea.setAttribute('aria-multiline', 'true');
 		this.textarea.style.minHeight = 'auto';
 
-		// 2. 底部工具栏
-		const toolbar = inputContainer.createEl('div', {
-			cls: 'deeppdf-input-toolbar'
-		});
-
-		// 左侧工具
-		const leftToolbar = toolbar.createEl('div', {
-			cls: 'deeppdf-toolbar-left'
-		});
-
-		// 加载当前文档按钮
-		if (this.options.onLoadCurrentDoc) {
-			this.loadDocButton = leftToolbar.createEl('button', {
-				cls: 'deeppdf-load-doc-btn'
-			});
-			this.loadDocButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`;
-			this.loadDocButton.setAttribute('aria-label', '加载当前文档到上下文');
-			this.loadDocButton.type = 'button';
-		}
-
-		// 右侧工具 (发送按钮)
-		const rightToolbar = toolbar.createEl('div', {
-			cls: 'deeppdf-toolbar-right'
-		});
-
-		// 发送按钮
-		this.sendButton = rightToolbar.createEl('button', {
+		// 3. 右侧：发送/麦克风/停止 按钮
+		this.sendButton = inputContainer.createEl('button', {
 			cls: 'deeppdf-chat-input-send-btn'
 		});
 		this.sendButton.innerHTML = Icons.send;
@@ -801,12 +782,12 @@ export class ChatInput {
 		if (hasContent) {
 			this.sendButton.innerHTML = Icons.send;
 			this.sendButton.setAttribute('aria-label', '发送消息');
-			this.sendButton.disabled = false;
+			this.sendButton.disabled = this.textarea?.disabled || false;
 		} else {
 			// 无内容 → 显示麦克风按钮
 			this.sendButton.innerHTML = Icons.mic;
 			this.sendButton.setAttribute('aria-label', '语音输入');
-			this.sendButton.disabled = false;
+			this.sendButton.disabled = this.textarea?.disabled || false;
 		}
 	}
 
