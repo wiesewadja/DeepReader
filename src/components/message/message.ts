@@ -24,6 +24,7 @@ import { setupInternalLinks as _setupInternalLinks } from './internal-links.js';
 import { parseAgentContent } from './parse-agent-content.js';
 import type { MessageData, AgentToolCall } from './types.js';
 import { escapeHtml as _escapeHtml, formatTimestamp as _formatTimestamp } from './utils.js';
+import { faceSVG } from '../reading-topbar/mascot-face.js';
 
 /**
  * 消息基类
@@ -328,6 +329,12 @@ export class AIMessage extends Message {
 		// 思考条 — AI 处理中时显示（mascot + 状态文字）
 		if (this.data.isAgentMessage) {
 			const thinkingBar = bubble.createEl('div', { cls: 'deeppdf-mascot-thinking-bar' });
+			
+			// 静态渲染奚童思考表情，防内存和计时器泄漏
+			const mascotEl = thinkingBar.createEl('div', { cls: 'deeppdf-mascot-face' });
+			const mascotSvgEl = mascotEl.createEl('div', { cls: 'deeppdf-mascot-face-svg' });
+			mascotSvgEl.innerHTML = faceSVG('thinking');
+
 			this.statusEl = thinkingBar.createEl('div', { cls: 'deeppdf-message-status-text' });
 			// 图表占位气泡也算"加载态"，需要显示状态文字
 			const isLoadingState = this.data.isStreaming || this.data.isDiagramPlaceholder;
