@@ -8,7 +8,7 @@ import { Component } from '../component.js';
 export type MascotExpression = 'idle' | 'thinking' | 'happy' | 'curious' | 'reading' | 'sleeping';
 
 // ── 色板：数字 → CSS 颜色 ──
-const PALETTE: Record<number, string> = {
+const MASCOT_PALETTE: Record<number, string> = {
 	0: 'transparent',
 	1: '#1a1210',   // 墨黑 outline
 	2: '#e8c89e',   // 暖肤 skin
@@ -147,7 +147,7 @@ function renderFaceSVG(data: string[]): string {
 		for (let x = 0; x < data[y].length; x++) {
 			const c = parseInt(data[y][x]);
 			if (c === 0) continue;
-			rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${PALETTE[c]}"/>`;
+			rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${MASCOT_PALETTE[c]}"/>`;
 		}
 	}
 	return `<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg" style="image-rendering:pixelated">${rects}</svg>`;
