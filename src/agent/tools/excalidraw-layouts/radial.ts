@@ -57,10 +57,10 @@ export const RadialLayout: LayoutEngine = {
       const maxSatelliteH = sortedSurroundingNodes.reduce((max, n) => Math.max(max, n.height), 0);
       const maxSatelliteDim = Math.max(maxSatelliteW, maxSatelliteH);
 
-      const radiusFromCenter = maxCenterDim / 2 + maxSatelliteDim / 2 + 80;
-      const radiusFromSatellites = S * (maxSatelliteDim + 40) / (2 * Math.PI);
+      const radiusFromCenter = maxCenterDim / 2 + maxSatelliteDim / 2 + 100;
+      const radiusFromSatellites = S * (maxSatelliteDim + 80) / (2 * Math.PI);
 
-      const radius = Math.max(260, radiusFromCenter, radiusFromSatellites);
+      const radius = Math.max(300, radiusFromCenter, radiusFromSatellites);
 
       for (let i = 0; i < S; i++) {
         const node = sortedSurroundingNodes[i];
