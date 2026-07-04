@@ -336,6 +336,9 @@ describe('excalidrawTool.execute', () => {
   });
 
   it('returns warnings when overlaps detected', async () => {
+    const geom = await import('@/agent/tools/excalidraw-geometry');
+    const spy = vi.spyOn(geom, 'resolveOverlaps').mockImplementation((els) => els as any);
+
     const result = await excalidrawTool.execute(
       {
         filename: 'overlapping',
@@ -346,6 +349,8 @@ describe('excalidrawTool.execute', () => {
       },
       mockCtx,
     );
+
+    spy.mockRestore();
 
     const parsed = JSON.parse(result);
     expect(parsed.success).toBe(true);

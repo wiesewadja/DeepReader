@@ -43,6 +43,24 @@ export const TimelineLayout: LayoutEngine = {
       const rowStartX = centerX - ((K - 1) * spacingX) / 2;
       const rowCenterY = startY + r * rowSpacingY;
 
+      // Add a horizontal slate arrow line as the timeline axis
+      const axisId = `timeline_axis_${r}`;
+      const lineLen = (K - 1) * spacingX + maxNodeW + 40;
+      const axisLine: ElementDef = {
+        id: axisId,
+        type: 'arrow',
+        x: rowStartX - maxNodeW / 2 - 20,
+        y: rowCenterY,
+        width: 0,
+        height: 0,
+        points: [[0, 0], [lineLen, 0]],
+        strokeColor: '#94a3b8',
+        strokeWidth: 2,
+        opacity: 70,
+        endArrowHead: 'arrow',
+      };
+      clonedElements.push(axisLine);
+
       for (let i = 0; i < K; i++) {
         const node = elementMap.get(row[i])!;
         node.x = rowStartX + i * spacingX - node.width / 2;

@@ -35,39 +35,6 @@ function resolveSemanticColor(theme: ObsidianTheme, color?: SemanticColor): Sema
 }
 
 // 辅助方法：处理节点样式映射
-// 给自由文本加浅色背景卡片，增强视觉隔离
-function wrapTextWithBackground(el: ElementDef, theme: ObsidianTheme): ElementDef[] {
-  const semantic = resolveSemanticColor(theme, el.semanticColor);
-  const col = PALETTE[theme][semantic];
-  const paddingX = 12;
-  const paddingY = 8;
-  const bgId = `${el.id}_bg`;
-
-  const bg: ElementDef = {
-    id: bgId,
-    type: 'rectangle',
-    x: el.x - paddingX,
-    y: el.y - paddingY,
-    width: el.width + paddingX * 2,
-    height: el.height + paddingY * 2,
-    strokeColor: col.stroke,
-    backgroundColor: col.textBg,
-    roughness: col.roughness,
-    strokeWidth: col.strokeWidth,
-    fillStyle: 'solid', // 背景卡片统一用 solid 以保底文字可读性
-    semanticColor: el.semanticColor,
-    boundElements: [{ id: el.id, type: 'text' }],
-  };
-
-  const styledText: ElementDef = {
-    ...el,
-    strokeColor: el.strokeColor || TEXT_COLORS[theme],
-    containerId: bgId,
-  };
-
-  return [bg, styledText];
-}
-
 function styleNodes(elements: ElementDef[], theme: ObsidianTheme): ElementDef[] {
   const result: ElementDef[] = [];
   for (const el of elements) {
@@ -77,22 +44,17 @@ function styleNodes(elements: ElementDef[], theme: ObsidianTheme): ElementDef[] 
     if (isShape) {
       const semantic = resolveSemanticColor(theme, el.semanticColor);
       const col = PALETTE[theme][semantic];
+      const isTextBg = el.id.endsWith('_bg');
       result.push({
         ...el,
         strokeColor: col.stroke,
-        backgroundColor: col.fill,
+        backgroundColor: isTextBg ? col.textBg : col.fill,
         roughness: col.roughness,
         strokeWidth: col.strokeWidth,
-        fillStyle: col.fillStyle,
+        fillStyle: isTextBg ? 'solid' : col.fillStyle,
       });
     } else if (isText) {
-      if (el.containerId) {
-        // 已绑定到容器的文本，颜色在最终 JSON 组装时会根据底色自动反色，这里不强行覆盖
-        result.push({ ...el });
-      } else {
-        // 自由文本：生成浅色背景卡片
-        result.push(...wrapTextWithBackground(el, theme));
-      }
+      result.push({ ...el });
     }
   }
   return result;

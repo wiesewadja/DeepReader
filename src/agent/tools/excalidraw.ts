@@ -216,19 +216,20 @@ function computeOptimalFontSize(
 
   // 无手动换行 → 尝试不同每行字数，找最大字号
   const totalChars = effectiveCharCount(text);
-  let best = { fontSize: MIN_FONT_SIZE, wrappedText: text };
 
-  // 每行字数从 1 到 totalChars 遍历；字数越多行数越少但横向越紧
-  for (let charsPerLine = totalChars; charsPerLine >= 1; charsPerLine--) {
+  // 遍历四种字号从大到小测试，哪档装得下就用哪档
+  for (const fs of [36, 28, 20, 16]) {
+    const charsPerLine = Math.floor(availW / (fs * CHAR_WIDTH_RATIO));
+    if (charsPerLine < 1) continue; // 单行一个字都放不下，跳过该档位
     const lineCount = Math.ceil(totalChars / charsPerLine);
-    const byWidth = availW / (charsPerLine * CHAR_WIDTH_RATIO);
-    const byHeight = availH / (lineCount * 1.25);
-    const fontSize = clampFontSize(Math.min(byWidth, byHeight));
-    if (fontSize > best.fontSize) {
-      best = { fontSize, wrappedText: wrapText(text, charsPerLine) };
+    if (lineCount * fs * 1.25 <= availH) {
+      return { fontSize: fs, wrappedText: wrapText(text, charsPerLine) };
     }
   }
-  return best;
+
+  // 均装不下 → 兜底用最小字号 S(16)，系统后续 preprocess 阶段会自动拉高容器
+  const charsPerLine = Math.max(1, Math.floor(availW / (16 * CHAR_WIDTH_RATIO)));
+  return { fontSize: 16, wrappedText: wrapText(text, charsPerLine) };
 }
 
 /**
@@ -405,7 +406,9 @@ function toExcalidrawElement(el: ElementDef, theme: 'light' | 'dark', elMap?: Ma
  * 保证在进行几何布局及防碰撞计算前，容器大小已完全适应文字，防止后续发生重叠。
  */
 function preprocessElementSizes(elements: ElementDef[]): ElementDef[] {
-  return elements.map(el => {
+  const result: ElementDef[] = [];
+
+  for (const el of elements) {
     const isContainer = ['rectangle', 'ellipse', 'diamond'].includes(el.type);
     const isText = el.type === 'text';
 
@@ -424,7 +427,7 @@ function preprocessElementSizes(elements: ElementDef[]): ElementDef[] {
         nextHeight = requiredHeight;
       }
 
-      return {
+      result.push({
         ...el,
         height: nextHeight,
         customData: {
@@ -432,22 +435,49 @@ function preprocessElementSizes(elements: ElementDef[]): ElementDef[] {
           preprocessedFontSize: optimalFontSize,
           preprocessedText: wrappedText,
         }
+      });
+    } else if (isText && !el.containerId) {
+      // 自由文本：前置生成背景卡片，这样布局引擎能看到卡片的大小，避免重叠
+      const bgId = `${el.id}_bg`;
+      const paddingX = 12;
+      const paddingY = 8;
+
+      const bg: ElementDef = {
+        id: bgId,
+        type: 'rectangle',
+        x: el.x - paddingX,
+        y: el.y - paddingY,
+        width: el.width + paddingX * 2,
+        height: el.height + paddingY * 2,
+        semanticColor: el.semanticColor,
+        boundElements: [{ id: el.id, type: 'text' }],
       };
+
+      const boundText: ElementDef = {
+        ...el,
+        containerId: bgId,
+      };
+
+      result.push(bg);
+      result.push(boundText);
+    } else {
+      result.push({ ...el });
     }
-    return { ...el };
-  });
+  }
+  return result;
 }
 
 function buildExcalidrawJSON(
   elements: ElementDef[],
   layout?: DiagramLayoutType,
-  context?: ToolContext
+  context?: ToolContext,
+  isAlreadyResolved = false,
 ): ExcalidrawFile {
   // 0. Preprocess element sizes for text fitting BEFORE running the layout engine.
-  const preprocessed = preprocessElementSizes(elements);
+  const preprocessed = isAlreadyResolved ? elements : preprocessElementSizes(elements);
 
   // Deterministic semantic layout and collision resolution
-  const resolved = arrangeWithFallback(preprocessed, layout);
+  const resolved = isAlreadyResolved ? preprocessed : arrangeWithFallback(preprocessed, layout);
 
   // 1. Resolve Obsidian theme
   const theme = resolveObsidianTheme(context);
@@ -787,9 +817,10 @@ export async function saveExcalidrawFile(
   elements: ElementDef[],
   layout: DiagramLayoutType | undefined,
   context: ToolContext,
+  isAlreadyResolved = false,
 ): Promise<{ filepath: string; embed: string }> {
   // 1. 构建完整 JSON
-  const excalidrawFile = buildExcalidrawJSON(elements, layout, context);
+  const excalidrawFile = buildExcalidrawJSON(elements, layout, context, isAlreadyResolved);
 
   // 2. 写入文件系统
   const dir = 'Excalidraw';
@@ -833,13 +864,18 @@ export const excalidrawTool: ToolExecutor = {
     }
 
     try {
-      // 碰撞检测 + 语义验证
-      const warnings = detectOverlaps(elements);
-      const textWarnings = detectTextOverlaps(elements);
-      const connectorWarnings = detectConnectorNodeOverlaps(elements);
-      const semanticWarnings = validateSemantics(elements);
+      // 0. 前置执行大小适配与布局引擎，确保诊断运行在最终坐标/尺寸上
+      const preprocessed = preprocessElementSizes(elements);
+      const resolved = arrangeWithFallback(preprocessed, layout);
 
-      const { filepath, embed } = await saveExcalidrawFile(filename, elements, layout, context);
+      // 1. 碰撞检测 + 语义验证
+      const warnings = detectOverlaps(resolved);
+      const textWarnings = detectTextOverlaps(resolved);
+      const connectorWarnings = detectConnectorNodeOverlaps(resolved);
+      const semanticWarnings = validateSemantics(resolved);
+
+      // 2. 写入文件（透传 isAlreadyResolved = true，避免重复计算布局）
+      const { filepath, embed } = await saveExcalidrawFile(filename, resolved, layout, context, true);
       log('info', `Excalidraw 图形已生成: ${filepath}`);
 
       const allWarnings = [...warnings, ...textWarnings, ...connectorWarnings, ...semanticWarnings];

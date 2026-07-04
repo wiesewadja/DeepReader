@@ -111,13 +111,21 @@ export const HierarchicalTreeLayout: LayoutEngine = {
       const K = ids.length;
       const yPos = levelY.get(level)!;
       const layerMaxH = levelMaxHeights.get(level) ?? 0;
+      const levelNodes = ids.map(id => elementMap.get(id)!);
+      
+      const totalWidthOfNodes = levelNodes.reduce((sum, n) => sum + n.width, 0);
+      const minSpacingX = 60; // minimum edge-to-edge horizontal gap
+      // Default to spacingX if nodes are small, but prevent overlap for wide nodes
+      const avgNodeW = K > 0 ? totalWidthOfNodes / K : 100;
+      const gapX = Math.max(minSpacingX, spacingX - avgNodeW);
+      const totalWidthWithGaps = totalWidthOfNodes + (K - 1) * gapX;
 
+      let currentX = centerX - totalWidthWithGaps / 2;
       for (let j = 0; j < K; j++) {
-        const node = elementMap.get(ids[j])!;
-        const currentX = centerX - ((K - 1) * spacingX) / 2 + j * spacingX;
-        
-        node.x = currentX - node.width / 2;
+        const node = levelNodes[j];
+        node.x = currentX;
         node.y = yPos + (layerMaxH - node.height) / 2;
+        currentX += node.width + gapX;
       }
     }
 

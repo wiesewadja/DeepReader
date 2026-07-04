@@ -134,7 +134,7 @@ function layoutSide(
     node.x = centerX + side * dynamicSpacingX - node.width / 2;
     node.y = currentY + (subtreeHeight - node.height) / 2;
 
-    layoutDescendants(node, side, levelSpacingX, siblingSpacingY, childrenMap, new Set());
+    layoutDescendants(node, side, siblingSpacingY, childrenMap, new Set());
 
     currentY += subtreeHeight + siblingSpacingY;
   }
@@ -163,7 +163,6 @@ function computeSubtreeHeight(
 function layoutDescendants(
   parent: ElementDef,
   side: 1 | -1,
-  levelSpacingX: number,
   siblingSpacingY: number,
   childrenMap: Map<string, ElementDef[]>,
   visited: Set<string>,
@@ -192,7 +191,7 @@ function layoutDescendants(
     child.x = parentCenterX + side * dynamicSpacingX - child.width / 2;
     child.y = currentY + (subtreeHeight - child.height) / 2;
 
-    layoutDescendants(child, side, levelSpacingX, siblingSpacingY, childrenMap, new Set(visited));
+    layoutDescendants(child, side, siblingSpacingY, childrenMap, new Set(visited));
 
     currentY += subtreeHeight + siblingSpacingY;
   }

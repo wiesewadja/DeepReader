@@ -13,14 +13,11 @@ export function arrangeWithFallback(
   elements: ElementDef[],
   layout?: DiagramLayoutType,
 ): ElementDef[] {
-  // Always get the overlap-resolved version of the original elements as base fallback
-  const originalResolved = resolveOverlaps(elements);
-
   if (!layout || !LAYOUT_REGISTRY[layout]) {
     if (layout) {
       log('warn', `Requested layout type "${layout}" is invalid or not registered. Falling back to default.`);
     }
-    return originalResolved;
+    return resolveOverlaps(elements);
   }
 
   try {
@@ -30,8 +27,17 @@ export function arrangeWithFallback(
     const arrangedRaw = LAYOUT_REGISTRY[layout].arrange(elements);
     const arranged = resolveOverlaps(arrangedRaw);
 
-    const originalScore = scoreLayout(originalResolved);
     const arrangedScore = scoreLayout(arranged);
+
+    // If arranged layout is already perfect (0 overlap), adopt it immediately to save O(n2) fallback computation
+    if (arrangedScore.totalOverlapArea === 0) {
+      log('info', `Layout "${layout}" accepted directly (0 overlap). Bounding Area: ${arrangedScore.boundingArea}`);
+      return arranged;
+    }
+
+    // Otherwise, compute fallback to compare scores
+    const originalResolved = resolveOverlaps(elements);
+    const originalScore = scoreLayout(originalResolved);
 
     const IMPROVEMENT_THRESHOLD = 0.9;      // Overlap area must be reduced by at least 10%
     const BOUNDING_AREA_MAX_RATIO = 3.0;    // Prevent layout from exploding in size/sparseness
@@ -55,6 +61,6 @@ export function arrangeWithFallback(
     return originalResolved;
   } catch (err) {
     log('error', `Failed to apply layout "${layout}". Error: ${err instanceof Error ? err.message : String(err)}`);
-    return originalResolved;
+    return resolveOverlaps(elements);
   }
 }
