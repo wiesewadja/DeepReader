@@ -14,6 +14,7 @@ export interface ElementDef {
   backgroundColor?: string;
   fillStyle?: 'solid' | 'hachure' | 'cross-hatch';
   strokeWidth?: number;
+  strokeStyle?: 'solid' | 'dashed' | 'dotted';
   roughness?: number;
   opacity?: number;
   fontSize?: number;
@@ -54,4 +55,10 @@ export interface LayoutOptions {
 
 export interface LayoutEngine {
   arrange(elements: ElementDef[], options?: LayoutOptions): ElementDef[];
+}
+
+export const FREE_TEXT_BG_SUFFIX = '_bg';
+
+export function isFreeTextBackground(id: string): boolean {
+  return id.endsWith(FREE_TEXT_BG_SUFFIX);
 }

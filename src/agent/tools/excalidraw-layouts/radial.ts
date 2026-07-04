@@ -1,5 +1,5 @@
 import type { ElementDef, LayoutEngine, LayoutOptions } from '../excalidraw-types.js';
-import { syncBoundTextPositions, shouldIgnoreInLayout } from './utils.js';
+import { syncBoundTextPositions, shouldIgnoreInLayout, topologicalSort } from './utils.js';
 
 export const RadialLayout: LayoutEngine = {
   arrange(elements: ElementDef[], options?: LayoutOptions): ElementDef[] {
@@ -45,11 +45,25 @@ export const RadialLayout: LayoutEngine = {
     const S = surroundingNodes.length;
 
     if (S > 0) {
-      // Scale radius dynamically based on number of surrounding nodes to prevent crowding
-      const radius = Math.max(260, S * 45);
+      // Sort surrounding nodes topologically to keep connected satellites close on the circle
+      const sortedIds = topologicalSort(surroundingNodes, arrows);
+      const sortedNodesMap = new Map(surroundingNodes.map(n => [n.id, n]));
+      const sortedSurroundingNodes = sortedIds
+        .map(id => sortedNodesMap.get(id))
+        .filter((n): n is ElementDef => !!n);
+
+      const maxCenterDim = Math.max(centerNode.width, centerNode.height);
+      const maxSatelliteW = sortedSurroundingNodes.reduce((max, n) => Math.max(max, n.width), 0);
+      const maxSatelliteH = sortedSurroundingNodes.reduce((max, n) => Math.max(max, n.height), 0);
+      const maxSatelliteDim = Math.max(maxSatelliteW, maxSatelliteH);
+
+      const radiusFromCenter = maxCenterDim / 2 + maxSatelliteDim / 2 + 80;
+      const radiusFromSatellites = S * (maxSatelliteDim + 40) / (2 * Math.PI);
+
+      const radius = Math.max(260, radiusFromCenter, radiusFromSatellites);
 
       for (let i = 0; i < S; i++) {
-        const node = surroundingNodes[i];
+        const node = sortedSurroundingNodes[i];
         const angle = (2 * Math.PI * i) / S;
         node.x = centerX + radius * Math.cos(angle) - node.width / 2;
         node.y = centerY + radius * Math.sin(angle) - node.height / 2;

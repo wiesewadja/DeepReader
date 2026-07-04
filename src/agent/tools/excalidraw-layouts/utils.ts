@@ -49,8 +49,9 @@ export function topologicalSort(movableNodes: ElementDef[], arrows: ElementDef[]
     }
   }
 
+  const orderedSet = new Set(orderedIds);
   for (const id of movableIds) {
-    if (!orderedIds.includes(id)) {
+    if (!orderedSet.has(id)) {
       orderedIds.push(id);
     }
   }
@@ -60,7 +61,8 @@ export function topologicalSort(movableNodes: ElementDef[], arrows: ElementDef[]
 
 export function shouldIgnoreInLayout(el: ElementDef): boolean {
   const id = el.id.toLowerCase();
-  return id.includes('title') || id.includes('subtitle') || id === 'header' || id.includes('legend');
+  const isLegacyIgnore = id.includes('title') || id.includes('subtitle') || id === 'header' || id.includes('legend');
+  return (el.type === 'text' && !el.containerId) || isLegacyIgnore;
 }
 
 /**

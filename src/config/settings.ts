@@ -65,7 +65,6 @@ export interface DeepPDFSettings {
 		lastActiveBooklistId: string | undefined;
 	chatCache?: Record<string, unknown>;
 	enableDebugLog: boolean;
-	enableOrganicScrollStyle: boolean;
 	/** @internal E2E 评估模式，由测试脚本注入 data.json */
 	evalMode?: boolean;
 	lastDeepSearchMode: boolean;
@@ -166,7 +165,6 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 		booklistHistory: [],
 		lastActiveBooklistId: undefined,
 	enableDebugLog: false,
-	enableOrganicScrollStyle: true,
 	lastDeepSearchMode: false,
 
 	// 阅读模式设置

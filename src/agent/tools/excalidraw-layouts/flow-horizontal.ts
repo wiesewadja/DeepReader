@@ -2,13 +2,12 @@ import type { ElementDef, LayoutEngine, LayoutOptions } from '../excalidraw-type
 import { topologicalSort, syncBoundTextPositions, shouldIgnoreInLayout } from './utils.js';
 
 /** 单行最大宽度（px），超出则自动换行 */
-const MAX_ROW_WIDTH = 1200;
-/** 行间距（px） */
-const ROW_SPACING = 200;
+const MAX_ROW_WIDTH = 1000;
 
 export const FlowHorizontalLayout: LayoutEngine = {
   arrange(elements: ElementDef[], options?: LayoutOptions): ElementDef[] {
-    const spacingX = options?.spacing?.x ?? 250;
+    const gapX = options?.spacing?.x ?? 60;
+    const rowSpacing = options?.spacing?.y ?? 160;
     const centerX = 500;
 
     const clonedElements = elements.map(el => ({ ...el }));
@@ -34,42 +33,53 @@ export const FlowHorizontalLayout: LayoutEngine = {
 
     for (let i = 0; i < N; i++) {
       const nodeW = nodeWidths[i];
-      const rowWidthWithNode = currentRow.length === 0
+      const addedWidth = currentRow.length === 0
         ? nodeW
-        : currentRowWidth + spacingX + nodeW;
+        : gapX + nodeW;
 
-      if (currentRow.length > 0 && rowWidthWithNode > MAX_ROW_WIDTH) {
+      if (currentRow.length > 0 && currentRowWidth + addedWidth > MAX_ROW_WIDTH) {
         rows.push(currentRow);
         currentRow = [orderedIds[i]];
         currentRowWidth = nodeW;
       } else {
         currentRow.push(orderedIds[i]);
-        currentRowWidth = rowWidthWithNode;
+        currentRowWidth += addedWidth;
       }
     }
     if (currentRow.length > 0) rows.push(currentRow);
 
-    // 垂直居中各行：行数为 R 时，首行 y 为 centerY - (R-1)*ROW_SPACING/2
+    // 垂直对齐各行
     const R = rows.length;
-    const firstRowY = 300 - ((R - 1) * ROW_SPACING) / 2;
+    const firstRowY = 300 - ((R - 1) * rowSpacing) / 2;
 
     for (let r = 0; r < R; r++) {
       const row = rows[r];
-      const rowWidth = row.reduce((sum, id, i) => {
+      const totalRowWidth = row.reduce((sum, id, i) => {
         const w = elementMap.get(id)!.width;
-        return sum + (i > 0 ? spacingX : 0) + w;
+        return sum + (i > 0 ? gapX : 0) + w;
       }, 0);
-      const startX = centerX - rowWidth / 2;
-      const rowY = firstRowY + r * ROW_SPACING;
+      const startX = centerX - totalRowWidth / 2;
+      const rowY = firstRowY + r * rowSpacing;
 
-      let cursorX = startX;
-      for (let i = 0; i < row.length; i++) {
-        const node = elementMap.get(row[i])!;
-        const cellWidth = node.width + (i < row.length - 1 ? spacingX : 0);
-        // 节点在 cell 内水平居中，保持相邻节点间距为 spacingX
-        node.x = cursorX + (cellWidth - node.width) / 2;
-        node.y = rowY - node.height / 2;
-        cursorX += cellWidth;
+      if (r % 2 === 0) {
+        // Even rows: Flow left-to-right
+        let cursorX = startX;
+        for (let i = 0; i < row.length; i++) {
+          const node = elementMap.get(row[i])!;
+          node.x = cursorX;
+          node.y = rowY - node.height / 2;
+          cursorX += node.width + gapX;
+        }
+      } else {
+        // Odd rows: Flow right-to-left (S-curve / Snake flow)
+        let cursorX = startX + totalRowWidth;
+        for (let i = 0; i < row.length; i++) {
+          const node = elementMap.get(row[i])!;
+          cursorX -= node.width;
+          node.x = cursorX;
+          node.y = rowY - node.height / 2;
+          cursorX -= gapX;
+        }
       }
     }
 

@@ -39,7 +39,14 @@ const ANALYSIS_CONTENT_MAX_CHARS = 8000;
 function truncateAnalysisContent(content: string): string {
   if (content.length <= ANALYSIS_CONTENT_MAX_CHARS) return content;
   log(`[DiagramHelper] analysisContent length ${content.length} exceeds ${ANALYSIS_CONTENT_MAX_CHARS}, truncating...`);
-  return content.slice(0, ANALYSIS_CONTENT_MAX_CHARS) + '\n\n[...内容过长已截断...]';
+  
+  // Try to find the nearest paragraph break in the last 40% of the allowed character length
+  const lastParagraphBreak = content.lastIndexOf('\n\n', ANALYSIS_CONTENT_MAX_CHARS);
+  const safeCut = lastParagraphBreak > ANALYSIS_CONTENT_MAX_CHARS * 0.6 
+    ? lastParagraphBreak 
+    : ANALYSIS_CONTENT_MAX_CHARS;
+
+  return content.slice(0, safeCut) + '\n\n[...内容过长已截断...]';
 }
 
 // ==================== 渐进式分节生成 ====================
