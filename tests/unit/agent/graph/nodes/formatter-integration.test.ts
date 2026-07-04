@@ -358,13 +358,9 @@ function grepSrc(pattern: string): string {
 }
 
 describe('D7: 静态反例（重构后清理验证）', () => {
-  it('D7.1 agent-chat-controller.ts 不再 import link-validator', () => {
+  it('D7.1 agent-chat-controller.ts 已删除（不再 import link-validator）', () => {
     const controllerPath = path.join(SRC, 'views/sidebar/agent-chat-controller.ts');
-    expect(fs.existsSync(controllerPath)).toBe(true);
-    const content = fs.readFileSync(controllerPath, 'utf-8');
-    expect(content).not.toContain("from '@/agent/utils/link-validator'");
-    expect(content).not.toContain("from '../agent/utils/link-validator'");
-    expect(content).not.toContain('validateAndCorrectLinks');
+    expect(fs.existsSync(controllerPath)).toBe(false);
   });
 
   it('D7.2 src/ 无 link-validator 模块引用（应已被删除）', () => {

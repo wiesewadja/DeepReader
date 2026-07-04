@@ -75,16 +75,10 @@ export class SessionDomain {
 	private _isAiStreaming = false;
 	private abortController: AbortController | null = null;
 
-	// Diagram generation state
-	private activeDiagramMessageId: string | null = null;
 	// display messageId ↔ _agentChatHistory 条目引用映射（仅历史恢复消息）。
 	// 历史消息 id 形如 `${timestamp}-${index}`，同秒消息共享 timestamp 前缀，
 	// 用引用精确定位避免 regenerate/delete 命中同秒的其他条目。
 	private messageRegistry = new Map<string, ChatMessage>();
-	private diagramPending = false;
-	private diagramEmbedReady: string | null = null;
-	private diagramFailReason: string | null = null;
-	private diagramCompleted = false;
 
 	constructor(options: SessionDomainOptions) {
 		this.app = options.app;
@@ -174,6 +168,9 @@ export class SessionDomain {
 			}
 			this.abortController = null;
 		}
+		// 绘图占位的清理由各 streamAssistantResponse 的 diagram 回调闭包自行负责
+		// （abort 触发 visualizer onDiagramFailed → 回调移除占位，或超时降级）。
+		// 不在此持有占位 id，避免并发对话互相干扰。
 		this._isProcessing = false;
 		this._isAiStreaming = false;
 		this.emitStreamStopped("cancelled");
@@ -190,19 +187,7 @@ export class SessionDomain {
 		this._isProcessing = false;
 		this._isAiStreaming = false;
 
-		if (this.activeDiagramMessageId) {
-			const placeholderId = this.activeDiagramMessageId;
-			this.activeDiagramMessageId = null;
-			this.eventBus.emit("chat:diagram-failed", {
-				messageId: placeholderId,
-				reason: "已取消图表生成",
-			});
-		}
-		this.diagramPending = false;
-		this.diagramEmbedReady = null;
-		this.diagramFailReason = null;
-		this.diagramCompleted = false;
-
+		// 绘图占位清理同 cancelStream：由 diagram 回调闭包在 abort/超时后自行处理。
 		this.emitStreamStopped("cancelled");
 		this.saveToCache();
 	}
@@ -210,6 +195,9 @@ export class SessionDomain {
 	// ── Message sending ──
 
 	async sendUserMessage(message: string, quotes?: QuoteItem[]): Promise<void> {
+		// _isProcessing 仅在文字流活跃时为 true（complete 事件后即解除），
+		// 绘图后台期间为 false——用户可正常继续对话；图表在后台就绪后由
+		// diagram 回调独立渲染到占位气泡，不影响新对话流。
 		if ((!message.trim() && (!quotes || quotes.length === 0)) || this._isProcessing) {
 			return;
 		}
@@ -262,16 +250,60 @@ export class SessionDomain {
 			status: this._crossBookMode ? STATUS_CROSS_BOOK : STATUS_READING,
 		});
 
-		this.resetDiagramState();
-
 		let latestContent = "";
 		let reasoningContent = "";
 		let currentStatus = "";
+		let finalizedContent = "";
+
+		// 绘图走独立回调通道，不经 stream 事件。占位 id 作为闭包变量，每次对话独立——
+		// 这样多个并发对话各自的图互不干扰，且 stream 文字完成后即可结束，不等图。
+		// 回调在 stream 结束后仍可被 visualizer 后台任务触发（agent-domain 持有引用）。
+		let diagramPlaceholderId: string | null = null;
+		const diagramCallbacks = {
+			onStart: () => {
+				// 立即创建占位气泡，让用户看到绘图提示；图就绪后替换占位。
+				diagramPlaceholderId = `msg-${Date.now()}-diagram`;
+				this.eventBus.emit("chat:assistant-message-started", {
+					messageId: diagramPlaceholderId,
+					status: STATUS_DIAGRAM,
+					isDiagramPlaceholder: true,
+				});
+			},
+			onReady: (embed: string) => {
+				if (!diagramPlaceholderId) {
+					log("[SessionDomain] onDiagramReady 到达但无占位，忽略");
+					return;
+				}
+				log(`[SessionDomain] 图表就绪，替换占位: ${diagramPlaceholderId}`);
+				this.eventBus.emit("chat:diagram-ready", {
+					messageId: diagramPlaceholderId,
+					embed,
+				});
+				diagramPlaceholderId = null;
+				this.saveToCache();
+			},
+			onFailed: (reason: string) => {
+				if (!diagramPlaceholderId) {
+					log("[SessionDomain] onDiagramFailed 到达但无占位，忽略");
+					return;
+				}
+				log(`[SessionDomain] 图表失败，移除占位: ${diagramPlaceholderId}`);
+				this.eventBus.emit("chat:diagram-failed", {
+					messageId: diagramPlaceholderId,
+					reason,
+				});
+				diagramPlaceholderId = null;
+				this.saveToCache();
+			},
+		};
+
+		let streamStopped = false;
+		let streamStopReason: "completed" | "error" = "error";
 
 		try {
 			const request = this.buildAgentRequest(userMessage, quotes);
 
-			for await (const event of this.agentDomain.stream(request)) {
+			for await (const event of this.agentDomain.stream(request, diagramCallbacks)) {
 				switch (event.type) {
 					case "text": {
 						// main 上 stream-processor 的 onContent 发送的是 formatter 的全量
@@ -303,16 +335,18 @@ export class SessionDomain {
 						});
 						break;
 					}
-					case "diagram-start": {
-						this.diagramPending = true;
-						break;
-					}
-					case "diagram-ready": {
-						await this.handleDiagramReady(event.embed);
-						break;
-					}
-					case "diagram-failed": {
-						await this.handleDiagramFailed(event.reason);
+					case "complete": {
+						finalizedContent = await this.correctWikiLinks(latestContent);
+						this.eventBus.emit("chat:assistant-message-completed", {
+							messageId: aiMessageId,
+							content: finalizedContent,
+						});
+						// 文字流结束即解锁输入框。绘图仍在后台进行，stream 此时结束，
+						// 图就绪后由 diagramCallbacks.onReady 异步渲染到占位气泡。
+						this._isProcessing = false;
+						streamStopped = true;
+						streamStopReason = "completed";
+						this.emitStreamStopped("completed");
 						break;
 					}
 					case "error": {
@@ -320,28 +354,57 @@ export class SessionDomain {
 							messageId: aiMessageId,
 							message: event.message,
 						});
+						streamStopReason = "error";
 						break;
 					}
 				}
 			}
 
-			const correctedContent = await this.correctWikiLinks(latestContent);
+			// stream 结束 = 文字流完成（diagram 不再阻塞 stream，由回调独立处理）。
+			// complete 事件已 emit message-completed + 解锁输入，这里只补 history 与收尾。
+			this._isAiStreaming = false;
+			this.abortController = null;
 
-			this.finalizeAssistantMessage(aiMessageId, correctedContent);
+			// 兜底：未收到 complete 事件（异常退出）时定稿文字气泡，避免停留 streaming 状态
+			if (!finalizedContent && latestContent) {
+				finalizedContent = await this.correctWikiLinks(latestContent);
+				this.eventBus.emit("chat:assistant-message-completed", {
+					messageId: aiMessageId,
+					content: finalizedContent,
+				});
+			}
+
+			if (finalizedContent) {
+				this._agentChatHistory.push({
+					role: "assistant",
+					content: finalizedContent,
+					// aiMessageId 已是 ISO timestamp，复用保证与 MessageList id 一致
+					timestamp: aiMessageId,
+				});
+			}
 
 			await this.saveToCache();
 			await this.maybeConsolidateMemory();
 
-			if (this.plugin.settings.autoTTS) {
-				this.ttsDomain.speak(aiMessageId, correctedContent);
+			if (this.plugin.settings.autoTTS && finalizedContent) {
+				this.ttsDomain.speak(aiMessageId, finalizedContent);
 			}
 		} catch (error) {
 			logError("[SessionDomain] Failed during stream processing:", error);
-			this.abortController = null;
+			streamStopReason = "error";
+			throw error;
+		} finally {
+			// 任何结束路径（complete / error / 异常）都要释放流程锁，
+			// 否则 AI 气泡的「重新生成」会因 _isProcessing 卡住而无响应。
 			this._isProcessing = false;
 			this._isAiStreaming = false;
-			this.emitStreamStopped("error");
-			throw error;
+			this.abortController = null;
+			if (!streamStopped) {
+				this.emitStreamStopped(streamStopReason);
+			}
+			this.saveToCache().catch((err) =>
+				logError("[SessionDomain] Failed to save after stream:", err),
+			);
 		}
 	}
 
@@ -378,26 +441,33 @@ export class SessionDomain {
 		}
 		await this.plugin.saveSettings();
 
-		// Welcome message
-		const welcomeId = `welcome-${Date.now()}`;
-		const welcomeContent = this._generalChatMode ? WELCOME_MESSAGE_GENERAL : WELCOME_MESSAGE;
-		const welcomeMsg: ChatMessage = {
-			role: "assistant",
-			content: welcomeContent,
-			timestamp: new Date().toISOString(),
-		};
-		await this._sessionStore!.appendMessage(this._sessionId, welcomeMsg);
-
-		// Publish restored history event containing just the welcome message
-		this.eventBus.emit("chat:history-restored", {
-			messages: [{
-				id: welcomeId,
+		// Welcome message: only for general chat mode!
+		if (this._generalChatMode) {
+			const welcomeId = `welcome-${Date.now()}`;
+			const welcomeContent = WELCOME_MESSAGE_GENERAL;
+			const welcomeMsg: ChatMessage = {
 				role: "assistant",
 				content: welcomeContent,
-				timestamp: welcomeMsg.timestamp,
-				isAgentMessage: true,
-			}],
-		});
+				timestamp: new Date().toISOString(),
+			};
+			await this._sessionStore!.appendMessage(this._sessionId, welcomeMsg);
+
+			// Publish restored history event containing just the welcome message
+			this.eventBus.emit("chat:history-restored", {
+				messages: [{
+					id: welcomeId,
+					role: "assistant",
+					content: welcomeContent,
+					timestamp: welcomeMsg.timestamp,
+					isAgentMessage: true,
+				}],
+			});
+		} else {
+			// For book chat mode, start with an empty history in UI (this shows the guidance/welcome view empty state)
+			this.eventBus.emit("chat:history-restored", {
+				messages: [],
+			});
+		}
 	}
 
 	async restoreSession(sessionId: string): Promise<boolean> {
@@ -406,6 +476,18 @@ export class SessionDomain {
 
 		if (!session || session.messages.length === 0) {
 			return false;
+		}
+
+		// For book chat mode, if the session has no user messages (messages.length <= 1),
+		// treat it as empty so the default book conversation guide interface is displayed.
+		if (!this._generalChatMode && session.messages.length <= 1) {
+			this._sessionId = sessionId;
+			this._agentChatHistory = [];
+			this.messageRegistry.clear();
+			this.eventBus.emit("chat:history-restored", {
+				messages: [],
+			});
+			return true;
 		}
 
 		this._sessionId = sessionId;
@@ -426,8 +508,8 @@ export class SessionDomain {
 			...llmHistory,
 		];
 
-		// 建立 display id ↔ history 引用映射：history 重建后按 timestamp+content 对齐，
-		// 使 handleRegenerate/handleDeleteMessagePair 能精确定位（不受同秒 timestamp 冲突影响）。
+		// 建立 display id ↔ original session message 引用映射：
+		// 使 handleRegenerate/handleDeleteMessagePair 能精确定位。
 		this.messageRegistry.clear();
 		let restoredIndex = 0;
 		this.eventBus.emit("chat:history-restored", {
@@ -435,10 +517,7 @@ export class SessionDomain {
 				const id = m.timestamp
 					? `${m.timestamp}-${restoredIndex++}`
 					: `restored-${Date.now()}-${restoredIndex++}`;
-				const ref = this._agentChatHistory.find(
-					(h) => h.timestamp === m.timestamp && h.content === m.content,
-				);
-				if (ref) this.messageRegistry.set(id, ref);
+				this.messageRegistry.set(id, m);
 				return {
 					id,
 					role: m.role as "user" | "assistant",
@@ -571,32 +650,80 @@ export class SessionDomain {
 
 	// ── Agent operations ──
 
-	handleRegenerate(messageId: string): void {
+	async handleRegenerate(messageId: string): Promise<string[]> {
 		// 流式期间禁止重新生成：streamAssistantResponse 会无条件 new 新的
 		// abortController，覆盖正在使用的引用，导致旧 stream 失去取消句柄、
 		// _isProcessing / _isAiStreaming 状态错乱。
-		if (this._isProcessing) return;
+		if (this._isProcessing) return [];
 
-		// 优先用 messageRegistry 精确定位（历史消息，避免同秒 timestamp 冲突）；
-		// fallback 用 timestamp === 定位新消息（id=ISO timestamp，毫秒精度唯一）。
+		// 1. Locate the assistant message in memory history
 		const ref = this.messageRegistry.get(messageId);
-		let index = ref ? this._agentChatHistory.indexOf(ref) : -1;
-		if (index === -1) {
-			index = this._agentChatHistory.findIndex((m) => m.timestamp === messageId);
-		}
-		if (index === -1) return;
+		const timestamp = ref ? ref.timestamp : messageId;
+
+		let index = this._agentChatHistory.findIndex((m) => m.timestamp === timestamp);
+		if (index === -1) return [];
 
 		let userMsgIndex = index - 1;
 		while (userMsgIndex >= 0 && this._agentChatHistory[userMsgIndex].role !== "user") {
 			userMsgIndex--;
 		}
-		if (userMsgIndex < 0) return;
+		if (userMsgIndex < 0) return [];
 
-		// Drop the assistant message being regenerated and everything after it,
-		// then re-stream a response for the preceding user message.
+		// Collect UI IDs of all messages starting from the regenerated assistant message to the end
+		const removedIds: string[] = [];
+		const messagesToRemove = this._agentChatHistory.slice(userMsgIndex + 1);
+		for (const msg of messagesToRemove) {
+			let msgId: string | undefined;
+			for (const [key, val] of this.messageRegistry.entries()) {
+				if (val.timestamp === msg.timestamp) {
+					msgId = key;
+					break;
+				}
+			}
+			if (!msgId) {
+				msgId = msg.timestamp;
+			}
+			if (msgId) {
+				removedIds.push(msgId);
+				this.messageRegistry.delete(msgId);
+			}
+		}
+
+		// Drop the assistant message being regenerated and everything after it in memory
 		this._agentChatHistory = this._agentChatHistory.slice(0, userMsgIndex + 1);
+
+		// 2. Persist to session store if active
+		if (this._sessionId && this._sessionStore) {
+			const session = await this._sessionStore.get(this._sessionId);
+			if (session) {
+				let sessionIndex = ref ? session.messages.indexOf(ref) : -1;
+				if (sessionIndex === -1) {
+					sessionIndex = session.messages.findIndex((m) => m.timestamp === timestamp);
+				}
+
+				if (sessionIndex !== -1) {
+					let sessionUserIndex = sessionIndex - 1;
+					while (sessionUserIndex >= 0 && session.messages[sessionUserIndex].role !== "user") {
+						sessionUserIndex--;
+					}
+
+					if (sessionUserIndex >= 0) {
+						session.messages = session.messages.slice(0, sessionUserIndex + 1);
+						session.messageCount = session.messages.length;
+						if (session.lastConsolidated > session.messages.length) {
+							session.lastConsolidated = session.messages.length;
+						}
+						await this._sessionStore.save(session);
+					}
+				}
+			}
+		}
+
+		// Re-stream a response for the preceding user message
 		const userMsg = this._agentChatHistory[userMsgIndex];
 		this.streamAssistantResponse(userMsg.content);
+
+		return removedIds;
 	}
 
 	handleQuestionClick(question: string): void {
@@ -626,31 +753,87 @@ export class SessionDomain {
 		}
 	}
 
-	handleDeleteMessagePair(messageId: string): void {
-		const initialLength = this._agentChatHistory.length;
-		// 用 messageRegistry 精确定位要删除的条目（避免同秒 timestamp 误删其他条目）；
-		// fallback timestamp === 兜底新消息。
+	async handleDeleteMessagePair(messageId: string): Promise<string[]> {
+		if (!this._sessionId) return [messageId];
+		await this.ensureSessionStore();
+		const session = await this._sessionStore!.get(this._sessionId);
+		if (!session) return [messageId];
+
+		const deletedIds: string[] = [messageId];
+
+		// 1. Locate the assistant message in session.messages
 		const ref = this.messageRegistry.get(messageId);
-		this._agentChatHistory = this._agentChatHistory.filter(
-			(m) => m !== ref && m.timestamp !== messageId,
-		);
-		if (this._agentChatHistory.length < initialLength) {
-			this.messageRegistry.delete(messageId);
-			this.saveToCache().catch((err) =>
-				logError("[SessionDomain] Failed to save after delete:", err),
-			);
+		let index = ref ? session.messages.indexOf(ref) : -1;
+		if (index === -1) {
+			index = session.messages.findIndex((m) => m.timestamp === messageId);
 		}
+
+		if (index !== -1) {
+			// Find preceding user message
+			let userMsgIndex = index - 1;
+			while (userMsgIndex >= 0 && session.messages[userMsgIndex].role !== "user") {
+				userMsgIndex--;
+			}
+
+			if (userMsgIndex >= 0) {
+				const userMsg = session.messages[userMsgIndex];
+				// Find UI ID for the user message in messageRegistry
+				let userMsgId: string | undefined;
+				for (const [key, val] of this.messageRegistry.entries()) {
+					if (val === userMsg) {
+						userMsgId = key;
+						break;
+					}
+				}
+				if (!userMsgId) {
+					userMsgId = userMsg.timestamp;
+				}
+				if (userMsgId) {
+					deletedIds.push(userMsgId);
+					this.messageRegistry.delete(userMsgId);
+				}
+
+				// Remove both user and assistant (plus any tool calls in between)
+				session.messages.splice(userMsgIndex, index - userMsgIndex + 1);
+			} else {
+				// Just remove the assistant message
+				session.messages.splice(index, 1);
+			}
+
+			this.messageRegistry.delete(messageId);
+
+			session.messageCount = session.messages.length;
+			if (session.lastConsolidated > session.messages.length) {
+				session.lastConsolidated = session.messages.length;
+			}
+			await this._sessionStore!.save(session);
+		} else {
+			// Fallback: if not found in registry/history index, try to filter from session.messages directly by timestamp
+			const initialLength = session.messages.length;
+			session.messages = session.messages.filter((m) => m.timestamp !== messageId);
+			if (session.messages.length < initialLength) {
+				this.messageRegistry.delete(messageId);
+				session.messageCount = session.messages.length;
+				if (session.lastConsolidated > session.messages.length) {
+					session.lastConsolidated = session.messages.length;
+				}
+				await this._sessionStore!.save(session);
+			}
+		}
+
+		// Sync active history
+		const llmHistory = await this._sessionStore!.getLLMHistory(this._sessionId);
+		const frontendAgent = await this.plugin.getFrontendAgent();
+		const systemPrompt = await frontendAgent.getSystemPromptAsync();
+		this._agentChatHistory = [
+			{ role: "system", content: systemPrompt },
+			...llmHistory,
+		];
+
+		return deletedIds;
 	}
 
 	// ── Helper methods ──
-
-	private resetDiagramState(): void {
-		this.diagramPending = false;
-		this.diagramEmbedReady = null;
-		this.diagramFailReason = null;
-		this.diagramCompleted = false;
-		this.activeDiagramMessageId = null;
-	}
 
 	private buildAgentRequest(message: string, quotes?: QuoteItem[]) {
 		const activeFile = this.app.workspace.getActiveFile();
@@ -713,46 +896,6 @@ export class SessionDomain {
 		};
 	}
 
-	private async handleDiagramReady(embed: string): Promise<void> {
-		if (this.diagramCompleted) {
-			// 占位已在 finalize 创建，复用其 id 替换为图表（不可重新生成 id，否则 updateMessage 找不到目标）
-			if (!this.activeDiagramMessageId) {
-				log("[SessionDomain] onDiagramReady 到达但占位已清理，忽略");
-				return;
-			}
-			log(`[SessionDomain] 图表就绪，替换占位: ${this.activeDiagramMessageId}`);
-			this.eventBus.emit("chat:diagram-ready", {
-				messageId: this.activeDiagramMessageId,
-				embed,
-			});
-			this.activeDiagramMessageId = null;
-			this.diagramPending = false;
-			await this.saveToCache();
-		} else {
-			this.diagramEmbedReady = embed;
-		}
-	}
-
-	private async handleDiagramFailed(reason: string): Promise<void> {
-		if (this.diagramCompleted) {
-			// 复用占位 id，让 ChatPresenter 移除占位气泡（不显示绘图信息）
-			if (!this.activeDiagramMessageId) {
-				log("[SessionDomain] onDiagramFailed 到达但占位已清理，忽略");
-				return;
-			}
-			log(`[SessionDomain] 图表失败，移除占位: ${this.activeDiagramMessageId}`);
-			this.eventBus.emit("chat:diagram-failed", {
-				messageId: this.activeDiagramMessageId,
-				reason,
-			});
-			this.activeDiagramMessageId = null;
-			this.diagramPending = false;
-			await this.saveToCache();
-		} else {
-			this.diagramFailReason = reason;
-		}
-	}
-
 	private async correctWikiLinks(content: string): Promise<string> {
 		if (!this.bookDomain.currentPdfName) return content;
 		try {
@@ -767,55 +910,6 @@ export class SessionDomain {
 			logError("[SessionDomain] WikiLink validation failed:", err);
 			return content;
 		}
-	}
-
-	private finalizeAssistantMessage(aiMessageId: string, correctedContent: string): void {
-		this.eventBus.emit("chat:assistant-message-completed", {
-			messageId: aiMessageId,
-			content: correctedContent,
-		});
-
-		const aiMsgObj: ChatMessage = {
-			role: "assistant",
-			content: correctedContent,
-			// aiMessageId 已是 ISO timestamp，复用保证与 MessageList id 一致
-			timestamp: aiMessageId,
-		};
-		this._agentChatHistory.push(aiMsgObj);
-
-		this.diagramCompleted = true;
-		if (this.diagramPending) {
-			// 所有 diagram 消息都基于占位气泡：先创建占位（保证 messageId 存在于
-			// messageList），再用 ready/failed 替换或移除。避免 updateMessage 找不到目标。
-			const timestamp = Date.now();
-			this.activeDiagramMessageId = `msg-${timestamp}-diagram`;
-			this.eventBus.emit("chat:assistant-message-started", {
-				messageId: this.activeDiagramMessageId,
-				status: STATUS_DIAGRAM,
-				isDiagramPlaceholder: true,
-			});
-
-			if (this.diagramEmbedReady) {
-				// 图先于 finalize 完成 → 立即把占位替换为图表
-				this.eventBus.emit("chat:diagram-ready", {
-					messageId: this.activeDiagramMessageId,
-					embed: this.diagramEmbedReady,
-				});
-				this.resetDiagramState();
-			} else if (this.diagramFailReason) {
-				// 图先于 finalize 失败 → 移除占位（不显示任何绘图信息）
-				this.eventBus.emit("chat:diagram-failed", {
-					messageId: this.activeDiagramMessageId,
-					reason: this.diagramFailReason,
-				});
-				this.resetDiagramState();
-			}
-			// 否则保留占位，等 onDiagramReady/Failed 到达后替换/移除
-		}
-
-		this._isProcessing = false;
-		this._isAiStreaming = false;
-		this.emitStreamStopped("completed");
 	}
 
 	private async parseAndLoadReferences(message: string): Promise<void> {

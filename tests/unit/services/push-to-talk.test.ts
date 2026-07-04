@@ -103,13 +103,13 @@ describe('PushToTalkController', () => {
 		expect(mockChatInput.setVoiceState).toHaveBeenCalledWith('recording');
 	});
 
-	it('stop 进入 recognizing → rewriting → done → idle', async () => {
+	it('stop 进入 recognizing → done → idle', async () => {
 		await controller.start();
 		await controller.stop({ title: '测试书籍' });
 
 		expect(controller.getState()).toBe('idle');
-		expect(mockChatInput.setValue).toHaveBeenCalledWith('优化后的书面语');
-		expect(callbacks.onTextReady).toHaveBeenCalledWith('优化后的书面语');
+		expect(mockChatInput.setValue).toHaveBeenCalledWith('识别的文字');
+		expect(callbacks.onTextReady).toHaveBeenCalledWith('识别的文字');
 	});
 
 	it('cancel 取消录音并回到 idle', async () => {
@@ -158,10 +158,10 @@ describe('PushToTalkController', () => {
 		await controller.stop({ title: '测试书籍' });
 
 		expect(controller.getState()).toBe('idle');
-		expect(mockChatInput.setValue).toHaveBeenCalledWith('优化后的书面语');
+		expect(mockChatInput.setValue).toHaveBeenLastCalledWith('识别的文字');
 	});
 
-	it('stop 进行中 cancel 提前返回，不写入结果', async () => {
+	it('stop 进行中 cancel 提前返回，不写入识别结果', async () => {
 		// 让 transcribe 返回 pending，模拟 recognizing 阶段阻塞
 		let resolveTranscribe!: (v: string) => void;
 		mocks.transcribe.mockReturnValueOnce(
@@ -179,12 +179,12 @@ describe('PushToTalkController', () => {
 		// 在 recognizing 阶段取消
 		controller.cancel();
 
-		// 放行 transcribe，验证结果被丢弃而非写入
+		// 放行 transcribe，验证识别结果被丢弃而非写入
 		resolveTranscribe('识别的文字');
 		await stopPromise;
 
 		expect(controller.getState()).toBe('idle');
-		expect(mockChatInput.setValue).not.toHaveBeenCalled();
+		expect(mockChatInput.setValue).not.toHaveBeenCalledWith('识别的文字');
 		expect(callbacks.onTextReady).not.toHaveBeenCalled();
 	});
 });

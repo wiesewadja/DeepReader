@@ -373,7 +373,7 @@ export async function preSearchNode(
           try {
             const queryText = stateBetterQuestion || stateQuery || ctx?.rawUserQuery || '';
             const embOpts = toEmbeddingOptions(embeddingRole);
-            const { getOrGenerateEmbedding } = require('../../../pageindex/vault/embedding-cache.js');
+            const { getOrGenerateEmbedding } = await import('../../../pageindex/vault/embedding-cache.js');
             queryVector = await getOrGenerateEmbedding(queryText, embOpts);
           } catch (embErr) {
             log(`[S2-Pre] 动态生成 Query 向量失败:`, embErr);

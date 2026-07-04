@@ -38,11 +38,23 @@ export type AgentEvent =
 	| { type: "reasoning"; content: string }
 	| { type: "token"; token: string }
 	| { type: "progress"; status: string }
-	| { type: "diagram-start" }
-	| { type: "diagram-ready"; embed: string }
-	| { type: "diagram-failed"; reason: string }
 	| { type: "error"; message: string }
 	| { type: "complete" };
+
+/**
+ * 绘图回调走独立通道，不经 AgentEvent 流。
+ *
+ * 设计原因：visualizer 节点同步触发 onStart 后立即返回，图表在 chat() resolve
+ * **之后**由后台任务异步生成再回调 onReady/onFailed。若把 diagram 事件塞进
+ * AgentEvent 流，stream 必须把生命周期拉长到图完成才能消费这些事件——会阻塞
+ * 调用方。改用回调：调用方注入 handler，stream 文字完成即可结束，handler 在
+ * stream 结束后仍能被后台任务触发（闭包持有调用方上下文）。
+ */
+export interface DiagramStreamCallbacks {
+	onStart: () => void;
+	onReady: (embed: string) => void;
+	onFailed: (reason: string) => void;
+}
 
 export interface AgentDomainOptions {
 	plugin: DeepReaderPluginInterface;
@@ -55,12 +67,26 @@ export class AgentDomain {
 		this.plugin = options.plugin;
 	}
 
-	async *stream(request: AgentRequest): AsyncIterable<AgentEvent> {
+	async *stream(
+		request: AgentRequest,
+		diagram?: DiagramStreamCallbacks,
+	): AsyncIterable<AgentEvent> {
 		const frontendAgent = await this.plugin.getFrontendAgent();
 		const userMessage = this.buildUserMessage(request);
 		const events: AgentEvent[] = [];
 		let resolveNext: ((value: IteratorResult<AgentEvent>) => void) | null = null;
 		let done = false;
+		let runAgentDone = false;
+
+		const checkDone = () => {
+			if (runAgentDone) {
+				done = true;
+				if (resolveNext) {
+					resolveNext({ value: undefined, done: true });
+					resolveNext = null;
+				}
+			}
+		};
 
 		const push = (event: AgentEvent) => {
 			if (resolveNext) {
@@ -71,6 +97,16 @@ export class AgentDomain {
 			}
 		};
 
+		if (request.abortSignal) {
+			request.abortSignal.addEventListener("abort", () => {
+				done = true;
+				if (resolveNext) {
+					resolveNext({ value: undefined, done: true });
+					resolveNext = null;
+				}
+			});
+		}
+
 		const runAgent = async () => {
 			try {
 				const callbacks = {
@@ -78,9 +114,11 @@ export class AgentDomain {
 					onProgress: (status: string) => push({ type: "progress", status }),
 					onReasoning: (text: string) => push({ type: "reasoning", content: text }),
 					onToken: (token: string) => push({ type: "token", token }),
-					onDiagramStart: () => push({ type: "diagram-start" }),
-					onDiagramReady: (embed: string) => push({ type: "diagram-ready", embed }),
-					onDiagramFailed: (reason: string) => push({ type: "diagram-failed", reason }),
+					// 绘图回调直接转发到独立通道——stream 不为它延长生命周期，
+					// 这样文字流完成后调用方即可继续，图表在后台就绪后回调替换占位。
+					onDiagramStart: () => diagram?.onStart(),
+					onDiagramReady: (embed: string) => diagram?.onReady(embed),
+					onDiagramFailed: (reason: string) => diagram?.onFailed(reason),
 					onError: (message: string) => push({ type: "error", message }),
 					onComplete: () => push({ type: "complete" }),
 					abortSignal: request.abortSignal,
@@ -94,8 +132,8 @@ export class AgentDomain {
 				push({ type: "error", message: err instanceof Error ? err.message : String(err) });
 				push({ type: "complete" });
 			} finally {
-				done = true;
-				if (resolveNext) resolveNext({ value: undefined, done: true });
+				runAgentDone = true;
+				checkDone();
 			}
 		};
 

@@ -641,16 +641,15 @@ describe("Regression: Known edge cases", () => {
 		expect(englishTitles.length).toBeGreaterThan(0);
 	});
 
-	it("should handle EPUB with very few spine items (疯传: 2 items, 65K+ tokens)", () => {
+	it("should handle EPUB with NCX-based splitting (疯传)", () => {
 		if (!疯传) return;
-		expect(疯传.chapters.length).toBe(2);
-		expect(疯传.chapters[0].tokenCount).toBeGreaterThan(30000);
+		// parseEpub 现在自动推断 ncxAnchors 策略，将大 spine item 按 NCX 切分为多章
+		expect(疯传.chapters.length).toBeGreaterThan(20);
 	});
 
-	it("should handle EPUB with 3 items and huge chapters (自卑与超越)", () => {
+	it("should handle EPUB with NCX-based splitting (自卑与超越)", () => {
 		if (!自卑与超越) return;
-		expect(自卑与超越.chapters.length).toBe(3);
-		expect(自卑与超越.chapters[0].tokenCount).toBeGreaterThan(30000);
+		expect(自卑与超越.chapters.length).toBeGreaterThan(20);
 	});
 });
 

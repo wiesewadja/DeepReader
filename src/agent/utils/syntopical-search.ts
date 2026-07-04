@@ -135,7 +135,7 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
   // 2. Pre-compute query embedding (shared across all books)
   let queryEmbedding = null;
   if (embedding && embedding.provider !== 'local') {
-    const { getOrGenerateEmbedding } = require('../../pageindex/vault/embedding-cache.js');
+    const { getOrGenerateEmbedding } = await import('../../pageindex/vault/embedding-cache.js');
     queryEmbedding = await getOrGenerateEmbedding(query, embedding).catch(() => null);
   }
 
@@ -153,14 +153,14 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
         ...(app ? { app } : {}),
       };
 
-      const { searchBookV2 } = require('../../pageindex/book-search-v2.js');
+      const { searchBookV2 } = await import('../../pageindex/book-search-v2.js');
       const results = (await searchBookV2(searchOpts)) as BookSearchResultV2[];
 
       // Proposition search (optional, uses precomputed embedding if available)
       let propositionMatches: PropositionMatch[] = [];
       if (embedding && embedding.provider !== 'local') {
         try {
-          const { searchPropositions } = require('../../pageindex/proposition-search.js');
+          const { searchPropositions } = await import('../../pageindex/proposition-search.js');
           propositionMatches = await searchPropositions(
             query,
             book.id,

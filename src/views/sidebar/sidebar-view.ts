@@ -696,8 +696,11 @@ export class SidebarView extends ItemView {
 		// 创建消息列表组件
 		this.messageList = new MessageList(
 			{
-				onRegenerate: (messageId: string) => {
-					this.sessionDomain.handleRegenerate(messageId);
+				onRegenerate: async (messageId: string) => {
+					const removedIds = await this.sessionDomain.handleRegenerate(messageId);
+					if (removedIds && removedIds.length > 0) {
+						this.messageList?.removeMessages(removedIds);
+					}
 				},
 				onCopy: (messageId: string) => {
 					const message = this.messageList?.getMessage(messageId);
@@ -748,9 +751,9 @@ export class SidebarView extends ItemView {
 						this.app,
 						"删除对话",
 						"此操作不可撤销",
-						() => {
-							this.sessionDomain.handleDeleteMessagePair(messageId);
-							this.messageList?.removeMessage(messageId);
+						async () => {
+							const deletedIds = await this.sessionDomain.handleDeleteMessagePair(messageId);
+							this.messageList?.removeMessages(deletedIds);
 						},
 					).open();
 				},

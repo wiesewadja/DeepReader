@@ -83,7 +83,7 @@ export async function verifyNegativeClaimWithFullBook(
 
   let results: BookSearchResultV2[];
   try {
-    const { searchBookV2 } = require('../../../pageindex/book-search-v2.js');
+    const { searchBookV2 } = await import('../../../pageindex/book-search-v2.js');
     results = await searchBookV2({
       query: rewrittenQuery,
       bookId,

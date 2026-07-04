@@ -83,6 +83,9 @@ export const Modal = class Modal {};
 export const MarkdownView = class MarkdownView {};
 export const WorkspaceLeaf = class WorkspaceLeaf {};
 export const normalizePath = (path: string) => path.replace(/\\/g, '/');
+export const Platform = {
+  isMobile: false
+};
 
 // Mock Component and related classes for Markdown rendering
 export class Component {
