@@ -107,17 +107,11 @@ export const diagramPrompt: PromptModule = {
 | 层级节点 | line + 自由文本（无框） |
 | 时间线标记 | 小 ellipse 10-20px |
 
-## 关系连接规则
-- 连线的 x/y 坐标和 points 会被系统自动计算为元素边缘交点。
-- 你必须提供正确的 startBinding 和 endBinding。
-- 所有关系必须通过 arrow 显式连接，禁止存在无任何连接的孤立概念节点（标题/副标题/图例除外）。没有连线会导致布局引擎无法对齐，节点位置错乱。
-- gap 固定为 8，focus 固定为 0。
-- 不要手动计算连线的 x/y 和 points，系统会覆盖。
-- 容器内文本用 containerId 绑定，双方都要有 boundElements。
-- 用描述性 ID（如 "root_node"），不用随机字符串。
-- seed 会自动分配，按区域分段（100xxx, 200xxx...）。
-- 关系必须有箭头或线条连接，仅靠位置不足以表达关系。
-- 复杂图形分区域生成，每区用独立 seed 段。
+## 关系连接与性能优化规则
+- 为了加快图表生成速度，节点数应控制在 8-15 个，保持结构清晰。
+- 连线的 x/y 坐标和 points 会被系统自动计算为元素边缘交点，不要手动计算。
+- 你必须提供正确的 startBinding 和 endBinding。所有关系必须通过 arrow 显式连接。
+- 重点：不要输出冗余字段！在 startBinding/endBinding 中只需输出 elementId 字段（系统会自动处理 gap 和 focus，无需输出它们）。不要输出 strokeColor、backgroundColor、opacity、roughness、fontFamily 等默认属性，由系统渲染器统一处理，以极大地减少输出 token，提升绘图速度！
 
 ## 输出格式
 输出包含以下字段的 JSON 对象（严禁包含任何其他说明文字或 Markdown 标记）：
@@ -126,17 +120,17 @@ export const diagramPrompt: PromptModule = {
   "layout": "选用的布局模式（\"mind-map\" | \"hierarchical-tree\" | \"flow-horizontal\" | \"timeline\" | \"radial\" | \"matrix\"）",
   "elements": [
     {
-      "id": "描述性唯一ID（如 \"root_node\", \"part1\", \"chap1\"）",
+      "id": "描述性唯一ID（如 \"root_node\", \"chap1\"）",
       "type": "rectangle | ellipse | diamond | arrow | line | text",
       "x": 数字,
       "y": 数字,
       "width": 数字,
       "height": 数字,
-      "text": "本元素显示的文本（如果是 shape 且带 text，系统会自动创建绑定 text 子元素；自由文本直接使用 type='text'）",
-      "fontSize": 20, // 选自 16 | 20 | 28 | 36 之一
-      "semanticColor": "primary | emphasis | success | warning | highlight | neutral", // 必须指定！主节点用 primary，关键节点/起点用 emphasis，普通节点/叶子节点用 neutral
-      "startBinding": { "elementId": "绑定的起点节点ID", "gap": 8, "focus": 0 }, // arrow 或 line 必须配置
-      "endBinding": { "elementId": "绑定的终点节点ID", "gap": 8, "focus": 0 } // arrow 或 line 必须配置
+      "text": "本元素显示的文本",
+      "fontSize": 20, // 选自 16 | 20 | 28 | 36 之一，可省略
+      "semanticColor": "primary | emphasis | success | warning | highlight | neutral", // 必须指定！
+      "startBinding": { "elementId": "起点节点ID" }, // arrow/line 必须配置（注意：只需包含 elementId，无需 gap 和 focus 字段！）
+      "endBinding": { "elementId": "终点节点ID" } // arrow/line 必须配置
     }
   ]
 }`,
