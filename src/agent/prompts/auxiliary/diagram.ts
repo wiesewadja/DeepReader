@@ -108,7 +108,7 @@ export const diagramPrompt: PromptModule = {
 | 时间线标记 | 小 ellipse 10-20px |
 
 ## 关系连接与性能优化规则
-- 为了加快图表生成速度，节点数应控制在 8-15 个，保持结构清晰。
+- **节点数量与信息密度平衡**：为了加快图表生成速度，节点数应控制在 **8-15 个**。但同时必须确保图表信息的可用性与关键知识密度，**严禁为了减少节点而删减核心逻辑**。应当通过**“合并同类项/富文本节点”**的方式：将次要细节和关联要点以短语或换行列表的形式写入主节点的 \`text\` 中（系统会自动计算多行文字并安全拉高容器），而不是为每个琐碎细节创建单独的子节点。
 - 连线的 x/y 坐标和 points 会被系统自动计算为元素边缘交点，不要手动计算。
 - 你必须提供正确的 startBinding 和 endBinding。所有关系必须通过 arrow 显式连接。
 - 重点：不要输出冗余字段！在 startBinding/endBinding 中只需输出 elementId 字段（系统会自动处理 gap 和 focus，无需输出它们）。不要输出 strokeColor、backgroundColor、opacity、roughness、fontFamily 等默认属性，由系统渲染器统一处理，以极大地减少输出 token，提升绘图速度！
