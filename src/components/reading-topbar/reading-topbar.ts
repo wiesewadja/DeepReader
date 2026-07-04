@@ -43,8 +43,15 @@ export class ReadingTopbar extends Component {
         const container = document.createElement('div');
         container.className = 'deeppdf-reading-topbar';
 
-        // 奚童表情：作为 AI 伴读形象，不再固定于最左侧，而是作为默认的中间头像
+        // 左侧：奚童表情（独立显示，不被封面遮挡）
         this.mascotFace = new MascotFace();
+        const leftSection = document.createElement('div');
+        leftSection.className = 'deeppdf-topbar-left';
+        const mascotEl = this.mascotFace.getElement();
+        if (mascotEl) {
+            leftSection.appendChild(mascotEl);
+        }
+        container.appendChild(leftSection);
 
         // 中间：书籍信息 + 进度
         const centerSection = document.createElement('div');
@@ -55,13 +62,6 @@ export class ReadingTopbar extends Component {
 
         this.bookCoverEl = document.createElement('div');
         this.bookCoverEl.className = 'deeppdf-book-cover';
-        
-        // 默认将奚童头像作为中间的图标
-        const mascotEl = this.mascotFace.getElement();
-        if (mascotEl) {
-            this.bookCoverEl.appendChild(mascotEl);
-        }
-        
         this.bookCoverEl.addEventListener('click', () => {
             this.options.onCoverClick?.();
         });
@@ -152,24 +152,7 @@ export class ReadingTopbar extends Component {
             this.bookCoverEl.innerHTML = `<img src="${coverUrl}" alt="书籍封面" />`;
             this.bookCoverEl.classList.add('has-cover');
         } else {
-            // 清理非吉祥物的其他子元素（图片、堆叠封面、兜底 svg）
-            const img = this.bookCoverEl.querySelector('img');
-            if (img) img.remove();
-            
-            const stacked = this.bookCoverEl.querySelectorAll('.deeppdf-inline-cover');
-            stacked.forEach(c => c.remove());
-
-            const fallbackSvg = this.bookCoverEl.querySelector('svg');
-            if (fallbackSvg && !fallbackSvg.closest('.deeppdf-mascot-face')) {
-                fallbackSvg.remove();
-            }
-
-            if (this.mascotFace) {
-                const el = this.mascotFace.getElement();
-                if (el && el.parentNode !== this.bookCoverEl) {
-                    this.bookCoverEl.appendChild(el);
-                }
-            }
+            this.bookCoverEl.innerHTML = '';
             this.bookCoverEl.classList.remove('has-cover');
         }
     }
@@ -386,10 +369,9 @@ export class ReadingTopbar extends Component {
         if (el.parentNode) {
             el.parentNode.removeChild(el);
         }
-        // 如果没有封面图片，将奚童头像重新放回 bookCoverEl 中
-        if (this.bookCoverEl && !this.bookCoverEl.classList.contains('has-cover')) {
-            this.bookCoverEl.innerHTML = '';
-            this.bookCoverEl.appendChild(el);
+        const leftSection = this.el?.querySelector('.deeppdf-topbar-left');
+        if (leftSection && !leftSection.contains(el)) {
+            leftSection.appendChild(el);
         }
     }
 
