@@ -884,6 +884,18 @@
 	flex-shrink: 0;
 }
 
+/* 表情切换过渡动画 */
+.deeppdf-mascot-face-fade-out {
+	opacity: 0;
+	transform: scale(0.85);
+	transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.deeppdf-mascot-face-fade-in {
+	opacity: 1;
+	transform: scale(1);
+	transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
 @keyframes thinking-bar-in {
 	from {
 		opacity: 0;

@@ -1,6 +1,6 @@
 /**
  * DeepPDF 阅读顶栏样式
- * 布局：中间（mascot + 书籍信息 + 进度），右侧（操作按钮）
+ * 布局：左侧（mascot），中间（书籍信息+进度），右侧（操作按钮）
  */
 
 /* 顶栏容器 */
@@ -15,6 +15,14 @@
     flex-shrink: 0;
     min-height: 48px;
     position: relative;
+}
+
+/* 左侧区域 — 奚童表情独立显示 */
+.deeppdf-topbar-left {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    margin-right: 8px;
 }
 
 /* 中间区域 — 主内容居中 */

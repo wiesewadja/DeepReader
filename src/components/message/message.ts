@@ -24,6 +24,7 @@ import { setupInternalLinks as _setupInternalLinks } from './internal-links.js';
 import { parseAgentContent } from './parse-agent-content.js';
 import type { MessageData, AgentToolCall } from './types.js';
 import { escapeHtml as _escapeHtml, formatTimestamp as _formatTimestamp } from './utils.js';
+import { faceSVG } from '../reading-topbar/mascot-face.js';
 
 /**
  * 消息基类
@@ -245,6 +246,7 @@ export class AIMessage extends Message {
 	// 状态显示跟踪
 	private lastDisplayedStatus: string | undefined = undefined;
 	private statusEl: HTMLElement | null = null;
+	private thinkingMascotSvgEl: HTMLElement | null = null;
 	private fullscreenCtrl: FullscreenController | null = null;
 	private getAllMessages: (() => MessageData[]) | null = null;
 	private getCurrentBookInfo: (() => { coverUrl: string | null; author: string | null; bookName: string | null }) | null = null;
@@ -328,6 +330,13 @@ export class AIMessage extends Message {
 		// 思考条 — AI 处理中时显示（mascot + 状态文字）
 		if (this.data.isAgentMessage) {
 			const thinkingBar = bubble.createEl('div', { cls: 'deeppdf-mascot-thinking-bar' });
+			
+			// 静态渲染奚童思考表情，防内存和计时器泄漏
+			const mascotEl = thinkingBar.createEl('div', { cls: 'deeppdf-mascot-face' });
+			const mascotSvgEl = mascotEl.createEl('div', { cls: 'deeppdf-mascot-face-svg' });
+			mascotSvgEl.innerHTML = faceSVG('thinking');
+			this.thinkingMascotSvgEl = mascotSvgEl;
+
 			this.statusEl = thinkingBar.createEl('div', { cls: 'deeppdf-message-status-text' });
 			// 图表占位气泡也算"加载态"，需要显示状态文字
 			const isLoadingState = this.data.isStreaming || this.data.isDiagramPlaceholder;
@@ -441,6 +450,8 @@ export class AIMessage extends Message {
 				this.statusEl.textContent = newStatus;
 				this.statusEl.addClass('visible');
 				this.lastDisplayedStatus = newStatus;
+				// 根据状态文字切换 thinkingBar 内奚童表情
+				this.updateThinkingMascotExpression(newStatus);
 			} else if (!newStatus && this.lastDisplayedStatus) {
 				this.statusEl.textContent = '';
 				this.statusEl.removeClass('visible');
@@ -486,6 +497,39 @@ export class AIMessage extends Message {
 			}
 			this.el = newRender;
 		}
+	}
+
+	/**
+	 * 根据状态文字切换 thinkingBar 内奚童表情（带 fade 过渡）
+	 */
+	private updateThinkingMascotExpression(statusText: string): void {
+		if (!this.thinkingMascotSvgEl) return;
+		const lower = statusText.toLowerCase();
+		let expr: 'idle' | 'thinking' | 'happy' | 'curious' | 'reading' | 'sleeping' = 'thinking';
+
+		if (lower.includes('阅读') || lower.includes('search') || lower.includes('read') || lower.includes('检视')) {
+			expr = 'reading';
+		} else if (lower.includes('回忆') || lower.includes('memory') || lower.includes('skill')) {
+			expr = 'curious';
+		} else if (lower.includes('整理') || lower.includes('写作') || lower.includes('generat') || lower.includes('writing') || lower.includes('总结')) {
+			expr = 'happy';
+		} else if (lower.includes('思考') || lower.includes('think') || lower.includes('reason')) {
+			expr = 'thinking';
+		}
+
+		const el = this.thinkingMascotSvgEl;
+		// 相同表情不切换
+		if (el.dataset.currentExpr === expr) return;
+		el.dataset.currentExpr = expr;
+
+		// fade-out → 换脸 → fade-in
+		el.classList.add('deeppdf-mascot-face-fade-out');
+		setTimeout(() => {
+			el.innerHTML = faceSVG(expr);
+			el.classList.remove('deeppdf-mascot-face-fade-out');
+			el.classList.add('deeppdf-mascot-face-fade-in');
+			setTimeout(() => el.classList.remove('deeppdf-mascot-face-fade-in'), 200);
+		}, 150);
 	}
 
 
