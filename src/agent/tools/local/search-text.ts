@@ -170,8 +170,8 @@ export const searchBookTool: ToolExecutor = {
     }
 
     try {
-      const { resolveBookIdFromPdf } = require('../../../pageindex/book-resolver.js');
-      const { searchBookV2 } = require('../../../pageindex/book-search-v2.js');
+      const { resolveBookIdFromPdf } = await import('../../../pageindex/book-resolver.js');
+      const { searchBookV2 } = await import('../../../pageindex/book-search-v2.js');
       toolsLog.log('[search_book] indexId:', indexId, 'keywords:', keywords, 'scope:', scopeNodeIds?.length ?? 0);
 
       const settings = context.vault.plugin?.settings;

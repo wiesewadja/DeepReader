@@ -186,7 +186,7 @@ export class IndexLifecycle {
 
 				// Use content-based bookId from the start to avoid prelimId→bookId mismatch
 				// which causes polling to see two different IDs and create duplicate cards
-				const { generateBookId } = require('../../pageindex/book-indexer.js');
+				const { generateBookId } = await import('../../pageindex/book-indexer.js');
 				bookId = await generateBookId(filePath);
 
 				const newIndex: IndexListItem = {
@@ -227,7 +227,7 @@ export class IndexLifecycle {
 					? toPropositionConfig(propositionRole, settings.propositionCardsPer500Words)
 					: undefined;
 
-				const { indexBook } = require('../../pageindex/book-indexer.js');
+				const { indexBook } = await import('../../pageindex/book-indexer.js');
 				const result = await indexBook({
 					filePath,
 					fileType,

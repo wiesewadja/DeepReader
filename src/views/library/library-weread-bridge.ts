@@ -294,7 +294,7 @@ export class WereadBridge {
 		}
 
 		let bookId: string;
-		const { isBookIndexed, generateBookId, indexBook } = require('../../pageindex/book-indexer.js');
+		const { isBookIndexed, generateBookId, indexBook } = await import('../../pageindex/book-indexer.js');
 		const alreadyIndexed = await isBookIndexed(filePath, vaultBase);
 
 		if (alreadyIndexed) {
@@ -399,7 +399,7 @@ export class WereadBridge {
 
 		let bookId: string;
 		try {
-			const { indexBook } = require('../../pageindex/book-indexer.js');
+			const { indexBook } = await import('../../pageindex/book-indexer.js');
 			const result = await indexBook({
 				filePath: downloadPath,
 				fileType: (zlibBook.extension || 'pdf') as 'pdf' | 'epub',

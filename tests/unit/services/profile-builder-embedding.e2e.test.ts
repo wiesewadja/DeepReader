@@ -16,6 +16,10 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
+
+// 该文件是 E2E/诊断测试，依赖真实 Embedding API，默认不在单元测试套件中运行
+const runE2E = process.env.RUN_E2E_TESTS === 'true' || process.env.CI === 'true';
+const e2eIt = runE2E ? it : it.skip;
 import * as fsSync from 'fs';
 import * as path from 'path';
 
@@ -103,7 +107,7 @@ describe.skipIf(!getEmbeddingConfig())('ProfileBuilder Embedding 诊断', () => 
 
 	// ── Test 1: 基线 — 单条正常文本 ──
 
-	it('单条正常文本应成功', async () => {
+	e2eIt('单条正常文本应成功', async () => {
 		const { status, body } = await rawEmbeddingRequest(['这是一段测试文本'], config);
 		expect(status).toBe(200);
 		expect(body.data).toHaveLength(1);
@@ -113,7 +117,7 @@ describe.skipIf(!getEmbeddingConfig())('ProfileBuilder Embedding 诊断', () => 
 
 	// ── Test 2: 空文本 ──
 
-	it('单条空文本应返回 400（验证 API 行为）', async () => {
+	e2eIt('单条空文本应返回 400（验证 API 行为）', async () => {
 		const { status, body } = await rawEmbeddingRequest([''], config);
 		console.log(`  空文本: status=${status}, body=${JSON.stringify(body).slice(0, 200)}`);
 		// 记录行为，不做断言——我们需要知道 API 怎么处理
@@ -124,7 +128,7 @@ describe.skipIf(!getEmbeddingConfig())('ProfileBuilder Embedding 诊断', () => 
 
 	// ── Test 3: 控制字符 ──
 
-	it('含控制字符文本不触发 400', async () => {
+	e2eIt('含控制字符文本不触发 400', async () => {
 		const texts = [
 			'包含\x00null byte的文本',
 			'包含\x07bell字符',
@@ -142,7 +146,7 @@ describe.skipIf(!getEmbeddingConfig())('ProfileBuilder Embedding 诊断', () => 
 
 	// ── Test 4: 超长文本 ──
 
-	it('超长文本（>8000 token）应返回错误或截断', async () => {
+	e2eIt('超长文本（>8000 token）应返回错误或截断', async () => {
 		// Qwen3-Embedding-0.6B max tokens = 8192
 		// 用 10000 字符的中文文本模拟
 		const longText = '这是测试文本。'.repeat(1000);
@@ -156,7 +160,7 @@ describe.skipIf(!getEmbeddingConfig())('ProfileBuilder Embedding 诊断', () => 
 
 	// ── Test 5: 批量 16 条正常文本 ──
 
-	it('批量 16 条正常文本应成功', async () => {
+	e2eIt('批量 16 条正常文本应成功', async () => {
 		const texts = Array.from({ length: 16 }, (_, i) => `第 ${i + 1} 段：关于控制论的基本概念讨论。`);
 		const { status, body } = await rawEmbeddingRequest(texts, config);
 		expect(status).toBe(200);
@@ -166,7 +170,7 @@ describe.skipIf(!getEmbeddingConfig())('ProfileBuilder Embedding 诊断', () => 
 
 	// ── Test 6: 批量 16 条混合（含空/控制字符）──
 
-	it('批量混合文本：定位哪条触发 400', async () => {
+	e2eIt('批量混合文本：定位哪条触发 400', async () => {
 		// 逐步添加有问题的文本，看 API 怎么反应
 		const cases: { label: string; texts: string[] }[] = [
 			{ label: '15正常+1空', texts: [...Array.from({ length: 15 }, (_, i) => `文本${i}`), ''] },
@@ -186,7 +190,7 @@ describe.skipIf(!getEmbeddingConfig())('ProfileBuilder Embedding 诊断', () => 
 
 	// ── Test 7: 大批量渐进测试 ──
 
-	it('渐进批量测试：32/64/128/256 条，定位批量上限', async () => {
+	e2eIt('渐进批量测试：32/64/128/256 条，定位批量上限', async () => {
 		const sizes = [32, 64, 128, 256];
 		for (const size of sizes) {
 			const texts = Array.from({ length: size }, (_, i) =>
@@ -204,7 +208,7 @@ describe.skipIf(!getEmbeddingConfig())('ProfileBuilder Embedding 诊断', () => 
 
 	// ── Test 8: 用 raw API 验证清洗逻辑（绕过 Obsidian requestUrl）──
 
-	it('raw API: 清洗后的混合文本批量请求', async () => {
+	e2eIt('raw API: 清洗后的混合文本批量请求', async () => {
 		// 模拟 ProfileBuilder 的清洗逻辑
 		const rawTexts = ['', '正常文本', '   ', '包含\x00控制字符', '', '又是一段正常文本'];
 		const cleaned = rawTexts
@@ -222,7 +226,7 @@ describe.skipIf(!getEmbeddingConfig())('ProfileBuilder Embedding 诊断', () => 
 
 	// ── Test 9: 用 test-vault 中的真实 .md 文件测试 ──
 
-	it('读取 test-vault 中的 .md 文件并模拟 ProfileBuilder 批量 embedding', async () => {
+	e2eIt('读取 test-vault 中的 .md 文件并模拟 ProfileBuilder 批量 embedding', async () => {
 		// 递归收集 test-vault 中所有 .md 文件
 		const mdFiles: string[] = [];
 		function walkDir(dir: string) {

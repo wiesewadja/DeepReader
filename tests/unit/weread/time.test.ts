@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatReadingTime } from '@/weread/utils/time';
+import { formatReadingTime } from '@/weread/utils/helpers';
 
 describe('formatReadingTime', () => {
 	it('0 秒返回 "0分钟"', () => {

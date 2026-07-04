@@ -113,11 +113,10 @@ beforeAll(async () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe("Strategy: ncxAnchors splitting (bulkPdf)", () => {
-  it("疯传: strategy splits into many more chapters", () => {
+  it("疯传: auto-inferred and explicit strategy both split into many chapters", () => {
     if (!疯传_default || !疯传_strategy) return;
-    // Without strategy: 2-3 chapters (bulk HTML files)
-    expect(疯传_default.chapters.length).toBeLessThan(5);
-    // With strategy: should have much more (NCX has 54+ entries)
+    // parseEpub() 默认自动推断 ncxAnchors 策略，因此 default 与显式 strategy 都应切分为多章
+    expect(疯传_default.chapters.length).toBeGreaterThan(20);
     expect(疯传_strategy.chapters.length).toBeGreaterThan(20);
   });
 
@@ -140,9 +139,9 @@ describe("Strategy: ncxAnchors splitting (bulkPdf)", () => {
     expect(genericTitles.length).toBe(0);
   });
 
-  it("自卑与超越: strategy splits into many more chapters", () => {
+  it("自卑与超越: auto-inferred and explicit strategy both split into many chapters", () => {
     if (!自卑与超越_default || !自卑与超越_strategy) return;
-    expect(自卑与超越_default.chapters.length).toBeLessThan(5);
+    expect(自卑与超越_default.chapters.length).toBeGreaterThan(20);
     expect(自卑与超越_strategy.chapters.length).toBeGreaterThan(20);
   });
 

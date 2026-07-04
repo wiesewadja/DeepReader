@@ -88,7 +88,7 @@ export async function verifyExistence(
 	}
 
 	try {
-		const { searchBookV2 } = require('../../pageindex/book-search-v2.js');
+		const { searchBookV2 } = await import('../../pageindex/book-search-v2.js');
 		const results = (await searchBookV2({ query: cleanQuery, bookId, app, topK: 3, filePath: '' })) as import('../../pageindex/book-types.js').BookSearchResultV2[];
 		const hasStrongMatch = results.some((r: import('../../pageindex/book-types.js').BookSearchResultV2) => {
 			const score = r.score ?? 0;

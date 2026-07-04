@@ -51,7 +51,7 @@ async function buildLocalCache(context: ToolContext): Promise<LocalToolCache> {
     let bookId = indexId;
 
     if (!bookId) {
-      const { resolveBookIdFromPdf } = require('../../../pageindex/book-resolver.js');
+      const { resolveBookIdFromPdf } = await import('../../../pageindex/book-resolver.js');
       const resolved = await resolveBookIdFromPdf(app, pdfName);
       if (!resolved) {
         toolsLog.log('[buildLocalCache] Book file not found for:', pdfName);

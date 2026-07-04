@@ -29,7 +29,7 @@ vi.mock("@/ui/pdf-file-selector.js", () => {
 	};
 });
 
-vi.mock("@/pageindex/book-indexer.js", () => {
+vi.mock("@/pageindex/book-indexer", () => {
 	return {
 		indexBook: vi.fn().mockImplementation(async (options) => {
 			// 模拟：先报告 EPUB 12% 进度，再等 handleAddDocument 主动 cancel
