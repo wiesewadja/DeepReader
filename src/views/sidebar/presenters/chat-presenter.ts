@@ -93,6 +93,8 @@ export class ChatPresenter {
 					isDiagramPlaceholder: event.isDiagramPlaceholder || false,
 					currentStatus: event.status,
 				});
+				// AI 回复中：隐藏 topbar mascot，只在 thinkingBar 中显示
+				this.getReadingTopbar()?.setMascotVisible(false);
 			}),
 		);
 
@@ -125,6 +127,8 @@ export class ChatPresenter {
 					currentStatus: undefined,
 					timestamp: new Date().toISOString(),
 				});
+				// AI 回复完毕：恢复 topbar mascot，thinkingBar mascot 由 CSS 自动隐藏
+				this.getReadingTopbar()?.setMascotVisible(true);
 				this.getReadingTopbar()?.setMascotExpression("happy");
 			}),
 		);
@@ -162,6 +166,7 @@ export class ChatPresenter {
 					currentStatus: undefined,
 					timestamp: new Date().toISOString(),
 				});
+				this.getReadingTopbar()?.setMascotVisible(true);
 			}),
 		);
 
@@ -193,6 +198,7 @@ export class ChatPresenter {
 			this.eventBus.on("chat:stream-stopped", () => {
 				this.getChatInput()?.setStreaming(false);
 				this.getChatInput()?.setDisabled(false);
+				this.getReadingTopbar()?.setMascotVisible(true);
 				this.getReadingTopbar()?.setMascotExpression("idle");
 			}),
 		);

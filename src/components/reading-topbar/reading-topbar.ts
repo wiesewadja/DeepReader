@@ -352,6 +352,13 @@ export class ReadingTopbar extends Component {
         this.mascotFace?.setExpression(expr);
     }
 
+    public setMascotVisible(visible: boolean): void {
+        const leftSection = this.el?.querySelector('.deeppdf-topbar-left') as HTMLElement | null;
+        if (leftSection) {
+            leftSection.style.display = visible ? '' : 'none';
+        }
+    }
+
     public onMascotUserActivity(): void {
         this.mascotFace?.onUserActivity();
     }
