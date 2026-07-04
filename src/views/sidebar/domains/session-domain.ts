@@ -177,17 +177,23 @@ export class SessionDomain {
 	}
 
 	stopGeneration(): void {
-		if (!this._isAiStreaming || !this.abortController) {
+		if (!this._isProcessing && !this._isAiStreaming) {
 			return;
 		}
 
 		log("[SessionDomain] User stopped AI generation");
-		this.abortController.abort();
-		this.abortController = null;
+		if (this.abortController) {
+			try {
+				this.abortController.abort();
+			} catch (e) {
+				warn("[SessionDomain] Error aborting during stopGeneration:", e);
+			}
+			this.abortController = null;
+		}
 		this._isProcessing = false;
 		this._isAiStreaming = false;
 
-		// 绘图占位清理同 cancelStream：由 diagram 回调闭包在 abort/超时后自行处理。
+		// 绘图占位清理由 diagram 回调闭包在 abort/超时后自行处理
 		this.emitStreamStopped("cancelled");
 		this.saveToCache();
 	}
