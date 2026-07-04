@@ -279,6 +279,14 @@ export class SessionDomain {
 					messageId: diagramPlaceholderId,
 					embed,
 				});
+				// 把图表作为独立 assistant 消息持久化，保证重启后对话栏仍能渲染图片。
+				// embed 标记使其在 buildAgentRequest 中被过滤，不会传给 LLM。
+				this._agentChatHistory.push({
+					role: "assistant",
+					content: embed,
+					embed,
+					timestamp: diagramPlaceholderId,
+				});
 				diagramPlaceholderId = null;
 				this.saveToCache();
 			},
@@ -660,7 +668,15 @@ export class SessionDomain {
 		const ref = this.messageRegistry.get(messageId);
 		const timestamp = ref ? ref.timestamp : messageId;
 
-		let index = this._agentChatHistory.findIndex((m) => m.timestamp === timestamp);
+		// 优先按引用精确定位（历史恢复消息），避免同 timestamp 命中 user 消息。
+		let index = ref
+			? this._agentChatHistory.findIndex((m) => m === ref)
+			: -1;
+		if (index === -1) {
+			index = this._agentChatHistory.findIndex(
+				(m) => m.timestamp === timestamp && m.role === "assistant",
+			);
+		}
 		if (index === -1) return [];
 
 		let userMsgIndex = index - 1;
@@ -674,10 +690,19 @@ export class SessionDomain {
 		const messagesToRemove = this._agentChatHistory.slice(userMsgIndex + 1);
 		for (const msg of messagesToRemove) {
 			let msgId: string | undefined;
+			// 优先按引用相等查找 registry，避免同 timestamp 误匹配 user 的 UI id。
 			for (const [key, val] of this.messageRegistry.entries()) {
-				if (val.timestamp === msg.timestamp) {
+				if (val === msg) {
 					msgId = key;
 					break;
+				}
+			}
+			if (!msgId && msg.timestamp) {
+				for (const [key, val] of this.messageRegistry.entries()) {
+					if (val.timestamp === msg.timestamp && val.role === msg.role) {
+						msgId = key;
+						break;
+					}
 				}
 			}
 			if (!msgId) {
@@ -698,7 +723,9 @@ export class SessionDomain {
 			if (session) {
 				let sessionIndex = ref ? session.messages.indexOf(ref) : -1;
 				if (sessionIndex === -1) {
-					sessionIndex = session.messages.findIndex((m) => m.timestamp === timestamp);
+					sessionIndex = session.messages.findIndex(
+						(m) => m.timestamp === timestamp && m.role === "assistant",
+					);
 				}
 
 				if (sessionIndex !== -1) {
@@ -889,7 +916,10 @@ export class SessionDomain {
 		return {
 			userMessage: message,
 			context,
-			history: this._agentChatHistory.filter((m) => m.role !== "system"),
+			// 过滤 system 消息和图表 embed 消息：embed 消息仅用于 UI 渲染，不进入 LLM 上下文。
+			history: this._agentChatHistory.filter(
+				(m) => m.role !== "system" && !m.embed,
+			),
 			quotes,
 			referencedDocs,
 			abortSignal: this.abortController!.signal,

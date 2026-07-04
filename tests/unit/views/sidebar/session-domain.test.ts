@@ -206,6 +206,27 @@ describe("SessionDomain", () => {
 		expect(streamSpy).toHaveBeenCalledWith("question 2");
 	});
 
+	it("handleRegenerate 只移除 AI 气泡，不移除用户提问（即使 timestamp 相同）", async () => {
+		// 防回归：历史恢复后 user/assistant 可能共享 timestamp 前缀，
+		// registry 按 timestamp 查找会误把 user 的 UI id 当成 assistant 的，导致用户气泡被删。
+		const domain = createDomain();
+		const userMsg = { role: "user", content: "question", timestamp: "same-ts" } as const;
+		const assistantMsg = { role: "assistant", content: "answer", timestamp: "same-ts" } as const;
+		domain.agentChatHistory = [userMsg, assistantMsg];
+
+		// 模拟历史恢复后的 registry：两个消息 timestamp 相同，UI id 不同
+		const userId = "same-ts-0";
+		const assistantId = "same-ts-1";
+		(domain as any).messageRegistry.set(userId, userMsg);
+		(domain as any).messageRegistry.set(assistantId, assistantMsg);
+
+		const removedIds = await domain.handleRegenerate(assistantId);
+
+		expect(removedIds).toContain(assistantId);
+		expect(removedIds).not.toContain(userId);
+		expect(domain.agentChatHistory).toEqual([userMsg]);
+	});
+
 	it("diagram-start 立即显示占位气泡，complete 解锁输入，ready 后替换占位", async () => {
 		// 防回归：占位气泡必须在 diagram-start 时立即创建（而非延迟到 finalize），
 		// 否则用户在文字完成到图就绪之间看不到"让我画张图给你看..."提示，
@@ -255,6 +276,36 @@ describe("SessionDomain", () => {
 				embed: "![[diagram.excalidraw.md]]",
 			}),
 		);
+	});
+
+	it("图表 embed 持久化到 agentChatHistory，且不会进入 LLM history", async () => {
+		// 防回归：图片消息重启后必须从 session store 恢复并渲染。
+		plugin.getFrontendAgent = vi.fn(async () => ({
+			chat: vi.fn(async () => {}),
+			continueChat: vi.fn(async (_h: any, _m: any, _c: any, callbacks: any) => {
+				callbacks.onContent("我画张图给你看");
+				callbacks.onDiagramStart();
+				callbacks.onComplete();
+				callbacks.onDiagramReady("![[diagram.excalidraw.md]]");
+			}),
+			getSystemPromptAsync: vi.fn(async () => "system prompt"),
+			getLLMClient: vi.fn(() => ({})),
+		}));
+
+		const domain = createDomain();
+		await domain.sendUserMessage("画张图");
+
+		const diagramMsg = domain.agentChatHistory.find(
+			(m) => m.embed === "![[diagram.excalidraw.md]]",
+		);
+		expect(diagramMsg).toBeTruthy();
+		expect(diagramMsg?.content).toBe("![[diagram.excalidraw.md]]");
+		expect(diagramMsg?.role).toBe("assistant");
+
+		// embed 消息不应进入 LLM 上下文
+		(domain as any).abortController = new AbortController();
+		const request = await (domain as any).buildAgentRequest("继续聊");
+		expect(request.history.some((m: any) => m.embed)).toBe(false);
 	});
 
 	it("绘图后台期间允许继续对话，图就绪后渲染到占位（绘图与对话解耦）", async () => {
