@@ -152,10 +152,21 @@ export class ReadingTopbar extends Component {
             this.bookCoverEl.innerHTML = `<img src="${coverUrl}" alt="书籍封面" />`;
             this.bookCoverEl.classList.add('has-cover');
         } else {
-            this.bookCoverEl.innerHTML = '';
+            // 清理非吉祥物的其他子元素（图片、堆叠封面、兜底 svg）
+            const img = this.bookCoverEl.querySelector('img');
+            if (img) img.remove();
+            
+            const stacked = this.bookCoverEl.querySelectorAll('.deeppdf-inline-cover');
+            stacked.forEach(c => c.remove());
+
+            const fallbackSvg = this.bookCoverEl.querySelector('svg');
+            if (fallbackSvg && !fallbackSvg.closest('.deeppdf-mascot-face')) {
+                fallbackSvg.remove();
+            }
+
             if (this.mascotFace) {
                 const el = this.mascotFace.getElement();
-                if (el) {
+                if (el && el.parentNode !== this.bookCoverEl) {
                     this.bookCoverEl.appendChild(el);
                 }
             }
