@@ -13,7 +13,6 @@ export const MindMapLayout: LayoutEngine = {
   arrange(elements: ElementDef[], options?: LayoutOptions): ElementDef[] {
     const centerX = 500;
     const centerY = 300;
-    const levelSpacingX = options?.spacing?.x ?? 180;
     const siblingSpacingY = options?.spacing?.y ?? 80;
 
     const clonedElements = elements.map(el => ({ ...el }));
@@ -52,8 +51,10 @@ export const MindMapLayout: LayoutEngine = {
       else leftChildren.push(child);
     });
 
-    layoutSide(rightChildren, 1, centerNode, centerY, levelSpacingX, siblingSpacingY, childrenMap);
-    layoutSide(leftChildren, -1, centerNode, centerY, levelSpacingX, siblingSpacingY, childrenMap);
+    const heightCache = new Map<string, number>();
+
+    layoutSide(rightChildren, 1, centerNode, centerY, siblingSpacingY, childrenMap, heightCache);
+    layoutSide(leftChildren, -1, centerNode, centerY, siblingSpacingY, childrenMap, heightCache);
 
     syncBoundTextPositions(clonedElements, elementMap);
     return clonedElements;
@@ -93,7 +94,6 @@ function buildParentMap(nodes: ElementDef[], arrows: ElementDef[]): Map<string, 
  * 根据父节点宽度和子节点最大宽度，动态计算水平层间距。
  *
  * 保证：父子边界之间至少有 60px 留白，避免节点过宽时重叠或连线压字。
- * 当父或子节点宽度很大时，dynamicSpacingX 会自动放大；width 为 0 或子节点缺失时回退到 levelSpacingX。
  */
 function computeDynamicSpacingX(
   parentWidth: number,
@@ -110,13 +110,13 @@ function layoutSide(
   side: 1 | -1,
   centerNode: ElementDef,
   centerY: number,
-  levelSpacingX: number,
   siblingSpacingY: number,
   childrenMap: Map<string, ElementDef[]>,
+  heightCache: Map<string, number>,
 ): void {
   if (nodes.length === 0) return;
 
-  const heights = nodes.map(n => computeSubtreeHeight(n, childrenMap, siblingSpacingY, new Set()));
+  const heights = nodes.map(n => computeSubtreeHeight(n, childrenMap, siblingSpacingY, new Set(), heightCache));
   const totalHeight = heights.reduce((a, b) => a + b, 0) + (nodes.length - 1) * siblingSpacingY;
   const centerX = centerNode.x + centerNode.width / 2;
   let currentY = centerY - totalHeight / 2;
@@ -134,7 +134,7 @@ function layoutSide(
     node.x = centerX + side * dynamicSpacingX - node.width / 2;
     node.y = currentY + (subtreeHeight - node.height) / 2;
 
-    layoutDescendants(node, side, siblingSpacingY, childrenMap, new Set());
+    layoutDescendants(node, side, siblingSpacingY, childrenMap, new Set(), heightCache);
 
     currentY += subtreeHeight + siblingSpacingY;
   }
@@ -145,19 +145,28 @@ function computeSubtreeHeight(
   childrenMap: Map<string, ElementDef[]>,
   siblingSpacingY: number,
   visited: Set<string>,
+  heightCache: Map<string, number>,
 ): number {
+  if (heightCache.has(node.id)) {
+    return heightCache.get(node.id)!;
+  }
   if (visited.has(node.id)) return node.height;
   visited.add(node.id);
 
   const children = childrenMap.get(node.id) || [];
-  if (children.length === 0) return node.height;
+  if (children.length === 0) {
+    heightCache.set(node.id, node.height);
+    return node.height;
+  }
 
   let childrenHeight = 0;
   for (let i = 0; i < children.length; i++) {
-    childrenHeight += computeSubtreeHeight(children[i], childrenMap, siblingSpacingY, new Set(visited));
+    childrenHeight += computeSubtreeHeight(children[i], childrenMap, siblingSpacingY, new Set(visited), heightCache);
     if (i < children.length - 1) childrenHeight += siblingSpacingY;
   }
-  return Math.max(node.height, childrenHeight);
+  const result = Math.max(node.height, childrenHeight);
+  heightCache.set(node.id, result);
+  return result;
 }
 
 function layoutDescendants(
@@ -166,6 +175,7 @@ function layoutDescendants(
   siblingSpacingY: number,
   childrenMap: Map<string, ElementDef[]>,
   visited: Set<string>,
+  heightCache: Map<string, number>,
 ): void {
   if (visited.has(parent.id)) return;
   visited.add(parent.id);
@@ -173,7 +183,7 @@ function layoutDescendants(
   const children = childrenMap.get(parent.id) || [];
   if (children.length === 0) return;
 
-  const heights = children.map(c => computeSubtreeHeight(c, childrenMap, siblingSpacingY, new Set(visited)));
+  const heights = children.map(c => computeSubtreeHeight(c, childrenMap, siblingSpacingY, new Set(visited), heightCache));
   const totalHeight = heights.reduce((a, b) => a + b, 0) + (children.length - 1) * siblingSpacingY;
   const parentCenterX = parent.x + parent.width / 2;
   let currentY = parent.y + parent.height / 2 - totalHeight / 2;
@@ -191,7 +201,7 @@ function layoutDescendants(
     child.x = parentCenterX + side * dynamicSpacingX - child.width / 2;
     child.y = currentY + (subtreeHeight - child.height) / 2;
 
-    layoutDescendants(child, side, siblingSpacingY, childrenMap, new Set(visited));
+    layoutDescendants(child, side, siblingSpacingY, childrenMap, new Set(visited), heightCache);
 
     currentY += subtreeHeight + siblingSpacingY;
   }

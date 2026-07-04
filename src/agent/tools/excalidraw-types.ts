@@ -14,6 +14,7 @@ export interface ElementDef {
   backgroundColor?: string;
   fillStyle?: 'solid' | 'hachure' | 'cross-hatch';
   strokeWidth?: number;
+  strokeStyle?: 'solid' | 'dashed' | 'dotted';
   roughness?: number;
   opacity?: number;
   fontSize?: number;

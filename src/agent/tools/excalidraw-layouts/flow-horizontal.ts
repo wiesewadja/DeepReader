@@ -61,12 +61,25 @@ export const FlowHorizontalLayout: LayoutEngine = {
       const startX = centerX - totalRowWidth / 2;
       const rowY = firstRowY + r * rowSpacing;
 
-      let cursorX = startX;
-      for (let i = 0; i < row.length; i++) {
-        const node = elementMap.get(row[i])!;
-        node.x = cursorX;
-        node.y = rowY - node.height / 2;
-        cursorX += node.width + gapX;
+      if (r % 2 === 0) {
+        // Even rows: Flow left-to-right
+        let cursorX = startX;
+        for (let i = 0; i < row.length; i++) {
+          const node = elementMap.get(row[i])!;
+          node.x = cursorX;
+          node.y = rowY - node.height / 2;
+          cursorX += node.width + gapX;
+        }
+      } else {
+        // Odd rows: Flow right-to-left (S-curve / Snake flow)
+        let cursorX = startX + totalRowWidth;
+        for (let i = 0; i < row.length; i++) {
+          const node = elementMap.get(row[i])!;
+          cursorX -= node.width;
+          node.x = cursorX;
+          node.y = rowY - node.height / 2;
+          cursorX -= gapX;
+        }
       }
     }
 

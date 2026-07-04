@@ -334,7 +334,7 @@ function toExcalidrawElement(el: ElementDef, theme: 'light' | 'dark', elMap?: Ma
     backgroundColor,
     fillStyle: el.fillStyle ?? 'solid',
     strokeWidth: el.strokeWidth ?? (isLine || isArrow ? 2 : 2),
-    strokeStyle: 'solid',
+    strokeStyle: el.strokeStyle ?? 'solid',
     roughness: el.roughness ?? 1,
     opacity: el.opacity ?? 100,
     groupIds: el.groupIds ?? [],
