@@ -146,6 +146,8 @@ export class ChatPresenter {
 					currentStatus: undefined,
 					timestamp: new Date().toISOString(),
 				});
+				// 防御性恢复：纯图表回复场景下 assistant-message-completed 可能不触发
+				this.getReadingTopbar()?.setMascotVisible(true);
 			}),
 		);
 
@@ -154,6 +156,7 @@ export class ChatPresenter {
 				// 失败降级：移除占位气泡，不显示任何绘图信息
 				const messageList = this.getMessageList();
 				messageList?.removeMessage(event.messageId);
+				this.getReadingTopbar()?.setMascotVisible(true);
 			}),
 		);
 
