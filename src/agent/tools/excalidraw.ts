@@ -279,10 +279,6 @@ function wrapText(text: string, charsPerLine: number): string {
 /**
  * 判断容器的语义颜色是否属于深色/高饱和度填充类型（需要白色文字以保证对比度）。
  */
-function isDarkContainer(semanticColor: string | undefined): boolean {
-  return !!semanticColor && ['primary', 'emphasis', 'success'].includes(semanticColor);
-}
-
 function toExcalidrawElement(el: ElementDef, theme: 'light' | 'dark', elMap?: Map<string, ElementDef>): ExcalidrawElement {
   const isText = el.type === 'text';
   const isArrow = el.type === 'arrow';
@@ -292,21 +288,24 @@ function toExcalidrawElement(el: ElementDef, theme: 'light' | 'dark', elMap?: Ma
   // Resolve stroke color with theme/semantic mapping
   let strokeColor = el.strokeColor;
   if (!strokeColor) {
-    if (el.semanticColor) {
-      strokeColor = PALETTE[theme][el.semanticColor].stroke;
-    } else if (isText) {
+    if (isText) {
       if (el.containerId && elMap) {
         const container = elMap.get(el.containerId);
-        if (container && isDarkContainer(container.semanticColor)) {
-          strokeColor = '#ffffff'; // 深底色容器内的文字，统一反白以保证文字清晰度
+        const containerSemantic = container?.semanticColor;
+        if (containerSemantic && PALETTE[theme][containerSemantic]) {
+          strokeColor = PALETTE[theme][containerSemantic].textColor;
         } else {
           strokeColor = TEXT_COLORS[theme];
         }
+      } else if (el.semanticColor && PALETTE[theme][el.semanticColor]) {
+        strokeColor = PALETTE[theme][el.semanticColor].textColor;
       } else {
         strokeColor = TEXT_COLORS[theme];
       }
+    } else if (el.semanticColor && PALETTE[theme][el.semanticColor]) {
+      strokeColor = PALETTE[theme][el.semanticColor].stroke;
     } else {
-      strokeColor = '#1e293b';
+      strokeColor = TEXT_COLORS[theme];
     }
   }
 
