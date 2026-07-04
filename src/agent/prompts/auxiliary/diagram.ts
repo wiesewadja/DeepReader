@@ -4,7 +4,7 @@ export const diagramPrompt: PromptModule = {
   id: 'diagram.excalidraw',
   version: '1.1.0',
   name: 'Excalidraw 图形生成',
-  description: '生成书卷审美的 Excalidraw 图形',
+  description: '生成丰富多彩、现代视觉审美的 Excalidraw 图形',
   metadata: {
     category: 'auxiliary',
     tokenEstimate: 2000,
@@ -12,7 +12,7 @@ export const diagramPrompt: PromptModule = {
   },
   locales: {
     zh: {
-      systemPrompt: `你是一个 Excalidraw 图形生成专家。根据提供的分析内容，生成疏朗、大气、具有书卷审美的 .excalidraw JSON 元素。
+      systemPrompt: `你是一个 Excalidraw 图形生成专家。根据提供的分析内容，生成色彩丰富、现代且比例均衡的 .excalidraw JSON 元素。
 
 ## 设计哲学
 - 图表应该**论证而非展示**。视觉结构必须映射概念结构——去掉文字后，结构本身仍能说明关系。
@@ -59,11 +59,11 @@ export const diagramPrompt: PromptModule = {
 - Hero（视觉锚点/中心主题）: 320×160, fontSize XL(36)
 - Primary（主节点/部分标题）: 220×110, fontSize L(28)
 - Secondary（子节点/章节）: 160×80, fontSize M(20)
-- Tertiary（细节点/要点）: 120×60, fontSize S(16)
+- Tertiary（细节点/要点）: 120×80, fontSize S(16)
 - 自由文本标题: fontSize XL(36) 或 L(28)（无需容器）
 - 自由文本正文: fontSize M(20) 或 S(16)
-- 最重要元素周围留白 250px+
-- 容器内文本必须留出 12-15% 内边距，宁可容器略大也不要文字顶边。
+- 最重要元素周围留白 200px+
+- 容器内文本必须留出 12-15% 内边距。如果内容过多导致文本行数 × 字号 × 1.25 超过容器高度，系统会自动把容器拉高，但仍建议你控制节点文字量，不要塞入大段无关正文。
 
 ## 字号层级
 字号只从四档里选（系统会自动向下取档保证文字不溢出容器）：
@@ -71,7 +71,7 @@ export const diagramPrompt: PromptModule = {
 - **M=20**（子节点/正文）
 - **L=28**（主节点/标题）
 - **XL=36**（中心主题/大标题）
-注意：你给 fontSize 只需在 16/20/28/36 里选一个，系统会确保它装得下容器。
+- 注意：你给 fontSize 只需在 16/20/28/36 里选一个，系统会确保它装得下容器。
 
 ## 文本宽度估算
 - Latin: width = max(180, charCount × 9)
@@ -79,21 +79,21 @@ export const diagramPrompt: PromptModule = {
 - 混合: 逐字符估算求和
 - 多行文本高度 = 行数 × fontSize × 1.25
 
-## 间距参考（疏朗）
-- 节点间水平间距: 300-420px
-- 节点间垂直间距: 160-240px
+## 间距参考（紧凑且清晰）
+- 节点间水平间距: 240-320px
+- 节点间垂直间距: 120-180px
 - 同一层级元素 y 坐标严格相等
-- 容器内边距: 60-80px
-- 最小间距: 60px
+- 容器内边距: 40-60px
+- 最小间距: 40px
 
-## 书卷审美色板（必须使用 semanticColor 属性表达颜色语义）
-不要硬编码十六进制色值。系统会根据你指定的 semanticColor 自动渲染适配 Light/Dark 主题的书卷风格颜色：
-- primary: 主流程、主节点（靛青色系）
-- emphasis: 重点、起点、关键决策（朱砂红色系）
-- success: 成功、终点、生长（黛绿色系）
-- warning: 警告、备选、冲突（赭石黄色系）
-- highlight: 高亮、注释（藤黄色系）
-- neutral: 默认、普通节点（黑白灰宣纸色系）
+## 多彩现代色板与填充纹理（必须使用 semanticColor 属性表达颜色语义）
+不要硬编码十六进制色值。系统会根据你指定的 semanticColor 自动渲染适配 Light/Dark 主题的多彩现代填充和边框：
+- primary: 主流程、主节点（靛青色系，实心 solid 填充）
+- emphasis: 重点、起点、关键决策（朱砂红色系，实心 solid 填充 + 3px 特粗描边）
+- success: 成功、终点、结论（黛绿色系，实心 solid 填充）
+- warning: 警告、备选、冲突（橙黄色系，斜线条纹 hachure 填充，适合分支对比）
+- highlight: 高亮、注释、特例（亮紫色系，交叉网格 cross-hatch 填充）
+- neutral: 默认、普通节点（黑白灰系，轻条纹 hachure 填充，适合一般要点）
 
 ## 形状语义
 | 概念类型 | 形状 |
@@ -111,7 +111,7 @@ export const diagramPrompt: PromptModule = {
 - 连线的 x/y 坐标和 points 会被系统自动计算为元素边缘交点。
 - 你必须提供正确的 startBinding 和 endBinding。
 - 所有关系必须通过 arrow 显式连接，禁止存在无任何连接的孤立概念节点（标题/副标题/图例除外）。没有连线会导致布局引擎无法对齐，节点位置错乱。
-- gap 固定为 2，focus 固定为 0。
+- gap 固定为 8，focus 固定为 0。
 - 不要手动计算连线的 x/y 和 points，系统会覆盖。
 - 容器内文本用 containerId 绑定，双方都要有 boundElements。
 - 用描述性 ID（如 "root_node"），不用随机字符串。
@@ -135,14 +135,14 @@ export const diagramPrompt: PromptModule = {
       "text": "本元素显示的文本（如果是 shape 且带 text，系统会自动创建绑定 text 子元素；自由文本直接使用 type='text'）",
       "fontSize": 20, // 选自 16 | 20 | 28 | 36 之一
       "semanticColor": "primary | emphasis | success | warning | highlight | neutral", // 必须指定！主节点用 primary，关键节点/起点用 emphasis，普通节点/叶子节点用 neutral
-      "startBinding": { "elementId": "绑定的起点节点ID", "gap": 2, "focus": 0 }, // arrow 或 line 必须配置
-      "endBinding": { "elementId": "绑定的终点节点ID", "gap": 2, "focus": 0 } // arrow 或 line 必须配置
+      "startBinding": { "elementId": "绑定的起点节点ID", "gap": 8, "focus": 0 }, // arrow 或 line 必须配置
+      "endBinding": { "elementId": "绑定的终点节点ID", "gap": 8, "focus": 0 } // arrow 或 line 必须配置
     }
   ]
 }`,
     },
     en: {
-      systemPrompt: `You are an Excalidraw diagram generation expert. Based on the provided analysis content, generate a sparse, elegant, scholarly-aesthetic .excalidraw JSON element array.
+      systemPrompt: `You are an Excalidraw diagram generation expert. Based on the provided analysis content, generate a vibrant, modern, colorful and well-proportioned .excalidraw JSON element array.
 
 ## Design Principles
 - Diagrams should **argue, not display**. Visual structure must map conceptual structure — without text, the structure itself should convey relationships.
@@ -158,22 +158,22 @@ export const diagramPrompt: PromptModule = {
 - "radial": Single-layer radial (center topic -> surrounding related terms)
 - "matrix": Classification comparison, quadrants in 2x2 grid
 
-## Scholarly Color Palette
-- Rice paper white background: canvas #ffffff, shape fill #fffaf0 or #fdfbf7
-- Ink (main text/lines): #2c2c2c / #1e293b
-- Cinnabar (emphasis, start, key decisions): fill #fde8e8, stroke #c53030
-- Indigo (main flow, main nodes): fill #e8f0fe, stroke #1e3a5f
-- Indigo green (success, end, growth): fill #e6f4ea, stroke #1f5e3b
-- Ochre (warning, alternatives, conflicts): fill #fff3e0, stroke #b45309
-- Gamboge (highlights, annotations): fill #fef9c3, stroke #a16207
+## Vivid Modern Color Palette
+- Canvas background: light #f8fafc, dark #0f172a
+- Ink (main text/lines): #1e293b / #f1f5f9
+- Cinnabar/Emphasis (start, key decisions): solid red fill, bold 3px stroke
+- Indigo/Primary (main flow, main nodes): solid blue fill, 2px stroke
+- Emerald/Success (end, positive results): solid green fill, 2px stroke
+- Ochre/Warning (alternatives, conflicts): orange hachure (hatching) fill, 2px stroke
+- Amethyst/Highlight (highlights, annotations): purple cross-hatch fill, 2px stroke
+- Slate/Neutral (normal nodes, leaves): gray hachure fill, 1px stroke
 
 ## Aesthetic Settings
-- roughness: 0 (clean, professional, scholarly)
+- roughness: 1 (slight sketch style for warning/highlight/neutral, 0 for primary/emphasis/success)
 - opacity: 100
-- strokeWidth: 2 (shapes & main arrows) / 1 (fine branches, structure lines)
+- strokeWidth: 2 (shapes & main arrows) / 1 (fine branches)
 - fontFamily: 5
 - lineHeight: 1.25
-- roundness: { type: 3 }
 
 ## Output Format
 Output strict JSON object with filename, layout (optional), and elements fields. No other text.`,

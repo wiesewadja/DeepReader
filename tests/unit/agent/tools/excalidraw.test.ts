@@ -46,7 +46,7 @@ describe('buildExcalidrawJSON', () => {
   it('builds valid excalidraw file structure', () => {
     const elements: ElementDef[] = [
       makeElement({ id: 'rect_1', type: 'rectangle', x: 0, y: 0, width: 200, height: 100 }),
-      makeElement({ id: 'text_1', type: 'text', x: 50, y: 25, width: 100, height: 50, text: 'Hello' }),
+      makeElement({ id: 'text_1', type: 'text', x: 50, y: 25, width: 100, height: 50, text: 'Hello', containerId: 'rect_1' }),
     ];
 
     const result = buildExcalidrawJSON(elements);
@@ -55,7 +55,7 @@ describe('buildExcalidrawJSON', () => {
     expect(result.version).toBe(2);
     expect(result.source).toBe('https://excalidraw.com');
     expect(result.elements).toHaveLength(2);
-    expect(result.appState.viewBackgroundColor).toBe('#ffffff');
+    expect(result.appState.viewBackgroundColor).toBe('#f8fafc'); // new background
     expect(result.files).toEqual({});
   });
 
@@ -65,7 +65,7 @@ describe('buildExcalidrawJSON', () => {
     ];
 
     const result = buildExcalidrawJSON(elements);
-    const el = result.elements[0];
+    const el = result.elements.find(e => e.id === 't1')!;
 
     expect(el.text).toBe('测试文本');
     expect(el.originalText).toBe('测试文本');
@@ -73,7 +73,7 @@ describe('buildExcalidrawJSON', () => {
     expect(el.fontFamily).toBe(5);
     expect(el.textAlign).toBe('center');
     expect(el.verticalAlign).toBe('middle');
-    expect(el.containerId).toBeNull();
+    expect(el.containerId).toBe('t1_bg'); // it got wrapped by bg!
   });
 
   it('钳制 text fontSize 到四档 S16/M20/L28/XL36', () => {

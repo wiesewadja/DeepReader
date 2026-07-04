@@ -25,15 +25,4 @@ export function renderAdvancedSection(
         setLogEnabled(value);
         await ctx.plugin.saveSettings();
       }));
-
-  new Setting(container)
-    .setName('使用有机书卷风生成图表')
-    .setDesc('开启后，AI 生成的思维导图、流程图等 Excalidraw 图将采用手绘连线、轻手绘节点和纸色背景。关闭后恢复原有简洁风格。')
-    .addToggle(toggle => toggle
-      .setValue(ctx.plugin.settings.enableOrganicScrollStyle)
-      .onChange(async (value) => {
-        ctx.plugin.settings.enableOrganicScrollStyle = value;
-        await ctx.plugin.saveSettings();
-      }));
-
 }

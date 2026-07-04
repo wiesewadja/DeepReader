@@ -9,8 +9,9 @@ import { log } from '../../utils/logger.js';
 import { calculateViewport, edgeIntersection } from './excalidraw-geometry.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import type { ElementDef, DiagramLayoutType } from './excalidraw-types.js';
+
 import { arrangeWithFallback } from './excalidraw-layout.js';
-import { applyOrganicScrollStyle } from './excalidraw-style-processor.js';
+import { applyDiagramStyle } from './excalidraw-style-processor.js';
 import { PALETTE, TEXT_COLORS } from './excalidraw-organic-palette.js';
 import { buildExcalidrawMd } from './excalidraw-md.js';
 
@@ -156,7 +157,6 @@ function resolveObsidianTheme(context?: ToolContext): 'light' | 'dark' {
  *  2 = 文本（最顶层）
  */
 function getZOrder(el: ExcalidrawElement): number {
-  if (el.type === 'freedraw' && el.customData?.isOrganicConnector) return -1;
   if (el.type === 'rectangle' || el.type === 'ellipse' || el.type === 'diamond') return 0;
   if (el.type === 'line' || el.type === 'arrow' || el.type === 'freedraw') return 1;
   if (el.type === 'text') return 2;
@@ -169,6 +169,11 @@ function getZOrder(el: ExcalidrawElement): number {
  * 这里再留少量内边距，避免文字顶到容器边缘。
  */
 const CONTAINER_TEXT_PADDING = 6;
+
+/**
+ * 默认箭头与绑定形状边缘的间隙 (px)
+ */
+const DEFAULT_ARROW_GAP = 8;
 
 /**
  * 估算中文字符显示宽度系数（相对 fontSize）。
@@ -270,7 +275,16 @@ function wrapText(text: string, charsPerLine: number): string {
   return lines.join('\n');
 }
 
-function toExcalidrawElement(el: ElementDef, theme: 'light' | 'dark'): ExcalidrawElement {
+
+
+/**
+ * 判断容器的语义颜色是否属于深色/高饱和度填充类型（需要白色文字以保证对比度）。
+ */
+function isDarkContainer(semanticColor: string | undefined): boolean {
+  return !!semanticColor && ['primary', 'emphasis', 'success'].includes(semanticColor);
+}
+
+function toExcalidrawElement(el: ElementDef, theme: 'light' | 'dark', elMap?: Map<string, ElementDef>): ExcalidrawElement {
   const isText = el.type === 'text';
   const isArrow = el.type === 'arrow';
   const isLine = el.type === 'line';
@@ -282,7 +296,16 @@ function toExcalidrawElement(el: ElementDef, theme: 'light' | 'dark'): Excalidra
     if (el.semanticColor) {
       strokeColor = PALETTE[theme][el.semanticColor].stroke;
     } else if (isText) {
-      strokeColor = TEXT_COLORS[theme];
+      if (el.containerId && elMap) {
+        const container = elMap.get(el.containerId);
+        if (container && isDarkContainer(container.semanticColor)) {
+          strokeColor = '#ffffff'; // 深底色容器内的文字，统一反白以保证文字清晰度
+        } else {
+          strokeColor = TEXT_COLORS[theme];
+        }
+      } else {
+        strokeColor = TEXT_COLORS[theme];
+      }
     } else {
       strokeColor = '#1e293b';
     }
@@ -309,9 +332,9 @@ function toExcalidrawElement(el: ElementDef, theme: 'light' | 'dark'): Excalidra
     strokeColor,
     backgroundColor,
     fillStyle: el.fillStyle ?? 'solid',
-    strokeWidth: el.strokeWidth ?? (isLine || isArrow ? 1 : 2),
+    strokeWidth: el.strokeWidth ?? (isLine || isArrow ? 2 : 2),
     strokeStyle: 'solid',
-    roughness: el.roughness ?? 0,
+    roughness: el.roughness ?? 1,
     opacity: el.opacity ?? 100,
     groupIds: el.groupIds ?? [],
     frameId: null,
@@ -340,7 +363,6 @@ function toExcalidrawElement(el: ElementDef, theme: 'light' | 'dark'): Excalidra
     base.verticalAlign = el.verticalAlign ?? 'middle';
     base.containerId = el.containerId ?? null;
     base.lineHeight = 1.25;
-    // 文本元素需要有高度计算
     if (!el.height || el.height === 0) {
       const lines = (el.text ?? '').split('\n').length;
       base.height = Math.max(25, lines * (base.fontSize * 1.25));
@@ -356,7 +378,6 @@ function toExcalidrawElement(el: ElementDef, theme: 'light' | 'dark'): Excalidra
     base.width = 0;
     base.height = 0;
 
-    // Auto-calculate points when missing but bindings exist
     if (el.points && el.points.length >= 2) {
       base.points = el.points;
     } else if (el.startBinding || el.endBinding) {
@@ -379,28 +400,63 @@ function toExcalidrawElement(el: ElementDef, theme: 'light' | 'dark'): Excalidra
   return base;
 }
 
+/**
+ * 布局前置处理：根据文本行数与最优字号，校正容器的最小高度，
+ * 保证在进行几何布局及防碰撞计算前，容器大小已完全适应文字，防止后续发生重叠。
+ */
+function preprocessElementSizes(elements: ElementDef[]): ElementDef[] {
+  return elements.map(el => {
+    const isContainer = ['rectangle', 'ellipse', 'diamond'].includes(el.type);
+    const isText = el.type === 'text';
+
+    if (isContainer && el.text) {
+      const { fontSize: optimalFontSize, wrappedText } = computeOptimalFontSize(
+        el.text,
+        el.width,
+        el.height,
+      );
+
+      const lines = wrappedText.split('\n').length;
+      const requiredHeight = lines * (optimalFontSize * 1.25) + CONTAINER_TEXT_PADDING * 2 + 10;
+
+      let nextHeight = el.height;
+      if (requiredHeight > el.height) {
+        nextHeight = requiredHeight;
+      }
+
+      return {
+        ...el,
+        height: nextHeight,
+        customData: {
+          ...el.customData,
+          preprocessedFontSize: optimalFontSize,
+          preprocessedText: wrappedText,
+        }
+      };
+    }
+    return { ...el };
+  });
+}
+
 function buildExcalidrawJSON(
   elements: ElementDef[],
   layout?: DiagramLayoutType,
   context?: ToolContext
 ): ExcalidrawFile {
+  // 0. Preprocess element sizes for text fitting BEFORE running the layout engine.
+  const preprocessed = preprocessElementSizes(elements);
+
   // Deterministic semantic layout and collision resolution
-  const resolved = arrangeWithFallback(elements, layout);
+  const resolved = arrangeWithFallback(preprocessed, layout);
 
   // 1. Resolve Obsidian theme
   const theme = resolveObsidianTheme(context);
 
-  // 2. Check if organic style is enabled.
-  // 生产环境由 plugin load 时合并 DEFAULT_SETTINGS 保证 enableOrganicScrollStyle 字段存在；
-  // 这里 fallback false 仅用于 settings 未加载的边界场景（如单测不传 context），避免误改样式。
-  const enabled = context?.vault?.plugin?.settings?.enableOrganicScrollStyle ?? false;
-
-  // 3. Apply style processor
-  const { elements: styledElements, viewBackgroundColor } = applyOrganicScrollStyle({
+  // 2. Apply style processor
+  const { elements: styledElements, viewBackgroundColor } = applyDiagramStyle({
     elements: resolved,
     layout,
     theme,
-    enabled,
   });
 
   // Build element lookup for auto-calculating arrow positions
@@ -409,9 +465,22 @@ function buildExcalidrawJSON(
     elMap.set(el.id, el);
   }
 
-  // 去重说明：LLM 有时对同一节点既给 shape.text 又给独立 text 元素（containerId 指向 shape）。
-  // 这种独立 text 在主循环里通过 isRedundantBoundText 判断跳过，由 shape.text 自动创建接管，
-  // 统一字号优化，避免两个 text 重叠。
+  // Pre-scan for all arrows/lines to build bidirectional shape references
+  const shapeArrowRefs = new Map<string, Array<{ id: string; type: 'arrow' }>>();
+  for (const el of styledElements) {
+    if (el.type === 'arrow' || el.type === 'line') {
+      if (el.startBinding?.elementId) {
+        const sid = el.startBinding.elementId;
+        if (!shapeArrowRefs.has(sid)) shapeArrowRefs.set(sid, []);
+        shapeArrowRefs.get(sid)!.push({ id: el.id, type: 'arrow' });
+      }
+      if (el.endBinding?.elementId) {
+        const eid = el.endBinding.elementId;
+        if (!shapeArrowRefs.has(eid)) shapeArrowRefs.set(eid, []);
+        shapeArrowRefs.get(eid)!.push({ id: el.id, type: 'arrow' });
+      }
+    }
+  }
 
   const result: ExcalidrawElement[] = [];
 
@@ -420,42 +489,38 @@ function buildExcalidrawJSON(
     if (el.startBinding && !el.startBinding.elementId) {
       const b = el.startBinding as Record<string, unknown>;
       const eid = (b.id ?? b.targetId ?? b.element ?? b.target) as string | undefined;
-      if (eid) el = { ...el, startBinding: { elementId: eid, gap: b.gap as number ?? 2, focus: b.focus as number ?? 0 } };
+      if (eid) el = { ...el, startBinding: { elementId: eid, gap: b.gap as number ?? DEFAULT_ARROW_GAP, focus: b.focus as number ?? 0 } };
     }
     if (el.endBinding && !el.endBinding.elementId) {
       const b = el.endBinding as Record<string, unknown>;
       const eid = (b.id ?? b.targetId ?? b.element ?? b.target) as string | undefined;
-      if (eid) el = { ...el, endBinding: { elementId: eid, gap: b.gap as number ?? 2, focus: b.focus as number ?? 0 } };
+      if (eid) el = { ...el, endBinding: { elementId: eid, gap: b.gap as number ?? DEFAULT_ARROW_GAP, focus: b.focus as number ?? 0 } };
     }
 
     const isContainer = ['rectangle', 'ellipse', 'diamond'].includes(el.type);
     const isText = el.type === 'text';
-    // shape 有 text 属性 → 自动创建绑定 text（即使 LLM 同时给了独立 text，也以 shape.text 为准）
     const needsAutoText = isContainer && el.text && !isText;
     const isArrowOrLine = el.type === 'arrow' || el.type === 'line';
-    // 独立 text 元素：若它绑定到的容器自己有 text 属性，则跳过（已被自动创建接管）
     const isRedundantBoundText =
       isText && !!el.containerId && !!elMap.get(el.containerId!)?.text;
 
-    // 冗余 text：LLM 给的独立 text 指向"自身有 text 属性的容器"，
-    // 由 shape.text 自动创建接管，跳过避免重复。
     if (isRedundantBoundText) continue;
 
     if (needsAutoText) {
       // 形状有 text → 自动创建绑定的 text 子元素
       const textId = `${el.id}_text`;
-      const shapeEl = toExcalidrawElement(el, theme);
-      // shape 不放 text 属性，但加 boundElements 指向 text
-      shapeEl.boundElements = [{ id: textId, type: 'text' }];
+      const shapeEl = toExcalidrawElement(el, theme, elMap);
+      
+      const arrowRefs = shapeArrowRefs.get(el.id) ?? [];
+      shapeEl.boundElements = [
+        { id: textId, type: 'text' },
+        ...arrowRefs
+      ];
       result.push(shapeEl);
 
-      // 主动计算最优字号 + 自动换行：撑满容器又不溢出
-      // 替代旧的 Math.min(LLM值, 档位上限) —— 那会让长文本被压到 16
-      const { fontSize: optimalFontSize, wrappedText } = computeOptimalFontSize(
-        el.text!,
-        el.width,
-        el.height,
-      );
+      const optimalFontSize = el.customData?.preprocessedFontSize ?? 16;
+      const wrappedText = el.customData?.preprocessedText ?? el.text!;
+      
       const textEl = toExcalidrawElement({
         ...el,
         id: textId,
@@ -466,33 +531,30 @@ function buildExcalidrawJSON(
         width: Math.max(20, el.width - 20),
         height: Math.max(20, el.height - 20),
         containerId: el.id,
-        strokeColor: el.strokeColor || TEXT_COLORS[theme],
+        strokeColor: el.strokeColor,
         fontSize: optimalFontSize,
-      }, theme);
+      }, theme, elMap);
       textEl.containerId = el.id;
       result.push(textEl);
     } else if (isArrowOrLine && (el.startBinding || el.endBinding)) {
-      // Auto-calculate arrow position and points from bindings.
-      // 注意：当 enableOrganicScrollStyle=true 时，style-processor 已经把 arrow/line 转成 freedraw，
-      // 这里只会处理 enabled=false 的回归路径（保留原有简洁箭头风格）。
-      const arrowEl = toExcalidrawElement(el, theme);
+      const arrowEl = toExcalidrawElement(el, theme, elMap);
 
       const startEl = el.startBinding ? elMap.get(el.startBinding.elementId) : null;
       const endEl = el.endBinding ? elMap.get(el.endBinding.elementId) : null;
 
       if (startEl && endEl) {
-        const gap = 2;
+        const startGap = el.startBinding?.gap ?? DEFAULT_ARROW_GAP;
+        const endGap = el.endBinding?.gap ?? DEFAULT_ARROW_GAP;
         const startCx = startEl.x + startEl.width / 2;
         const startCy = startEl.y + startEl.height / 2;
         const endCx = endEl.x + endEl.width / 2;
         const endCy = endEl.y + endEl.height / 2;
 
-        const [sx, sy] = edgeIntersection(startEl, endCx, endCy, gap);
-        const [ex, ey] = edgeIntersection(endEl, startCx, startCy, gap);
+        const [sx, sy] = edgeIntersection(startEl, endCx, endCy, startGap);
+        const [ex, ey] = edgeIntersection(endEl, startCx, startCy, endGap);
 
         arrowEl.x = sx;
         arrowEl.y = sy;
-        // 保留 LLM 提供的中间控制点，只修正起点和终点到形状边缘
         const provided = el.points && el.points.length >= 2 ? el.points : [[0, 0], [1, 0]];
         arrowEl.points = provided.map((p, i) => {
           if (i === 0) return [0, 0];
@@ -500,26 +562,31 @@ function buildExcalidrawJSON(
           return p as [number, number];
         });
       } else if (startEl) {
-        const gap = 2;
+        const startGap = el.startBinding?.gap ?? DEFAULT_ARROW_GAP;
         const cx = startEl.x + startEl.width / 2;
         const cy = startEl.y + startEl.height / 2;
-        const targetCy = cy - startEl.height / 2 - gap;
-        const [sx, sy] = edgeIntersection(startEl, cx, targetCy, gap);
+        const targetCy = cy - startEl.height / 2 - startGap;
+        const [sx, sy] = edgeIntersection(startEl, cx, targetCy, startGap);
         arrowEl.x = sx;
         arrowEl.y = sy;
-        // 只有起点绑定时：优先保留 LLM 提供的 points 形态，否则默认向上延伸
         const provided = el.points && el.points.length >= 2 ? el.points : [[0, 0], [0, -80]];
         arrowEl.points = provided.map((p, i) => i === 0 ? [0, 0] : (p as [number, number]));
       }
 
       result.push(arrowEl);
     } else {
-      result.push(toExcalidrawElement(el, theme));
+      const shapeEl = toExcalidrawElement(el, theme, elMap);
+      const arrowRefs = shapeArrowRefs.get(el.id) ?? [];
+      if (arrowRefs.length > 0) {
+        shapeEl.boundElements = [
+          ...(shapeEl.boundElements ?? []),
+          ...arrowRefs
+        ];
+      }
+      result.push(shapeEl);
     }
   }
 
-  // Z-index: organic connectors (底层) → shapes → non-organic lines/arrows/freedraw → text (顶层)
-  // 有机连线（freedraw with isOrganicConnector）必须在 shapes 下面，避免覆盖文字
   result.sort((a, b) => getZOrder(a) - getZOrder(b));
 
   const viewport = calculateViewport(result);

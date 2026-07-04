@@ -111,8 +111,17 @@ export function calculateViewport(elements: ExcalidrawElement[]): {
   }
 
   const PADDING = 80;
-  const contentW = maxX - minX + PADDING * 2;
-  const contentH = maxY - minY + PADDING * 2;
+  let contentW = maxX - minX + PADDING * 2;
+  let contentH = maxY - minY + PADDING * 2;
+
+  // Apply aspect ratio constraints [0.5, 2.0] by expanding virtual bounds if needed
+  const ar = contentW / contentH;
+  if (ar < 0.5) {
+    contentW = contentH * 0.5;
+  } else if (ar > 2.0) {
+    contentH = contentW / 2.0;
+  }
+
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
 
@@ -126,8 +135,8 @@ export function calculateViewport(elements: ExcalidrawElement[]): {
   return { scrollX, scrollY, zoom: { value: zoomValue } };
 }
 
-const MIN_GAP = 20;
-const MAX_ITERATIONS = 10;
+const MIN_GAP = 40;
+const MAX_ITERATIONS = 15;
 const ALIGN_THRESHOLD = 10;
 
 /**

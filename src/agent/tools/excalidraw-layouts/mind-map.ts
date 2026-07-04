@@ -13,7 +13,7 @@ export const MindMapLayout: LayoutEngine = {
   arrange(elements: ElementDef[], options?: LayoutOptions): ElementDef[] {
     const centerX = 500;
     const centerY = 300;
-    const levelSpacingX = options?.spacing?.x ?? 220;
+    const levelSpacingX = options?.spacing?.x ?? 180;
     const siblingSpacingY = options?.spacing?.y ?? 80;
 
     const clonedElements = elements.map(el => ({ ...el }));
@@ -96,14 +96,13 @@ function buildParentMap(nodes: ElementDef[], arrows: ElementDef[]): Map<string, 
  * 当父或子节点宽度很大时，dynamicSpacingX 会自动放大；width 为 0 或子节点缺失时回退到 levelSpacingX。
  */
 function computeDynamicSpacingX(
-  levelSpacingX: number,
   parentWidth: number,
   childWidths: number[],
 ): number {
   const childMaxWidth = childWidths.length > 0
     ? Math.max(...childWidths)
     : 0;
-  return Math.max(levelSpacingX, parentWidth / 2 + childMaxWidth / 2 + 60);
+  return parentWidth / 2 + childMaxWidth / 2 + 60;
 }
 
 function layoutSide(
@@ -124,7 +123,6 @@ function layoutSide(
 
   // 根据中心节点宽度和子节点最大宽度动态计算水平层间距
   const dynamicSpacingX = computeDynamicSpacingX(
-    levelSpacingX,
     centerNode.width,
     nodes.map(n => n.width),
   );
@@ -183,7 +181,6 @@ function layoutDescendants(
 
   // 根据父节点宽度和子节点最大宽度动态计算水平层间距
   const dynamicSpacingX = computeDynamicSpacingX(
-    levelSpacingX,
     parent.width,
     children.map(c => c.width),
   );

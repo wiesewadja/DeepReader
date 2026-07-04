@@ -3,8 +3,8 @@ import { syncBoundTextPositions, shouldIgnoreInLayout } from './utils.js';
 
 export const HierarchicalTreeLayout: LayoutEngine = {
   arrange(elements: ElementDef[], options?: LayoutOptions): ElementDef[] {
-    const spacingX = options?.spacing?.x ?? 250;
-    const spacingY = options?.spacing?.y ?? 180;
+    const spacingX = options?.spacing?.x ?? 200;
+    const spacingY = options?.spacing?.y ?? 160;
     const startY = 150;
     const centerX = 500;
 
@@ -88,17 +88,36 @@ export const HierarchicalTreeLayout: LayoutEngine = {
       levelToNodes.get(level)!.push(id);
     }
 
-    // Position nodes level by level
+    // Position nodes level by level with dynamic layer heights
+    const levelMaxHeights = new Map<number, number>();
+    for (const [level, ids] of levelToNodes.entries()) {
+      const maxH = ids.reduce((max, id) => {
+        const n = elementMap.get(id);
+        return n ? Math.max(max, n.height) : max;
+      }, 0);
+      levelMaxHeights.set(level, maxH);
+    }
+
+    const levelY = new Map<number, number>();
+    let currentY = startY;
+    for (let level = 0; level < levelToNodes.size; level++) {
+      levelY.set(level, currentY);
+      const currentMaxH = levelMaxHeights.get(level) ?? 0;
+      const nextGapY = spacingY; // Use spacingY as minimum gap
+      currentY += currentMaxH + nextGapY;
+    }
+
     for (const [level, ids] of levelToNodes.entries()) {
       const K = ids.length;
-      const currentY = startY + level * spacingY;
+      const yPos = levelY.get(level)!;
+      const layerMaxH = levelMaxHeights.get(level) ?? 0;
 
       for (let j = 0; j < K; j++) {
         const node = elementMap.get(ids[j])!;
         const currentX = centerX - ((K - 1) * spacingX) / 2 + j * spacingX;
         
         node.x = currentX - node.width / 2;
-        node.y = currentY - node.height / 2;
+        node.y = yPos + (layerMaxH - node.height) / 2;
       }
     }
 

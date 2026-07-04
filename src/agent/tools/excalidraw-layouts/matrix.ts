@@ -4,8 +4,6 @@ import { syncBoundTextPositions, shouldIgnoreInLayout } from './utils.js';
 export const MatrixLayout: LayoutEngine = {
   arrange(elements: ElementDef[], options?: LayoutOptions): ElementDef[] {
     const columns = options?.columns ?? 2;
-    const spacingX = options?.spacing?.x ?? 280;
-    const spacingY = options?.spacing?.y ?? 200;
     const centerX = 500;
     const centerY = 300;
 
@@ -23,6 +21,12 @@ export const MatrixLayout: LayoutEngine = {
     const N = movableNodes.length;
     const cols = Math.min(columns, N);
     const rows = Math.ceil(N / cols);
+
+    const maxNodeW = movableNodes.reduce((max, n) => Math.max(max, n.width), 0);
+    const maxNodeH = movableNodes.reduce((max, n) => Math.max(max, n.height), 0);
+
+    const spacingX = options?.spacing?.x ?? (maxNodeW + 60);
+    const spacingY = options?.spacing?.y ?? (maxNodeH + 60);
 
     const startX = centerX - ((cols - 1) * spacingX) / 2;
     const startY = centerY - ((rows - 1) * spacingY) / 2;
