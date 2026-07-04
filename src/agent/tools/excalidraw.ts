@@ -8,7 +8,7 @@
 import { log } from '../../utils/logger.js';
 import { calculateViewport, edgeIntersection } from './excalidraw-geometry.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-import type { ElementDef, DiagramLayoutType } from './excalidraw-types.js';
+import { type ElementDef, type DiagramLayoutType, FREE_TEXT_BG_SUFFIX } from './excalidraw-types.js';
 
 import { arrangeWithFallback } from './excalidraw-layout.js';
 import { applyDiagramStyle } from './excalidraw-style-processor.js';
@@ -276,8 +276,6 @@ function wrapText(text: string, charsPerLine: number): string {
   return lines.join('\n');
 }
 
-
-
 /**
  * 判断容器的语义颜色是否属于深色/高饱和度填充类型（需要白色文字以保证对比度）。
  */
@@ -438,7 +436,7 @@ function preprocessElementSizes(elements: ElementDef[]): ElementDef[] {
       });
     } else if (isText && !el.containerId) {
       // 自由文本：前置生成背景卡片，这样布局引擎能看到卡片的大小，避免重叠
-      const bgId = `${el.id}_bg`;
+      const bgId = `${el.id}${FREE_TEXT_BG_SUFFIX}`;
       const paddingX = 12;
       const paddingY = 8;
 
@@ -467,6 +465,15 @@ function preprocessElementSizes(elements: ElementDef[]): ElementDef[] {
   return result;
 }
 
+/**
+ * 构建完整的 Excalidraw JSON 文件内容。
+ * 
+ * @param elements 输入的元素定义数组
+ * @param layout 可选的布局模式
+ * @param context 工具上下文，用于解析主题
+ * @param isAlreadyResolved 若为 true，则跳过 preprocess 尺寸自适应和 layout 布局阶段，直接用于渲染输出。主要配合 execute 中的前置布局使用，避免二次计算。
+ * @returns 最终符合 Excalidraw 插件规范的 ExcalidrawFile 结构
+ */
 function buildExcalidrawJSON(
   elements: ElementDef[],
   layout?: DiagramLayoutType,
@@ -810,6 +817,11 @@ function validateSemantics(elements: ElementDef[]): string[] {
  *
  * 统一输出为 `.excalidraw.md` 格式（Excalidraw 插件原生 Markdown 包装格式，包含 lz-string 压缩）。
  *
+ * @param filename 导出的文件名（不带后缀）
+ * @param elements 图形元素数组
+ * @param layout 选用的几何布局类型
+ * @param context 工具上下文
+ * @param isAlreadyResolved 若为 true，则在构建 JSON 时不重新计算 preprocess 与 layout 步骤（避免 execute 等前置调用处的重复耗时计算）
  * @returns 最终 `.excalidraw.md` 文件的路径和嵌入语法
  */
 export async function saveExcalidrawFile(

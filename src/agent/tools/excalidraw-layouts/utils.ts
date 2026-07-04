@@ -60,7 +60,9 @@ export function topologicalSort(movableNodes: ElementDef[], arrows: ElementDef[]
 }
 
 export function shouldIgnoreInLayout(el: ElementDef): boolean {
-  return el.type === 'text' && !el.containerId;
+  const id = el.id.toLowerCase();
+  const isLegacyIgnore = id.includes('title') || id.includes('subtitle') || id === 'header' || id.includes('legend');
+  return (el.type === 'text' && !el.containerId) || isLegacyIgnore;
 }
 
 /**

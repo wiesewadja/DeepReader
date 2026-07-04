@@ -9,7 +9,7 @@
  * 入口：applyDiagramStyle
  */
 
-import type { ElementDef, DiagramLayoutType } from './excalidraw-types.js';
+import { type ElementDef, type DiagramLayoutType, isFreeTextBackground } from './excalidraw-types.js';
 import {
   type ObsidianTheme,
   type SemanticColor,
@@ -44,7 +44,7 @@ function styleNodes(elements: ElementDef[], theme: ObsidianTheme): ElementDef[] 
     if (isShape) {
       const semantic = resolveSemanticColor(theme, el.semanticColor);
       const col = PALETTE[theme][semantic];
-      const isTextBg = el.id.endsWith('_bg');
+      const isTextBg = isFreeTextBackground(el.id);
       result.push({
         ...el,
         strokeColor: col.stroke,
