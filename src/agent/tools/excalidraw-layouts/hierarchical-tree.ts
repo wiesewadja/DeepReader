@@ -107,25 +107,86 @@ export const HierarchicalTreeLayout: LayoutEngine = {
       currentY += currentMaxH + nextGapY;
     }
 
-    for (const [level, ids] of levelToNodes.entries()) {
-      const K = ids.length;
-      const yPos = levelY.get(level)!;
-      const layerMaxH = levelMaxHeights.get(level) ?? 0;
-      const levelNodes = ids.map(id => elementMap.get(id)!);
-      
-      const totalWidthOfNodes = levelNodes.reduce((sum, n) => sum + n.width, 0);
-      const minSpacingX = 60; // minimum edge-to-edge horizontal gap
-      // Default to spacingX if nodes are small, but prevent overlap for wide nodes
-      const avgNodeW = K > 0 ? totalWidthOfNodes / K : 100;
-      const gapX = Math.max(minSpacingX, spacingX - avgNodeW);
-      const totalWidthWithGaps = totalWidthOfNodes + (K - 1) * gapX;
+    // Check if this is a backbone chain (at most one parent node per level)
+    let isBackboneChain = true;
+    for (const [_, ids] of levelToNodes.entries()) {
+      const parentNodes = ids.filter(id => (parentToChildren.get(id) || []).length > 0);
+      if (parentNodes.length > 1) {
+        isBackboneChain = false;
+        break;
+      }
+    }
 
-      let currentX = centerX - totalWidthWithGaps / 2;
-      for (let j = 0; j < K; j++) {
-        const node = levelNodes[j];
-        node.x = currentX;
-        node.y = yPos + (layerMaxH - node.height) / 2;
-        currentX += node.width + gapX;
+    if (isBackboneChain) {
+      // Find the horizontal spine line position (e.g., center-left spine)
+      const spineX = centerX - 220;
+
+      // Find the maximum spine node width across all levels to align the leaves correctly
+      let maxSpineWidth = 160;
+      for (const [_, ids] of levelToNodes.entries()) {
+        const spineId = ids.find(id => (parentToChildren.get(id) || []).length > 0);
+        if (spineId) {
+          const n = elementMap.get(spineId);
+          if (n && n.width > maxSpineWidth) maxSpineWidth = n.width;
+        }
+      }
+      const leafStartX = spineX + maxSpineWidth / 2 + 80;
+
+      for (const [level, ids] of levelToNodes.entries()) {
+        const yPos = levelY.get(level)!;
+        const layerMaxH = levelMaxHeights.get(level) ?? 0;
+
+        // Find if there is a spine node at this level
+        const spineId = ids.find(id => (parentToChildren.get(id) || []).length > 0);
+
+        if (spineId) {
+          const spineNode = elementMap.get(spineId)!;
+          spineNode.x = spineX - spineNode.width / 2;
+          spineNode.y = yPos + (layerMaxH - spineNode.height) / 2;
+
+          // Align leaf nodes of this level to the right of the spine node
+          const leafIds = ids.filter(id => id !== spineId);
+          let currentX = leafStartX;
+          for (const leafId of leafIds) {
+            const leaf = elementMap.get(leafId)!;
+            leaf.x = currentX;
+            leaf.y = yPos + (layerMaxH - leaf.height) / 2;
+            currentX += leaf.width + 60;
+          }
+        } else {
+          // Last level (usually only leaf nodes of the last spine node)
+          // Align them starting from the same indent as other level leaves
+          let currentX = leafStartX;
+          for (const id of ids) {
+            const leaf = elementMap.get(id)!;
+            leaf.x = currentX;
+            leaf.y = yPos + (layerMaxH - leaf.height) / 2;
+            currentX += leaf.width + 60;
+          }
+        }
+      }
+    } else {
+      // Standard tree layout (centering each level)
+      for (const [level, ids] of levelToNodes.entries()) {
+        const K = ids.length;
+        const yPos = levelY.get(level)!;
+        const layerMaxH = levelMaxHeights.get(level) ?? 0;
+        const levelNodes = ids.map(id => elementMap.get(id)!);
+        
+        const totalWidthOfNodes = levelNodes.reduce((sum, n) => sum + n.width, 0);
+        const minSpacingX = 60; // minimum edge-to-edge horizontal gap
+        // Default to spacingX if nodes are small, but prevent overlap for wide nodes
+        const avgNodeW = K > 0 ? totalWidthOfNodes / K : 100;
+        const gapX = Math.max(minSpacingX, spacingX - avgNodeW);
+        const totalWidthWithGaps = totalWidthOfNodes + (K - 1) * gapX;
+
+        let currentX = centerX - totalWidthWithGaps / 2;
+        for (let j = 0; j < K; j++) {
+          const node = levelNodes[j];
+          node.x = currentX;
+          node.y = yPos + (layerMaxH - node.height) / 2;
+          currentX += node.width + gapX;
+        }
       }
     }
 
