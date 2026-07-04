@@ -16,6 +16,9 @@ export interface ChatMessage {
   timestamp?: string;
   /** DeepSeek 推理过程（仅 assistant 消息） */
   reasoning_content?: string;
+  /** Excalidraw 图表的 embed 标记（如 `![[diagram.excalidraw.md]]`）。
+   *  仅用于 UI 渲染，不应发送给 LLM。 */
+  embed?: string;
 }
 
 export interface ToolCall {
