@@ -310,7 +310,7 @@ export class SessionDomain {
 		};
 
 		let streamStopped = false;
-		let streamStopReason: "completed" | "error" = "error";
+		let streamStopReason: "completed" | "error" | "cancelled" = "error";
 
 		try {
 			const request = this.buildAgentRequest(userMessage, quotes);
@@ -402,9 +402,40 @@ export class SessionDomain {
 				this.ttsDomain.speak(aiMessageId, finalizedContent);
 			}
 		} catch (error) {
-			logError("[SessionDomain] Failed during stream processing:", error);
-			streamStopReason = "error";
-			throw error;
+			const isAbort = error instanceof DOMException && error.name === 'AbortError';
+			if (isAbort) {
+				log("[SessionDomain] Stream aborted by user, finalizing partial content");
+				streamStopReason = "cancelled";
+			} else {
+				logError("[SessionDomain] Failed during stream processing:", error);
+				streamStopReason = "error";
+			}
+
+			// 即使被中断或出错，只要有已流出的内容，就进行定稿和保存，避免气泡卡在输入状态
+			if (latestContent) {
+				finalizedContent = await this.correctWikiLinks(latestContent);
+				this.eventBus.emit("chat:assistant-message-completed", {
+					messageId: aiMessageId,
+					content: finalizedContent,
+				});
+
+				this._agentChatHistory.push({
+					role: "assistant",
+					content: finalizedContent,
+					timestamp: aiMessageId,
+				});
+				await this.saveToCache();
+			} else {
+				// 若无任何流出内容且是错误，发送错误/取消提示，清除气泡的 streaming 状态
+				this.eventBus.emit("chat:error", {
+					messageId: aiMessageId,
+					message: isAbort ? "已取消生成" : (error instanceof Error ? error.message : String(error)),
+				});
+			}
+
+			if (!isAbort) {
+				throw error;
+			}
 		} finally {
 			// 任何结束路径（complete / error / 异常）都要释放流程锁，
 			// 否则 AI 气泡的「重新生成」会因 _isProcessing 卡住而无响应。
