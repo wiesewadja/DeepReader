@@ -279,6 +279,12 @@ export class SessionDomain {
 					messageId: diagramPlaceholderId,
 					embed,
 				});
+				// 将图表嵌入消息追加到历史纪录中，使其被 saveToCache() 持久化到会话文件
+				this._agentChatHistory.push({
+					role: "assistant",
+					content: embed,
+					timestamp: diagramPlaceholderId,
+				});
 				diagramPlaceholderId = null;
 				this.saveToCache();
 			},
