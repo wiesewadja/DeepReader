@@ -500,7 +500,7 @@ export class AIMessage extends Message {
 	}
 
 	/**
-	 * 根据状态文字切换 thinkingBar 内奚童表情
+	 * 根据状态文字切换 thinkingBar 内奚童表情（带 fade 过渡）
 	 */
 	private updateThinkingMascotExpression(statusText: string): void {
 		if (!this.thinkingMascotSvgEl) return;
@@ -517,7 +517,19 @@ export class AIMessage extends Message {
 			expr = 'thinking';
 		}
 
-		this.thinkingMascotSvgEl.innerHTML = faceSVG(expr);
+		const el = this.thinkingMascotSvgEl;
+		// 相同表情不切换
+		if (el.dataset.currentExpr === expr) return;
+		el.dataset.currentExpr = expr;
+
+		// fade-out → 换脸 → fade-in
+		el.classList.add('deeppdf-mascot-face-fade-out');
+		setTimeout(() => {
+			el.innerHTML = faceSVG(expr);
+			el.classList.remove('deeppdf-mascot-face-fade-out');
+			el.classList.add('deeppdf-mascot-face-fade-in');
+			setTimeout(() => el.classList.remove('deeppdf-mascot-face-fade-in'), 200);
+		}, 150);
 	}
 
 
