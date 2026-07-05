@@ -103,7 +103,6 @@
 	width: 28px;
 	height: 28px;
 	padding: 0;
-	margin-left: auto;
 
 	background: transparent;
 	border: none !important;
@@ -184,6 +183,11 @@
 }
 
 /* ==================== 流式输出状态 ==================== */
+
+/* 发送/停止按钮始终靠右 */
+.deeppdf-chat-input-send-btn {
+	margin-left: auto;
+}
 
 /* AI 回复时，隐藏 textarea（工具栏和停止按钮保持可见） */
 .deeppdf-chat-input-streaming .deeppdf-chat-input-textarea {
