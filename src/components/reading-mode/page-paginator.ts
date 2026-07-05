@@ -612,6 +612,7 @@ export class PagePaginator {
 		this.leftBtn.setAttribute('aria-label', '上一页');
 		this.leftBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
 		this.leftBtn.addEventListener('click', () => this.prevPage());
+		this.leftBtn.addEventListener('touchend', (e) => { e.preventDefault(); this.prevPage(); });
 
 		// 右侧翻页按钮
 		this.rightBtn = document.createElement('button');
@@ -619,6 +620,7 @@ export class PagePaginator {
 		this.rightBtn.setAttribute('aria-label', '下一页');
 		this.rightBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
 		this.rightBtn.addEventListener('click', () => this.nextPage());
+		this.rightBtn.addEventListener('touchend', (e) => { e.preventDefault(); this.nextPage(); });
 
 		// 底部浮层：章节名（左） · 页码（中）
 		this.controlsBar = document.createElement('div');

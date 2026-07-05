@@ -547,14 +547,14 @@
     display: none !important;
 }
 
-/* 两侧翻页按钮 — 长条椭圆，默认只显示箭头 */
+/* 两侧翻页按钮 — 宽点击区域，默认只显示箭头 */
 .deeppdf-page-btn {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    width: 28px;
-    height: 64px;
-    border-radius: 14px;
+    width: 80px;
+    height: 120px;
+    border-radius: 0;
     background: transparent;
     border: none;
     color: var(--text-faint);
@@ -568,8 +568,8 @@
     transition: opacity 0.2s ease;
 }
 
-.deeppdf-page-btn.left  { left: 4px; }
-.deeppdf-page-btn.right { right: 4px; }
+.deeppdf-page-btn.left  { left: 0; }
+.deeppdf-page-btn.right { right: 0; }
 
 .deeppdf-page-btn:hover:not(.deeppdf-page-btn-disabled) {
     opacity: 0.8;
@@ -684,8 +684,8 @@
 
     /* 翻页按钮 — 移动端更大的触摸区域 */
     .deeppdf-page-btn {
-        width: 44px;
-        height: 64px;
+        width: 100px;
+        height: 160px;
     }
 
     /* 隐藏底部页码浮层，移动端屏幕宝贵 */
