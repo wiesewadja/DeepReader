@@ -547,20 +547,20 @@
     display: none !important;
 }
 
-/* 两侧翻页按钮 — 宽点击区域，默认只显示箭头 */
+/* 两侧翻页按钮 — 长条椭圆，默认只显示箭头 */
 .deeppdf-page-btn {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    width: 80px;
-    height: 120px;
-    border-radius: 0;
+    width: 28px;
+    height: 64px;
+    border-radius: 14px;
     background: transparent;
     border: none;
     color: var(--text-faint);
     opacity: 0;
     cursor: pointer;
-    z-index: 100;
+    z-index: 101;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -568,8 +568,20 @@
     transition: opacity 0.2s ease;
 }
 
-.deeppdf-page-btn.left  { left: 0; }
-.deeppdf-page-btn.right { right: 0; }
+.deeppdf-page-btn.left  { left: 4px; }
+.deeppdf-page-btn.right { right: 4px; }
+
+/* 两侧整列翻页热区 — 透明，覆盖整列高度，位于按钮下方 */
+.deeppdf-page-hotzone {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 80px;
+    z-index: 99;
+    cursor: pointer;
+}
+.deeppdf-page-hotzone.left  { left: 0; }
+.deeppdf-page-hotzone.right { right: 0; }
 
 .deeppdf-page-btn:hover:not(.deeppdf-page-btn-disabled) {
     opacity: 0.8;
@@ -684,8 +696,13 @@
 
     /* 翻页按钮 — 移动端更大的触摸区域 */
     .deeppdf-page-btn {
+        width: 44px;
+        height: 64px;
+    }
+
+    /* 移动端翻页热区更宽 */
+    .deeppdf-page-hotzone {
         width: 100px;
-        height: 160px;
     }
 
     /* 隐藏底部页码浮层，移动端屏幕宝贵 */

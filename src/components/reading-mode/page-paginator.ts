@@ -40,6 +40,8 @@ export class PagePaginator {
 
 	private leftBtn: HTMLElement | null = null;
 	private rightBtn: HTMLElement | null = null;
+	private leftHotzone: HTMLElement | null = null;
+	private rightHotzone: HTMLElement | null = null;
 	private controlsBar: HTMLElement | null = null;
 	private progressFill: HTMLElement | null = null;
 	private pageIndicator: HTMLElement | null = null;
@@ -602,7 +604,7 @@ export class PagePaginator {
 		// 兜底：清理 viewContent 上可能残留的旧浮层 DOM
 		if (this.viewContent) {
 			this.viewContent.querySelectorAll(
-				'.deeppdf-page-controls, .deeppdf-page-book-label, .deeppdf-page-btn'
+				'.deeppdf-page-controls, .deeppdf-page-book-label, .deeppdf-page-btn, .deeppdf-page-hotzone'
 			).forEach(el => el.remove());
 		}
 
@@ -621,6 +623,17 @@ export class PagePaginator {
 		this.rightBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
 		this.rightBtn.addEventListener('click', () => this.nextPage());
 		this.rightBtn.addEventListener('touchend', (e) => { e.preventDefault(); this.nextPage(); });
+
+		// 两侧整列翻页热区 — 透明覆盖层，点击/触摸触发翻页
+		this.leftHotzone = document.createElement('div');
+		this.leftHotzone.className = 'deeppdf-page-hotzone left';
+		this.leftHotzone.addEventListener('click', () => this.prevPage());
+		this.leftHotzone.addEventListener('touchend', (e) => { e.preventDefault(); this.prevPage(); });
+
+		this.rightHotzone = document.createElement('div');
+		this.rightHotzone.className = 'deeppdf-page-hotzone right';
+		this.rightHotzone.addEventListener('click', () => this.nextPage());
+		this.rightHotzone.addEventListener('touchend', (e) => { e.preventDefault(); this.nextPage(); });
 
 		// 底部浮层：章节名（左） · 页码（中）
 		this.controlsBar = document.createElement('div');
@@ -652,6 +665,8 @@ export class PagePaginator {
 			}
 			this.viewContent.appendChild(this.leftBtn);
 			this.viewContent.appendChild(this.rightBtn);
+			this.viewContent.appendChild(this.leftHotzone);
+			this.viewContent.appendChild(this.rightHotzone);
 			this.viewContent.appendChild(this.controlsBar);
 			if (this.bookLabelEl) this.viewContent.appendChild(this.bookLabelEl);
 		}
@@ -684,10 +699,14 @@ export class PagePaginator {
 	private removeControls(): void {
 		this.leftBtn?.remove();
 		this.rightBtn?.remove();
+		this.leftHotzone?.remove();
+		this.rightHotzone?.remove();
 		this.controlsBar?.remove();
 		this.bookLabelEl?.remove();
 		this.leftBtn = null;
 		this.rightBtn = null;
+		this.leftHotzone = null;
+		this.rightHotzone = null;
 		this.controlsBar = null;
 		this.bookLabelEl = null;
 		this.progressFill = null;
