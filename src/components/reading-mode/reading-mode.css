@@ -547,47 +547,97 @@
     display: none !important;
 }
 
-/* 两侧翻页按钮 — 长条椭圆，默认只显示箭头 */
-.deeppdf-page-btn {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 28px;
-    height: 64px;
-    border-radius: 14px;
-    background: transparent;
-    border: none;
-    color: var(--text-faint);
-    opacity: 0;
-    cursor: pointer;
-    z-index: 101;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    transition: opacity 0.2s ease;
-}
-
-.deeppdf-page-btn.left  { left: 4px; }
-.deeppdf-page-btn.right { right: 4px; }
-
-/* 两侧整列翻页热区 — 透明，覆盖整列高度，位于按钮下方 */
-.deeppdf-page-hotzone {
+/* 两侧书页堆叠效果 — 模拟真实翻页边缘 */
+.deeppdf-page-stack {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 80px;
+    width: 32px;
     z-index: 99;
     cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    transition: opacity 0.2s ease;
 }
-.deeppdf-page-hotzone.left  { left: 0; }
-.deeppdf-page-hotzone.right { right: 0; }
+.deeppdf-page-stack.left  { left: 0; }
+.deeppdf-page-stack.right { right: 0; }
 
-.deeppdf-page-btn:hover:not(.deeppdf-page-btn-disabled) {
-    opacity: 0.8;
+/* 书页叶子 — 每层模拟一张纸的边缘 */
+.deeppdf-page-stack-leaf {
+    position: absolute;
+    top: 20%;
+    bottom: 20%;
+    border-radius: 0 2px 2px 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.deeppdf-page-stack.left .deeppdf-page-stack-leaf {
+    left: 0;
+}
+.deeppdf-page-stack.right .deeppdf-page-stack-leaf {
+    right: 0;
+    border-radius: 2px 0 0 2px;
+}
+
+/* light 主题：暖白纸张 */
+.deeppdf-page-stack.left .deeppdf-page-stack-leaf.layer-0 {
+    width: 6px;
+    background: var(--background-primary);
+    box-shadow: 1px 0 3px rgba(0, 0, 0, 0.08);
+    opacity: 0.35;
+}
+.deeppdf-page-stack.left .deeppdf-page-stack-leaf.layer-1 {
+    width: 10px;
     background: var(--background-secondary);
-    color: var(--text-normal);
-    transition: opacity 0.15s ease, background 0.15s ease;
+    box-shadow: 2px 0 5px rgba(0, 0, 0, 0.06);
+    opacity: 0.25;
+    transform: translateX(2px);
+}
+.deeppdf-page-stack.left .deeppdf-page-stack-leaf.layer-2 {
+    width: 14px;
+    background: var(--background-modifier-border);
+    box-shadow: 3px 0 7px rgba(0, 0, 0, 0.04);
+    opacity: 0.15;
+    transform: translateX(4px);
+}
+
+.deeppdf-page-stack.right .deeppdf-page-stack-leaf.layer-0 {
+    width: 6px;
+    background: var(--background-primary);
+    box-shadow: -1px 0 3px rgba(0, 0, 0, 0.08);
+    opacity: 0.35;
+}
+.deeppdf-page-stack.right .deeppdf-page-stack-leaf.layer-1 {
+    width: 10px;
+    background: var(--background-secondary);
+    box-shadow: -2px 0 5px rgba(0, 0, 0, 0.06);
+    opacity: 0.25;
+    transform: translateX(-2px);
+}
+.deeppdf-page-stack.right .deeppdf-page-stack-leaf.layer-2 {
+    width: 14px;
+    background: var(--background-modifier-border);
+    box-shadow: -3px 0 7px rgba(0, 0, 0, 0.04);
+    opacity: 0.15;
+    transform: translateX(-4px);
+}
+
+/* hover 时整体提亮 */
+.deeppdf-page-stack:hover .deeppdf-page-stack-leaf {
+    opacity: 0.6 !important;
+}
+.deeppdf-page-stack.left:hover .deeppdf-page-stack-leaf {
+    transform: translateX(3px);
+}
+.deeppdf-page-stack.right:hover .deeppdf-page-stack-leaf {
+    transform: translateX(-3px);
+}
+
+/* 到达边界时隐藏 */
+.deeppdf-page-stack.deeppdf-page-btn-disabled {
+    opacity: 0 !important;
+    pointer-events: none;
 }
 
 .deeppdf-page-btn-disabled {
@@ -694,16 +744,16 @@
         height: 44px;
     }
 
-    /* 翻页按钮 — 移动端更大的触摸区域 */
-    .deeppdf-page-btn {
-        width: 44px;
-        height: 64px;
+    /* 移动端书页堆叠更宽，便于触摸 */
+    .deeppdf-page-stack {
+        width: 48px;
     }
-
-    /* 移动端翻页热区更宽 */
-    .deeppdf-page-hotzone {
-        width: 100px;
-    }
+    .deeppdf-page-stack.left .deeppdf-page-stack-leaf.layer-0 { width: 10px; }
+    .deeppdf-page-stack.left .deeppdf-page-stack-leaf.layer-1 { width: 16px; }
+    .deeppdf-page-stack.left .deeppdf-page-stack-leaf.layer-2 { width: 22px; }
+    .deeppdf-page-stack.right .deeppdf-page-stack-leaf.layer-0 { width: 10px; }
+    .deeppdf-page-stack.right .deeppdf-page-stack-leaf.layer-1 { width: 16px; }
+    .deeppdf-page-stack.right .deeppdf-page-stack-leaf.layer-2 { width: 22px; }
 
     /* 隐藏底部页码浮层，移动端屏幕宝贵 */
     .deeppdf-page-controls {
