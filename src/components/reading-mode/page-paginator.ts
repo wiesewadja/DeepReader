@@ -606,10 +606,10 @@ export class PagePaginator {
 			).forEach(el => el.remove());
 		}
 
-		// 左侧：书页堆叠效果 + 翻页热区
+		// 左侧：书页竖条纹 + 翻页热区
 		const leftStack = document.createElement('div');
 		leftStack.className = 'deeppdf-page-stack left';
-		for (let i = 0; i < 3; i++) {
+		for (let i = 0; i < 4; i++) {
 			const leaf = document.createElement('div');
 			leaf.className = `deeppdf-page-stack-leaf layer-${i}`;
 			leftStack.appendChild(leaf);
@@ -618,10 +618,10 @@ export class PagePaginator {
 		leftStack.addEventListener('touchend', (e) => { e.preventDefault(); this.prevPage(); });
 		this.leftHotzone = leftStack;
 
-		// 右侧：书页堆叠效果 + 翻页热区
+		// 右侧：书页竖条纹 + 翻页热区
 		const rightStack = document.createElement('div');
 		rightStack.className = 'deeppdf-page-stack right';
-		for (let i = 0; i < 3; i++) {
+		for (let i = 0; i < 4; i++) {
 			const leaf = document.createElement('div');
 			leaf.className = `deeppdf-page-stack-leaf layer-${i}`;
 			rightStack.appendChild(leaf);
@@ -634,7 +634,6 @@ export class PagePaginator {
 		this.controlsBar = document.createElement('div');
 		this.controlsBar.className = 'deeppdf-page-controls';
 
-		// 左侧：章节名
 		if (this.chapterName) {
 			this.chapterIndicator = document.createElement('span');
 			this.chapterIndicator.className = 'deeppdf-page-chapter';
@@ -642,12 +641,10 @@ export class PagePaginator {
 			this.controlsBar.appendChild(this.chapterIndicator);
 		}
 
-		// 中间：页码
 		this.pageIndicator = document.createElement('span');
 		this.pageIndicator.className = 'deeppdf-page-num';
 		this.controlsBar.appendChild(this.pageIndicator);
 
-		// 左上角：书名浮层
 		if (this.bookName) {
 			this.bookLabelEl = document.createElement('div');
 			this.bookLabelEl.className = 'deeppdf-page-book-label';
@@ -658,9 +655,9 @@ export class PagePaginator {
 			if (getComputedStyle(this.viewContent).position === 'static') {
 				this.viewContent.style.position = 'relative';
 			}
-		this.viewContent.appendChild(this.leftHotzone);
-		this.viewContent.appendChild(this.rightHotzone);
-		this.viewContent.appendChild(this.controlsBar);
+			this.viewContent.appendChild(this.leftHotzone);
+			this.viewContent.appendChild(this.rightHotzone);
+			this.viewContent.appendChild(this.controlsBar);
 			if (this.bookLabelEl) this.viewContent.appendChild(this.bookLabelEl);
 		}
 	}
