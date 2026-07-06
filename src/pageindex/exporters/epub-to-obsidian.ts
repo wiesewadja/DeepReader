@@ -3,9 +3,17 @@
  * 将 EPUB 解析为 Obsidian 兼容的笔记结构
  */
 
-import * as fs from "fs";
-import * as path from "path";
-import AdmZip from "adm-zip";
+import { nodeAdmZip } from "../../utils/node-compat.js";
+
+/** 惰性加载 fs/path，避免移动端加载期触发 Node 模块 */
+function getFs(): typeof import("fs") {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require("fs");
+}
+function getPath(): typeof import("path") {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require("path");
+}
 import { log as piLog } from "../core/logger";
 import { cleanTitle } from "../core/utils";
 import { DEFAULT_ASSETS_PATH, DEFAULT_INCLUDE_INDEX } from "../defaults.js";
@@ -58,9 +66,9 @@ export async function exportToObsidian(
   const bookName = options.exportName || sanitizeFileName(bookInfo.title);
 
   // 创建书籍目录
-  const bookDir = path.join(options.outputDir, bookName);
-  if (!fs.existsSync(bookDir)) {
-    fs.mkdirSync(bookDir, { recursive: true });
+  const bookDir = getPath().join(options.outputDir, bookName);
+  if (!getFs().existsSync(bookDir)) {
+    getFs().mkdirSync(bookDir, { recursive: true });
   }
 
   // 提取图片（使用 EPUB 原始目录名）
@@ -83,7 +91,7 @@ export async function exportToObsidian(
     const fileName = sanitizeFileName(`${indexPrefix}${chapter.title}`);
 
     // 记录原始 href (去掉路径和扩展名)
-    const originalBase = path.basename(chapter.href).replace(/\.(html|xhtml|htm)$/i, "");
+    const originalBase = getPath().basename(chapter.href).replace(/\.(html|xhtml|htm)$/i, "");
     hrefToFileName.set(originalBase, fileName);
     hrefToFileName.set(chapter.href.replace(/\.(html|xhtml|htm)$/i, ""), fileName);
 
@@ -116,7 +124,7 @@ export async function exportToObsidian(
     note.frontmatter.node_id = nodeId;
     tocEntries.push({
       title: chapter.title,
-      fileName: path.basename(note.filePath, ".md"),
+      fileName: getPath().basename(note.filePath, ".md"),
       level: chapter.level,
       originalHref: chapter.href,
       nodeId,
@@ -126,20 +134,20 @@ export async function exportToObsidian(
   // 保存封面图（与图片同一目录）
   let coverRelativePath: string | undefined;
   if (bookInfo.coverImage) {
-    const coverDir = path.join(bookDir, assetsDirName);
-    if (!fs.existsSync(coverDir)) {
-      fs.mkdirSync(coverDir, { recursive: true });
+    const coverDir = getPath().join(bookDir, assetsDirName);
+    if (!getFs().existsSync(coverDir)) {
+      getFs().mkdirSync(coverDir, { recursive: true });
     }
-    const coverPath = path.join(coverDir, bookInfo.coverImage.name);
-    fs.writeFileSync(coverPath, bookInfo.coverImage.data);
+    const coverPath = getPath().join(coverDir, bookInfo.coverImage.name);
+    getFs().writeFileSync(coverPath, bookInfo.coverImage.data);
     coverRelativePath = `${assetsDirName}/${bookInfo.coverImage.name}`;
     piLog(`[epub-to-obsidian] Cover saved: ${coverRelativePath}`);
   }
 
   // 生成 MOC (Map of Content)
-  const mocPath = path.join(bookDir, `${options.mocName || bookName + " - MOC"}.md`);
+  const mocPath = getPath().join(bookDir, `${options.mocName || bookName + " - MOC"}.md`);
   const mocContent = generateMOC(bookName, bookInfo, tocEntries, options, coverRelativePath);
-  fs.writeFileSync(mocPath, mocContent);
+  getFs().writeFileSync(mocPath, mocContent);
 
   // 保存所有笔记 (在保存前统一修复内部链接)
   for (const note of notes) {
@@ -172,7 +180,7 @@ export async function exportToObsidian(
     }
 
     // Step 2: 修复同文件内的锚点链接 [[#^anchor|text]]
-    const currentFileName = path.basename(note.filePath, ".md");
+    const currentFileName = getPath().basename(note.filePath, ".md");
     const currentChapter = fileNameToChapter.get(currentFileName);
 
     if (currentChapter?.blockMap) {
@@ -187,7 +195,7 @@ export async function exportToObsidian(
     }
 
     const fm = generateFrontmatter(note.frontmatter);
-    fs.writeFileSync(note.filePath, `${fm}\n${fixedContent}`);
+    getFs().writeFileSync(note.filePath, `${fm}\n${fixedContent}`);
   }
 
   // 写入索引树 JSON（使用 TreeNode 层级结构 + nodeFileMap）
@@ -217,14 +225,14 @@ async function createChapterNote(
 ): Promise<ObsidianNote> {
   const indexPrefix = options.includeIndex ? `${String(index + 1).padStart(2, "0")} - ` : "";
   const fileName = sanitizeFileName(`${indexPrefix}${chapter.title}`) + ".md";
-  const filePath = path.join(bookDir, fileName);
+  const filePath = getPath().join(bookDir, fileName);
 
   // 处理图片链接
   let content = chapter.content;
   for (const [originalPath, newPath] of imageMap.entries()) {
-    const relativePath = path.relative(bookDir, newPath).replace(/\\/g, "/");
+    const relativePath = getPath().relative(bookDir, newPath).replace(/\\/g, "/");
     // 获取图片文件名（用于多种路径匹配）
-    const fileName = path.basename(originalPath);
+    const fileName = getPath().basename(originalPath);
 
     // 替换各种可能的路径格式
     const patterns = [
@@ -259,8 +267,8 @@ async function createChapterNote(
   content = content.replace(
     /!\[([^\]]*)\]\(([^)]+\.(?:jpg|jpeg|png|gif|svg|webp))\)/gi,
     (_match, alt: string, imgPath: string) => {
-      const resolved = path.resolve(bookDir, imgPath);
-      return fs.existsSync(resolved) ? _match : `*${alt || "图像"}*`;
+      const resolved = getPath().resolve(bookDir, imgPath);
+      return getFs().existsSync(resolved) ? _match : `*${alt || "图像"}*`;
     }
   );
 
@@ -525,7 +533,7 @@ function buildEpubTree(
     return {
       title: ch.title,
       nodeId: String(i + 1).padStart(4, "0"),
-      filePath: notes[i] ? path.basename(notes[i].filePath) : fileName,
+      filePath: notes[i] ? getPath().basename(notes[i].filePath) : fileName,
       startIndex: i,
       endIndex: i,
       tokenCount: ch.tokenCount,
@@ -713,10 +721,10 @@ function buildTreeFromTocEntries(
  */
 function extractImagesFromEpub(epubPath: string, bookDir: string): { imageMap: Map<string, string>; assetsDirName: string } {
   const imageMap = new Map<string, string>();
-  const zip = new AdmZip(epubPath);
+  const zip = new (nodeAdmZip())(epubPath);
 
   const imageEntries = zip.getEntries().filter(entry => {
-    const ext = path.extname(entry.entryName).toLowerCase();
+    const ext = getPath().extname(entry.entryName).toLowerCase();
     return [".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp"].includes(ext);
   });
 
@@ -736,23 +744,23 @@ function extractImagesFromEpub(epubPath: string, bookDir: string): { imageMap: M
     }
   }
 
-  const outputDir = path.join(bookDir, assetsDirName);
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
+  const outputDir = getPath().join(bookDir, assetsDirName);
+  if (!getFs().existsSync(outputDir)) {
+    getFs().mkdirSync(outputDir, { recursive: true });
   }
 
   for (const entry of imageEntries) {
-    const fileName = path.basename(entry.entryName);
-    const outputPath = path.join(outputDir, fileName);
+    const fileName = getPath().basename(entry.entryName);
+    const outputPath = getPath().join(outputDir, fileName);
 
     // 保存图片
-    fs.writeFileSync(outputPath, entry.getData());
+    getFs().writeFileSync(outputPath, entry.getData());
 
     // 记录原始路径到新路径的映射
     // EPUB 中的路径通常是相对 OEBPS 的
     const epubPathVariants = [
       entry.entryName,
-      path.basename(entry.entryName),
+      getPath().basename(entry.entryName),
       entry.entryName.replace(/^OEBPS\//, ""),
       entry.entryName.replace(/^OPS\//, ""),
     ];

@@ -8,8 +8,13 @@
  * 使用 safeRequest（Obsidian requestUrl）绕过 CORS 限制
  */
 
-import path from 'path';
-import AdmZip from 'adm-zip';
+import { nodeAdmZip } from '../utils/node-compat.js';
+
+/** 惰性加载 path，避免移动端加载期触发 Node 模块 */
+function getPath(): typeof import('path') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require('path');
+}
 import { log as piLog } from '../pageindex/core/logger';
 import type { TreeNode } from '../pageindex/core/types';
 import { parseMineruJson } from '../pageindex/parsers/mineru';
@@ -285,7 +290,7 @@ export class MineruClient {
       const batchBytes = await newDoc.save();
       const batchBuffer = Buffer.from(batchBytes);
 
-      const batchFileName = `${path.parse(fileName).name}_part${i + 1}.pdf`;
+      const batchFileName = `${getPath().parse(fileName).name}_part${i + 1}.pdf`;
       const result = await this.precisionSingleBatch(batchBuffer, batchFileName);
       results.push(result);
     }
@@ -335,7 +340,7 @@ export class MineruClient {
     }
 
     return {
-      title: results[0]?.title || path.parse(fileName).name,
+      title: results[0]?.title || getPath().parse(fileName).name,
       totalPages,
       pages: allPages,
       outline: allOutline,
@@ -521,7 +526,7 @@ export class MineruClient {
       throw new MineruError('ZIP download returned empty response');
     }
 
-    const zip = new AdmZip(Buffer.from(arrayBuffer));
+    const zip = new (nodeAdmZip())(Buffer.from(arrayBuffer));
 
     const zipEntries = zip.getEntries();
     const jsonEntry =

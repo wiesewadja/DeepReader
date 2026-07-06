@@ -28,6 +28,7 @@ Obsidian 插件，奚童，AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
 - Agent 唯入口: `FrontendAgent.chat()` → `runGraphEngine()` → `stream()`
 - 提交前将代码修改方案整理后告知用户审查，用户确认后提交代码
 - 每个重要功能都拉取.worktrees/目录下的独立worktree分支，完成后调用测试工程师代理进行测试
+- 移动端兼容：禁止业务代码静态 `import` Node 核心模块（fs/path/crypto/os/child_process）或 `adm-zip`，会让插件在移动端加载即崩。统一走 `utils/node-compat.ts` 惰性工厂。详见 `.project-rules/08-mobile-compat.md`
 
 ## 部署陷阱
 - `manifest.json` 的 `id` 字段必须与插件目录名一致（`deepreader-dev/` → id=`deepreader-dev`），否则 Obsidian 静默加载失败

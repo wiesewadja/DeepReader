@@ -1,13 +1,14 @@
 {
   "name": "obsidian-deepreader",
-  "version": "2026.07.03",
+  "version": "2026.07.05",
   "description": "奚童 - 深度AI伴读",
   "main": "bin/main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "npm run build:check && npm run build:bundle",
     "build:check": "npm run sync-version && npm run copy-css && tsc -noEmit -skipLibCheck",
-    "build:bundle": "node esbuild.config.mjs production",
+    "build:bundle": "node esbuild.config.mjs production && node scripts/mobile-load-check.cjs",
+    "check:mobile-load": "node scripts/mobile-load-check.cjs",
     "sync-version": "node scripts/sync-version.js",
     "copy-css": "node scripts/build-css.js",
     "test": "vitest",
