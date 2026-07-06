@@ -197,13 +197,13 @@ export class ChatInput {
 			this.textarea.value = '';
 			this.textarea.setAttribute('placeholder', '');
 			this.inputContainer?.addClass('deeppdf-voice-active');
-			this.showVoiceOverlay('正在聆听...', true);
+			this.showVoiceOverlay();
 		} else if (state === 'recognizing') {
 			this.textarea.disabled = true;
 			this.textarea.value = '';
 			this.textarea.setAttribute('placeholder', '');
 			this.inputContainer?.addClass('deeppdf-voice-active');
-			this.showVoiceOverlay('正在识别...', false);
+			this.showVoiceOverlay();
 		} else {
 			this.textarea.disabled = this.options.disabled || false;
 			this.textarea.setAttribute('placeholder', this.savedPlaceholder);
@@ -214,14 +214,17 @@ export class ChatInput {
 		this.notifyHeightChange();
 	}
 
-	private showVoiceOverlay(label: string, showWave: boolean): void {
+	private showVoiceOverlay(): void {
 		if (!this.inputContainer) return;
 
 		// 首次使用时懒创建 VoiceOverlay
 		if (!this.voiceOverlay) {
-			this.voiceOverlay = new VoiceOverlay(this.inputContainer);
+			this.voiceOverlay = new VoiceOverlay(this.inputContainer, {
+				onCancel: () => this.options.onVoiceCancel?.(),
+				onSend: () => this.options.onVoiceStop?.()
+			});
 		}
-		this.voiceOverlay.show('正在聆听...', true);
+		this.voiceOverlay.showRecording();
 	}
 
 	private removeVoiceOverlay(): void {
