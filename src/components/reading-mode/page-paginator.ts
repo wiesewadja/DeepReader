@@ -38,6 +38,8 @@ export class PagePaginator {
 	/** 待恢复页码：在 _totalPages 稳定后应用（避免 setCurrentPage 被 clamp 到 1） */
 	private _pendingRestorePage: number | null = null;
 
+	private leftBtn: HTMLElement | null = null;
+	private rightBtn: HTMLElement | null = null;
 	private leftHotzone: HTMLElement | null = null;
 	private rightHotzone: HTMLElement | null = null;
 	private controlsBar: HTMLElement | null = null;
@@ -602,38 +604,42 @@ export class PagePaginator {
 		// 兜底：清理 viewContent 上可能残留的旧浮层 DOM
 		if (this.viewContent) {
 			this.viewContent.querySelectorAll(
-				'.deeppdf-page-controls, .deeppdf-page-book-label, .deeppdf-page-btn, .deeppdf-page-hotzone, .deeppdf-page-stack'
+				'.deeppdf-page-controls, .deeppdf-page-book-label, .deeppdf-page-btn, .deeppdf-page-hotzone'
 			).forEach(el => el.remove());
 		}
 
-		// 左侧：书页竖条纹 + 翻页热区
-		const leftStack = document.createElement('div');
-		leftStack.className = 'deeppdf-page-stack left';
-		for (let i = 0; i < 4; i++) {
-			const leaf = document.createElement('div');
-			leaf.className = `deeppdf-page-stack-leaf layer-${i}`;
-			leftStack.appendChild(leaf);
-		}
-		leftStack.addEventListener('click', () => this.prevPage());
-		leftStack.addEventListener('touchend', (e) => { e.preventDefault(); this.prevPage(); });
-		this.leftHotzone = leftStack;
+		// 左侧翻页按钮
+		this.leftBtn = document.createElement('button');
+		this.leftBtn.className = 'deeppdf-page-btn left';
+		this.leftBtn.setAttribute('aria-label', '上一页');
+		this.leftBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
+		this.leftBtn.addEventListener('click', () => this.prevPage());
+		this.leftBtn.addEventListener('touchend', (e) => { e.preventDefault(); this.prevPage(); });
 
-		// 右侧：书页竖条纹 + 翻页热区
-		const rightStack = document.createElement('div');
-		rightStack.className = 'deeppdf-page-stack right';
-		for (let i = 0; i < 4; i++) {
-			const leaf = document.createElement('div');
-			leaf.className = `deeppdf-page-stack-leaf layer-${i}`;
-			rightStack.appendChild(leaf);
-		}
-		rightStack.addEventListener('click', () => this.nextPage());
-		rightStack.addEventListener('touchend', (e) => { e.preventDefault(); this.nextPage(); });
-		this.rightHotzone = rightStack;
+		// 右侧翻页按钮
+		this.rightBtn = document.createElement('button');
+		this.rightBtn.className = 'deeppdf-page-btn right';
+		this.rightBtn.setAttribute('aria-label', '下一页');
+		this.rightBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+		this.rightBtn.addEventListener('click', () => this.nextPage());
+		this.rightBtn.addEventListener('touchend', (e) => { e.preventDefault(); this.nextPage(); });
+
+		// 两侧整列翻页热区 — 透明覆盖层，点击/触摸触发翻页
+		this.leftHotzone = document.createElement('div');
+		this.leftHotzone.className = 'deeppdf-page-hotzone left';
+		this.leftHotzone.addEventListener('click', () => this.prevPage());
+		this.leftHotzone.addEventListener('touchend', (e) => { e.preventDefault(); this.prevPage(); });
+
+		this.rightHotzone = document.createElement('div');
+		this.rightHotzone.className = 'deeppdf-page-hotzone right';
+		this.rightHotzone.addEventListener('click', () => this.nextPage());
+		this.rightHotzone.addEventListener('touchend', (e) => { e.preventDefault(); this.nextPage(); });
 
 		// 底部浮层：章节名（左） · 页码（中）
 		this.controlsBar = document.createElement('div');
 		this.controlsBar.className = 'deeppdf-page-controls';
 
+		// 左侧：章节名
 		if (this.chapterName) {
 			this.chapterIndicator = document.createElement('span');
 			this.chapterIndicator.className = 'deeppdf-page-chapter';
@@ -641,10 +647,12 @@ export class PagePaginator {
 			this.controlsBar.appendChild(this.chapterIndicator);
 		}
 
+		// 中间：页码
 		this.pageIndicator = document.createElement('span');
 		this.pageIndicator.className = 'deeppdf-page-num';
 		this.controlsBar.appendChild(this.pageIndicator);
 
+		// 左上角：书名浮层
 		if (this.bookName) {
 			this.bookLabelEl = document.createElement('div');
 			this.bookLabelEl.className = 'deeppdf-page-book-label';
@@ -655,6 +663,8 @@ export class PagePaginator {
 			if (getComputedStyle(this.viewContent).position === 'static') {
 				this.viewContent.style.position = 'relative';
 			}
+			this.viewContent.appendChild(this.leftBtn);
+			this.viewContent.appendChild(this.rightBtn);
 			this.viewContent.appendChild(this.leftHotzone);
 			this.viewContent.appendChild(this.rightHotzone);
 			this.viewContent.appendChild(this.controlsBar);
@@ -679,18 +689,22 @@ export class PagePaginator {
 			}
 		}
 
-		// 边界页且有上/下一章时，不隐藏热区（用户可点击跳章）
+		// 边界页且有上/下一章时，不隐藏按钮（用户可点击跳章）
 		const atFirstPage = this.isAtFirstPage();
 		const atLastPage = this.isAtLastPage();
-		this.leftHotzone?.classList.toggle(DISABLED_CLASS, atFirstPage && !this.options.hasPrevChapter());
-		this.rightHotzone?.classList.toggle(DISABLED_CLASS, atLastPage && !this.options.hasNextChapter());
+		this.leftBtn?.classList.toggle(DISABLED_CLASS, atFirstPage && !this.options.hasPrevChapter());
+		this.rightBtn?.classList.toggle(DISABLED_CLASS, atLastPage && !this.options.hasNextChapter());
 	}
 
 	private removeControls(): void {
+		this.leftBtn?.remove();
+		this.rightBtn?.remove();
 		this.leftHotzone?.remove();
 		this.rightHotzone?.remove();
 		this.controlsBar?.remove();
 		this.bookLabelEl?.remove();
+		this.leftBtn = null;
+		this.rightBtn = null;
 		this.leftHotzone = null;
 		this.rightHotzone = null;
 		this.controlsBar = null;
