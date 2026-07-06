@@ -161,11 +161,6 @@ export async function formatterNode(
     return { formattedOutput: cleanOutput(effectiveAR, '', crossBookMode) };
   }
 
-  // === Security rejection: bypass LLM, return safe message directly ===
-  if (rewrittenQuery === '安全拒绝' && structuralAnalysis) {
-    return { formattedOutput: structuralAnalysis };
-  }
-
   // === Casual mode (depth=CASUAL): simple direct response ===
   if (depth === ReadingDepth.CASUAL) {
     callbacks?.onProgress?.('正在思考...');
