@@ -90,12 +90,12 @@
 	width: 4px;
 }
 
-
 /* ==================== 通用工具栏按钮样式 ==================== */
 
 .deeppdf-load-doc-btn,
 .deeppdf-mode-toggle-btn,
 .deeppdf-deep-search-btn,
+.deeppdf-voice-btn,
 .deeppdf-chat-input-send-btn {
 	display: flex;
 	align-items: center;
@@ -120,14 +120,16 @@
 .deeppdf-load-doc-btn:hover,
 .deeppdf-mode-toggle-btn:hover,
 .deeppdf-deep-search-btn:hover,
+.deeppdf-voice-btn:hover,
 .deeppdf-chat-input-send-btn:hover {
-	background: var(--background-modifier-hover);
+	background: transparent;
 	color: var(--text-normal);
 }
 
 .deeppdf-load-doc-btn svg,
 .deeppdf-mode-toggle-btn svg,
 .deeppdf-deep-search-btn svg,
+.deeppdf-voice-btn svg,
 .deeppdf-chat-input-send-btn svg {
 	width: 16px;
 	height: 16px;
@@ -140,7 +142,7 @@
 }
 
 .deeppdf-load-doc-btn.active:hover {
-	background: var(--background-modifier-hover);
+	background: transparent;
 }
 
 /* ==================== 跨书籍模式切换按钮 ==================== */
@@ -152,7 +154,7 @@
 
 .deeppdf-mode-toggle-btn.active:hover,
 .deeppdf-mode-toggle-btn[data-mode="cross"]:hover {
-	background: var(--background-modifier-hover);
+	background: transparent;
 	color: var(--interactive-accent);
 }
 
@@ -163,7 +165,7 @@
 }
 
 .deeppdf-deep-search-btn.active:hover {
-	background: var(--background-modifier-hover);
+	background: transparent;
 	color: var(--interactive-accent);
 }
 
@@ -179,7 +181,7 @@
 }
 
 .deeppdf-chat-input-send-btn:not(:disabled):hover {
-	background: var(--background-modifier-hover);
+	background: transparent;
 }
 
 /* ==================== 流式输出状态 ==================== */
@@ -438,52 +440,141 @@
 	color: var(--text-normal);
 }
 
-/* ==================== 语音录制轻量动画 ==================== */
+/* ==================== 语音输入按钮 ==================== */
 
-.deeppdf-voice-ripple {
+/* 录音中 — 红色脉动 */
+.deeppdf-voice-btn.recording {
+	color: var(--text-error);
+	animation: deeppdf-mic-pulse 1.5s ease-in-out infinite;
+}
+
+.deeppdf-voice-btn.recording:hover {
+	background: transparent;
+	color: var(--text-error);
+}
+
+/* 识别中 — 旋转 */
+.deeppdf-voice-btn.recognizing {
+	color: var(--interactive-accent);
+	animation: deeppdf-mic-spin 1s linear infinite;
+}
+
+.deeppdf-voice-btn.recognizing:hover {
+	background: transparent;
+	color: var(--interactive-accent);
+}
+
+@keyframes deeppdf-mic-pulse {
+	0%, 100% { transform: scale(1); }
+	50% { transform: scale(1.15); }
+}
+
+@keyframes deeppdf-mic-spin {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
+/* ==================== 语音输入活跃态 ==================== */
+
+.deeppdf-voice-active .deeppdf-chat-input-textarea {
+	color: transparent;
+	caret-color: transparent;
+}
+
+.deeppdf-voice-active .deeppdf-chat-input-textarea::placeholder {
+	color: transparent !important;
+}
+
+/* 语音 overlay（覆盖在 textarea 上方） */
+.deeppdf-voice-overlay {
 	position: absolute;
-	left: 50%;
+	left: 40px;
 	top: 50%;
-	transform: translate(-50%, -50%);
+	transform: translateY(-50%);
 	display: inline-flex;
 	align-items: center;
-	justify-content: center;
-	gap: 6px;
+	gap: 8px;
 	pointer-events: none;
 	z-index: 10;
 }
 
-.deeppdf-voice-dot {
+/* 递增识别时的录音指示器（右上角红点 + 文字） */
+.deeppdf-voice-recording-indicator {
+	position: absolute;
+	top: 4px;
+	right: 8px;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	pointer-events: none;
+	z-index: 10;
+	font-size: 11px;
+	color: var(--text-muted);
+}
+
+.deeppdf-voice-recording-dot {
+	display: block;
 	width: 6px;
 	height: 6px;
-	background-color: var(--interactive-accent);
 	border-radius: 50%;
-	opacity: 0.6;
-	animation: deeppdf-voice-dot-bounce 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+	background: var(--text-error);
+	animation: deeppdf-recording-blink 1s ease-in-out infinite;
 }
 
-.deeppdf-voice-dot:nth-child(2) {
-	animation-delay: 0.2s;
+@keyframes deeppdf-recording-blink {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.3; }
 }
 
-.deeppdf-voice-dot:nth-child(3) {
-	animation-delay: 0.4s;
+/* 波形条动画 */
+.deeppdf-voice-wave {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	height: 20px;
 }
 
-@keyframes deeppdf-voice-dot-bounce {
-	0%, 100% {
-		transform: scale(0.8);
-		opacity: 0.4;
-	}
-	50% {
-		transform: scale(1.5);
-		opacity: 1;
-	}
+.deeppdf-voice-wave span {
+	display: block;
+	width: 3px;
+	border-radius: 2px;
+	background: var(--interactive-accent);
+	animation: deeppdf-wave-bar 1.2s ease-in-out infinite;
 }
 
-/* 减少动画偏好 */
+.deeppdf-voice-wave span:nth-child(1) { animation-delay: 0s; }
+.deeppdf-voice-wave span:nth-child(2) { animation-delay: 0.2s; }
+.deeppdf-voice-wave span:nth-child(3) { animation-delay: 0.4s; }
+.deeppdf-voice-wave span:nth-child(4) { animation-delay: 0.1s; }
+.deeppdf-voice-wave span:nth-child(5) { animation-delay: 0.3s; }
+
+@keyframes deeppdf-wave-bar {
+	0%, 100% { height: 4px; }
+	50% { height: 18px; }
+}
+
+/* 语音状态文字 */
+.deeppdf-voice-label {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	pointer-events: none;
+	white-space: nowrap;
+}
+
+/* ==================== 减少动画偏好 ==================== */
+
 @media (prefers-reduced-motion: reduce) {
-	.deeppdf-voice-dot {
+	.deeppdf-voice-btn.recording {
 		animation: none;
+		color: var(--text-error);
+	}
+	.deeppdf-voice-btn.recognizing {
+		animation: none;
+		color: var(--interactive-accent);
+		opacity: 0.7;
+	}
+	.deeppdf-voice-wave span {
+		animation: none;
+		height: 8px;
 	}
 }
