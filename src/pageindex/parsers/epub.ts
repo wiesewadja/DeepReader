@@ -218,23 +218,14 @@ function createTurndownServiceWithBlocks(
       },
     },
 
-    // List items - also add block IDs
+    // List items - 不加 blockId：列表项不是独立段落，加 blockId 会污染段落序号
+    // 且在阅读模式里把 ^blockId 渲染出来。列表内容作为段落的一部分存在。
     listItem: {
       filter: "li",
-      replacement: (content, node: any) => {
+      replacement: (content) => {
         const prefix = "- ";
-        const originalId = node.getAttribute?.("id");
-
-        // Generate block ID for list items too
-        const blockId = generateBlockId(originalId || undefined);
-        blocks.push(blockId);
-
-        if (originalId) {
-          blockMap.set(originalId, blockId);
-        }
-
         content = content.replace(/^\n+/, "").replace(/\n+$/, "").replace(/\n/gm, "\n    ");
-        return `${prefix}${content} ^${blockId}\n`;
+        return `${prefix}${content}\n`;
       },
     },
 
