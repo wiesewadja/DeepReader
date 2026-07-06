@@ -1,15 +1,14 @@
 /**
  * pageindex-vault: Obsidian Vault File Scanning
  * Scans vault for markdown files, detects derived files, computes hashes
- * 
+ *
  * Node.js compatible version (replaces Bun.Glob and Bun.file)
  */
 
-import * as crypto from "crypto";
-import * as fs from "fs/promises";
-import * as path from "path";
 import { apiLog } from "../../utils/logger.js";
+import { nodeCrypto, nodeFsPromises, nodePath } from "../../utils/node-compat.js";
 import type { ObsidianVaultIndexOptions, VaultIndexMeta } from "./types";
+
 
 export interface ScannedFile {
   relativePath: string;
@@ -38,15 +37,15 @@ async function glob(pattern: string, cwd: string): Promise<string[]> {
 }
 
 async function walkDir(basePath: string, currentPath: string, results: string[]): Promise<void> {
-  const entries = await fs.readdir(currentPath, { withFileTypes: true });
-  
+  const entries = await nodeFsPromises().readdir(currentPath, { withFileTypes: true });
+
   for (const entry of entries) {
-    const fullPath = path.join(currentPath, entry.name);
-    
+    const fullPath = nodePath().join(currentPath, entry.name);
+
     if (entry.isDirectory()) {
       await walkDir(basePath, fullPath, results);
     } else if (entry.isFile() && entry.name.endsWith(".md")) {
-      const relativePath = path.relative(basePath, fullPath);
+      const relativePath = nodePath().relative(basePath, fullPath);
       results.push(relativePath);
     }
   }
@@ -112,18 +111,18 @@ export async function scanVaultFiles(
   const scanned: ScannedFile[] = [];
 
   for (const relativePath of filtered) {
-    const absolutePath = path.join(vaultPath, relativePath);
-    
+    const absolutePath = nodePath().join(vaultPath, relativePath);
+
     try {
       // Read file content
-      const content = await fs.readFile(absolutePath, "utf-8");
-      
+      const content = await nodeFsPromises().readFile(absolutePath, "utf-8");
+
       if (options.excludeDerivedFiles !== false && isDerivedFile(content)) {
         continue;
       }
 
       // Get file stats
-      const stats = await fs.stat(absolutePath);
+      const stats = await nodeFsPromises().stat(absolutePath);
       const mtime = stats.mtimeMs;
       const hash = await hashContent(content);
       const directory = resolveDirectory(relativePath, options.subdirectories);
@@ -156,7 +155,7 @@ function isDerivedFile(content: string): boolean {
 }
 
 async function hashContent(content: string): Promise<string> {
-  const hash = crypto.createHash("sha256");
+  const hash = nodeCrypto().createHash("sha256");
   hash.update(content);
   return hash.digest("hex").slice(0, 16);
 }

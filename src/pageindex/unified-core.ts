@@ -9,13 +9,13 @@
  *   docToIndex() — document → structured index tree (PageIndexResult)
  */
 
-import * as path from "path";
 import type {
   PageIndexResult,
   DocIndexOptions,
 } from "./core/types";
 import { PageIndex } from "./pageindex";
 import { mdToTree } from "./parsers/markdown";
+import { nodePath } from "../utils/node-compat.js";
 
 // ─── Type detection ──────────────────────────────────────────────────────────
 
@@ -26,7 +26,7 @@ function detectDocType(input: string, hint?: string): "pdf" | "epub" | "markdown
     throw new Error("Cannot auto-detect type from Buffer/ArrayBuffer. Pass docType explicitly.");
   }
 
-  const ext = path.extname(input).toLowerCase();
+  const ext = nodePath().extname(input).toLowerCase();
   switch (ext) {
     case ".pdf":
       return "pdf";

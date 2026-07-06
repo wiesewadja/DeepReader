@@ -2,11 +2,9 @@
  * Proposition Indexer - Extract atomic fact cards per chapter
  */
 
-import * as fs from "fs/promises";
-import * as path from "path";
-import type { 
-  PropositionCard, 
-  PropositionsData, 
+import type {
+  PropositionCard,
+  PropositionsData,
   PropositionIndexOptions,
   PropositionIndexResult,
   CardType,
@@ -16,6 +14,7 @@ import type {
 import { log as piLog } from "./core/logger.js";
 import { chatGPT } from "./llm/client.js";
 import { getBookDir } from "./paths.js";
+import { nodeFsPromises, nodePath } from "../utils/node-compat.js";
 import type { EmbeddingOptions } from "./vault/types.js";
 import {
   generateEmbedding,
@@ -332,6 +331,7 @@ export async function extractCardsFromChapter(
 export async function indexPropositions(
   options: PropositionIndexOptions
 ): Promise<PropositionIndexResult> {
+  const path = nodePath();
   const {
     bookId,
     vaultPath,
@@ -406,6 +406,7 @@ export async function indexPropositions(
     model: llm.model,
   };
 
+  const fs = nodeFsPromises();
   await fs.writeFile(
     path.join(indexDir, "propositions.json"),
     JSON.stringify(propositionsData, null, 2),
@@ -450,6 +451,7 @@ function collectChapters(
 }
 
 async function readChapterContent(mdPath: string): Promise<string> {
+  const fs = nodeFsPromises();
   const content = await fs.readFile(mdPath, "utf-8");
 
   let cleaned = content.replace(/^---[\s\S]*?---\n/, "");
@@ -466,6 +468,8 @@ async function vectorizeCards(
   indexDir: string,
   embedding: EmbeddingOptions
 ): Promise<void> {
+  const path = nodePath();
+  const fs = nodeFsPromises();
   // 截断保护：BGE 系列有 512 token 限制，其他模型不需要
   const modelName = (embedding.model || "").toLowerCase();
   const isBGE = modelName.includes("bge");

@@ -3,9 +3,8 @@
  * Functions for building tree structures from markdown documents
  */
 
-import * as fs from "fs/promises";
-import * as path from "path";
 import { apiLog } from "../../utils/logger.js";
+import { nodePath, nodeFsPromises } from "../../utils/node-compat.js";
 import { log as piLog } from "../core/logger";
 import * as prompts from "../core/prompts";
 import type { TreeNode, MarkdownOptions, PageIndexResult } from "../core/types";
@@ -413,7 +412,7 @@ export async function mdToTree(
   };
 
   // Read markdown file
-  const markdownContent = await fs.readFile(mdPath, 'utf-8');
+  const markdownContent = await nodeFsPromises().readFile(mdPath, 'utf-8');
 
   piLog("Extracting nodes from markdown...");
   const { nodeList, lines: markdownLines } = extractNodesFromMarkdown(markdownContent);
@@ -479,7 +478,7 @@ export async function mdToTree(
       });
 
       return {
-        docName: path.basename(mdPath, path.extname(mdPath)),
+        docName: nodePath().basename(mdPath, nodePath().extname(mdPath)),
         docDescription,
         structure: treeStructure,
       };
@@ -493,7 +492,7 @@ export async function mdToTree(
   }
 
   return {
-    docName: path.basename(mdPath, path.extname(mdPath)),
+    docName: nodePath().basename(mdPath, nodePath().extname(mdPath)),
     structure: treeStructure,
   };
 }

@@ -5,10 +5,10 @@
  * Node.js compatible version
  */
 
-import * as path from "path";
-import { nodeFs } from "../../utils/node-fs.js";
 import type { App } from "obsidian";
 import { vaultRead } from "../../utils/mobile-fs.js";
+import { nodePath } from "../../utils/node-compat.js";
+import { nodeFs } from "../../utils/node-fs.js";
 import { safeRequest } from "../../utils/safe-request.js";
 import { cosineSimilarity } from "../core/utils";
 import type {
@@ -159,6 +159,7 @@ const CATALOG_FILE = "catalog.json";
 export async function loadCatalog(
   pageindexPath: string
 ): Promise<CatalogMeta> {
+  const path = nodePath();
   const catalogPath = path.join(pageindexPath, CATALOG_FILE);
   try {
     const content = await nodeFs().readFile(catalogPath, "utf-8");
@@ -176,6 +177,7 @@ export async function updateCatalogEntry(
   bookId: string,
   entry: CatalogBookEntry
 ): Promise<void> {
+  const path = nodePath();
   const catalog = await loadCatalog(pageindexPath);
   catalog.books[bookId] = entry;
   const catalogPath = path.join(pageindexPath, CATALOG_FILE);
@@ -190,6 +192,7 @@ export async function removeCatalogEntry(
   pageindexPath: string,
   bookId: string
 ): Promise<void> {
+  const path = nodePath();
   const catalog = await loadCatalog(pageindexPath);
   delete catalog.books[bookId];
   const catalogPath = path.join(pageindexPath, CATALOG_FILE);

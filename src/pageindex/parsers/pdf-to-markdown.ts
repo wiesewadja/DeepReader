@@ -5,10 +5,9 @@
  * then classifies text into heading levels based on relative font sizes.
  */
 
-import * as fs from "fs/promises";
-import { resolve } from "path";
-
 // ─── pdfjs-dist lazy loader ────────────────────────────────────────────────────
+
+import { nodeFsPromises, nodePath } from "../../utils/node-compat.js";
 
 type PdfjsModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 
@@ -19,7 +18,8 @@ async function getPdfjs(): Promise<PdfjsModule | null> {
   try {
     const mod = await import("pdfjs-dist/legacy/build/pdf.mjs");
     // Set worker to actual file path (required for Bun runtime)
-    const workerPath = resolve(
+    const path = nodePath();
+    const workerPath = path.resolve(
       typeof __dirname !== "undefined"
         ? __dirname
         : ".",
@@ -442,6 +442,7 @@ export async function convertPdfToMarkdown(
   input: string | Buffer | ArrayBuffer | Uint8Array,
   options: ConversionOptions = {}
 ): Promise<string> {
+  const fs = nodeFsPromises();
   const pdfjs = await getPdfjs();
   if (!pdfjs) {
     throw new Error("pdfjs-dist is not available. Cannot extract font-based Markdown.");

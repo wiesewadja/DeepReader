@@ -12,8 +12,8 @@
  * Stage 8: Matched block location (block_id level)
  */
 
-import * as path from "path";
 import { nodeFs } from "../utils/node-fs.js";
+import { nodePath } from "../utils/node-compat.js";
 import type { App } from "obsidian";
 import { vaultRead, vaultExists, vaultList, joinPath } from "../utils/mobile-fs.js";
 import { safeRequest } from "../utils/safe-request.js";
@@ -28,6 +28,7 @@ import type {
   TreeNode,
   PropositionCard,
 } from "./book-types.js";
+
 import { IndexErrorCode, IndexError } from "./book-types.js";
 import { log as piLog } from "./core/logger";
 import { PAGEINDEX_DIR, getPageindexDir } from "./paths.js";
@@ -69,9 +70,9 @@ function touchBookCache(indexDir: string, app?: App) {
     if (evictedDir) {
       indexCache.delete(`tree:${evictedDir}`);
       indexCache.delete(`bm25:${evictedDir}`);
-      const vectorsPath = app 
-        ? joinPath(evictedDir, "vectors.jsonl") 
-        : path.join(evictedDir, "vectors.jsonl");
+      const vectorsPath = app
+        ? joinPath(evictedDir, "vectors.jsonl")
+        : nodePath().join(evictedDir, "vectors.jsonl");
       clearVectorCache(vectorsPath);
       piLog(`[book-search-v2] LRU cache evicted book: ${evictedDir}`);
     }
@@ -122,14 +123,14 @@ export async function searchBookV2(
       );
     }
   }
-  const vaultPath = options.vaultPath || path.dirname(options.filePath);
-  const topK = options.topK || 5;
   const app = options.app;
+  const vaultPath = options.vaultPath || nodePath().dirname(options.filePath);
+  const topK = options.topK || 5;
 
   // indexDir: vault-relative when app provided, absolute path otherwise
   const indexDir = app
     ? joinPath(PAGEINDEX_DIR, bookId)
-    : path.join(vaultPath, getPageindexDir(), bookId);
+    : nodePath().join(vaultPath, getPageindexDir(), bookId);
 
   // Validate index exists
   try {
@@ -162,7 +163,7 @@ export async function searchBookV2(
 
   // Load BM25 index (cached)
   const bm25Index = await getCached(`bm25:${indexDir}`, async () => {
-    const bm25Path = app ? joinPath(indexDir, "bm25.json") : path.join(indexDir, "bm25.json");
+    const bm25Path = app ? joinPath(indexDir, "bm25.json") : nodePath().join(indexDir, "bm25.json");
     const bm25Content = app
       ? await vaultRead(app, bm25Path)
       : await nodeFs().readFile(bm25Path, "utf-8");
@@ -350,7 +351,7 @@ export async function searchBookV2(
   if (chunkHits.size > 0) {
     try {
       const { readChunkTexts } = await import("./vault/vectors.js");
-      const chunksPath = app ? joinPath(indexDir, "chunks.jsonl") : path.join(indexDir, "chunks.jsonl");
+      const chunksPath = app ? joinPath(indexDir, "chunks.jsonl") : nodePath().join(indexDir, "chunks.jsonl");
       const chunkTexts = await readChunkTexts(chunksPath, app);
       chunkTextMap = new Map(chunkTexts.map(c => [c.chunkId, c.text]));
     } catch {
@@ -414,7 +415,7 @@ export async function searchBookV2(
 
 export async function loadTreeJson(indexDir: string, app?: App): Promise<TreeData | null> {
   try {
-    const treePath = app ? joinPath(indexDir, "tree.json") : path.join(indexDir, "tree.json");
+    const treePath = app ? joinPath(indexDir, "tree.json") : nodePath().join(indexDir, "tree.json");
     const content = app
       ? await vaultRead(app, treePath)
       : await nodeFs().readFile(treePath, "utf-8");
@@ -521,7 +522,7 @@ async function asyncVectorSearch(
   vector: number[] | null;
 }> {
   try {
-    const vectorsPath = app ? joinPath(indexDir, "vectors.jsonl") : path.join(indexDir, "vectors.jsonl");
+    const vectorsPath = app ? joinPath(indexDir, "vectors.jsonl") : nodePath().join(indexDir, "vectors.jsonl");
     const vectorResults = await cosineSearchJsonl(
       vectorsPath,
       queryVector,
@@ -657,6 +658,7 @@ async function resolveExportDirName(
 
   // Desktop path: absolute fs
   if (!vaultPath) return null;
+  const path = nodePath();
   const deepReaderPath = path.join(vaultPath, "DeepReader");
 
   if (staticName) {
@@ -717,7 +719,7 @@ async function crossEncoderRerank(
         const fileRel = joinPath("DeepReader", exportDir, fileName);
         content = await vaultRead(app, fileRel);
       } else if (vaultPath) {
-        const fullPath = path.join(vaultPath, "DeepReader", exportDir, fileName);
+        const fullPath = nodePath().join(vaultPath, "DeepReader", exportDir, fileName);
         content = await nodeFs().readFile(fullPath, "utf-8");
       } else {
         continue;

@@ -2,10 +2,8 @@
  * Book indexer - orchestrates PDF/EPUB indexing workflow
  */
 
-import * as crypto from "crypto";
-import * as fs from "fs/promises";
-import * as path from "path";
 import { apiLog } from "../utils/logger.js";
+import { nodeCrypto, nodeFsPromises, nodePath } from "../utils/node-compat.js";
 import { safeRequest } from "../utils/safe-request.js";
 import { buildBM25Index } from "./bm25.js";
 import type {
@@ -42,6 +40,8 @@ const MIGRATION_MARKER = ".migrated-content-id-v1";
  * Content-based ID is stable regardless of file path changes.
  */
 export async function generateBookId(filePath: string): Promise<string> {
+  const fs = nodeFsPromises();
+  const crypto = nodeCrypto();
   const stat = await fs.stat(filePath);
   if (stat.size === 0) {
     throw new Error(`Cannot generate bookId: file is empty (${filePath})`);
@@ -65,6 +65,7 @@ export async function generateBookId(filePath: string): Promise<string> {
  * Used for journal indexes and migration detection.
  */
 export function generateBookIdFromPath(filePath: string): string {
+  const crypto = nodeCrypto();
   return crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
 }
 
@@ -74,6 +75,8 @@ export function generateBookIdFromPath(filePath: string): string {
  * @param vaultPath - Vault root path (where .pageindex directory is located)
  */
 export async function isBookIndexed(filePath: string, vaultPath: string): Promise<boolean> {
+  const fs = nodeFsPromises();
+  const path = nodePath();
   let bookId: string;
   try {
     bookId = await generateBookId(filePath);
@@ -99,6 +102,7 @@ export async function isBookIndexed(filePath: string, vaultPath: string): Promis
  * @param vaultPath - Vault root path (where .pageindex directory is located)
  */
 export async function deleteBookIndex(filePath: string, vaultPath: string): Promise<void> {
+  const fs = nodeFsPromises();
   let bookId: string;
   try {
     bookId = await generateBookId(filePath);
@@ -120,6 +124,8 @@ export async function deleteBookIndex(filePath: string, vaultPath: string): Prom
  * @param options.outputDir - Vault root path (where .pageindex directory will be created)
  */
 export async function indexBook(options: BookIndexOptions): Promise<BookIndexResult> {
+  const fs = nodeFsPromises();
+  const path = nodePath();
   // Validate file exists
   try {
     await fs.access(options.filePath);
@@ -805,6 +811,7 @@ async function buildBookMeta(
   embedding?: EmbeddingOptions,
   author?: string
 ): Promise<BookMeta> {
+  const path = nodePath();
   const title = parseResult.docName || parseResult.structure[0]?.title || "Unknown";
   // Extract the export directory name from bookDir (last path segment)
   const exportName = path.basename(bookDir);
@@ -843,6 +850,8 @@ async function vectorizeAllLevels(
   onProgress?: (msg: string) => void,
   onEmbedCall?: (info: { model: string; durationMs: number; inputTokens?: number; batchSize: number }) => void
 ): Promise<{ dimensions: number; nodeCount: number } | undefined> {
+  const fs = nodeFsPromises();
+  const path = nodePath();
   const { generateEmbedding, generateEmbeddings, writeVectorJsonl, writeChunkTexts } =
     await import("./vault/vectors.js");
   const { splitByBlockIds, mergeToChunks } = await import("./chunker.js");
@@ -1180,6 +1189,8 @@ async function downloadImages(
   imagesDir: string,
   onProgress: (done: number, total: number) => void
 ): Promise<void> {
+  const fs = nodeFsPromises();
+  const path = nodePath();
   let completed = 0;
 
   for (let i = 0; i < images.length; i += CONCURRENT_DOWNLOADS) {
@@ -1215,6 +1226,8 @@ async function downloadImages(
  * @returns Number of indexes migrated
  */
 export async function migrateBookIndexes(vaultPath: string): Promise<number> {
+  const fs = nodeFsPromises();
+  const path = nodePath();
   const pageindexDir = getPageindexRoot(vaultPath);
   const markerPath = path.join(pageindexDir, MIGRATION_MARKER);
 

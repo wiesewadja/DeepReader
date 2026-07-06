@@ -2,8 +2,8 @@
  * Proposition Search - Retrieve atomic fact cards with parallel fusion
  */
 
-import * as path from "path";
 import { nodeFs } from "../utils/node-fs.js";
+import { nodePath } from "../utils/node-compat.js";
 import type { App } from 'obsidian';
 import { vaultRead, joinPath } from '../utils/mobile-fs.js';
 import { searchBM25 } from "./bm25.js";
@@ -25,7 +25,7 @@ export async function loadPropositions(
   try {
     const content = app
       ? await vaultRead(app, joinPath(indexDir, 'propositions.json'))
-      : await nodeFs().readFile(path.join(indexDir, "propositions.json"), "utf-8");
+      : await nodeFs().readFile(nodePath().join(indexDir, "propositions.json"), "utf-8");
     return JSON.parse(content) as PropositionsData;
   } catch {
     return null;
@@ -39,7 +39,7 @@ export async function loadPropVectorStore(
   try {
     const content = app
       ? await vaultRead(app, joinPath(indexDir, 'prop-vectors.jsonl'))
-      : await nodeFs().readFile(path.join(indexDir, "prop-vectors.jsonl"), "utf-8");
+      : await nodeFs().readFile(nodePath().join(indexDir, "prop-vectors.jsonl"), "utf-8");
     const map = new Map<string, number[]>();
 
     for (const line of content.split("\n")) {
@@ -65,7 +65,7 @@ export async function searchPropositions(
 ): Promise<PropositionMatch[]> {
   const indexDir = app
     ? joinPath(PAGEINDEX_DIR, bookId)
-    : path.join(vaultPath, getPageindexDir(), bookId);
+    : nodePath().join(vaultPath, getPageindexDir(), bookId);
 
   const propositions = await loadPropositions(indexDir, app);
   const vectorMap = await loadPropVectorStore(indexDir, app);
@@ -116,7 +116,7 @@ export async function searchWithPropositions(
 
   const indexDir = app
     ? joinPath(PAGEINDEX_DIR, bookId)
-    : path.join(vaultPath, getPageindexDir(), bookId);
+    : nodePath().join(vaultPath, getPageindexDir(), bookId);
 
   const [propResults, bm25Results] = await Promise.all([
     searchPropositions(query, bookId, vaultPath, embedding, topK * 2, app),
@@ -179,14 +179,14 @@ async function searchBM25Light(
   try {
     const content = app
       ? await vaultRead(app, joinPath(indexDir, 'bm25.json'))
-      : await nodeFs().readFile(path.join(indexDir, "bm25.json"), "utf-8");
+      : await nodeFs().readFile(nodePath().join(indexDir, "bm25.json"), "utf-8");
     const bm25Data = JSON.parse(content) as BM25Data;
 
     const results = searchBM25(query, bm25Data, topK);
 
     const treeContent = app
       ? await vaultRead(app, joinPath(indexDir, 'tree.json'))
-      : await nodeFs().readFile(path.join(indexDir, "tree.json"), "utf-8");
+      : await nodeFs().readFile(nodePath().join(indexDir, "tree.json"), "utf-8");
     const treeData = JSON.parse(treeContent);
     const nodeFileMap = treeData.nodeFileMap || {};
 

@@ -4,16 +4,10 @@
  * Based on obsidian-epub-importer implementation
  */
 
-import { nodeAdmZip, type AdmZip } from "../../utils/node-compat.js";
+import { nodeAdmZip, nodePath, type AdmZip } from "../../utils/node-compat.js";
 import TurndownService from "turndown";
 import { countTokens, cleanTitle } from "../core/utils";
 import type { PdfPage } from "./pdf";
-
-/** 惰性加载 path，避免移动端加载期触发 Node 模块 */
-function getPath(): typeof import("path") {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require("path");
-}
 
 export interface EpubCoverImage {
   /** File name with extension (e.g., "cover.jpg") */
@@ -621,7 +615,7 @@ function groupNcxEntriesByFile(
   const result = new Map<string, NcxTocEntry[]>();
   for (const entry of entries) {
     const [file] = entry.src.split("#");
-    const fullPath = getPath().join(basePath, file).replace(/\\/g, "/");
+    const fullPath = nodePath().join(basePath, file).replace(/\\/g, "/");
     if (!result.has(fullPath)) result.set(fullPath, []);
     result.get(fullPath)!.push(entry);
   }
@@ -751,7 +745,7 @@ export async function parseEpub(
   }
 
   const opfXml = opfEntry.getData().toString("utf-8");
-  const basePath = getPath().dirname(opfPath);
+  const basePath = nodePath().dirname(opfPath);
 
   // 清理 XML 注释：sax 严格解析器要求注释内部不能出现 "--" 且必须正确闭合。
   // 很多中文 EPUB 的 OPF 文件含有格式不规范的注释（未闭合、或内部含 "--"），
@@ -798,7 +792,7 @@ export async function parseEpub(
     const id = item.$.id;
     const href = item.$.href;
     if (id && href) {
-      manifestMap.set(id, getPath().join(basePath, href).replace(/\\/g, "/"));
+      manifestMap.set(id, nodePath().join(basePath, href).replace(/\\/g, "/"));
     }
   }
 
@@ -830,7 +824,7 @@ export async function parseEpub(
     if (coverHref) {
       const coverEntry = zip.getEntry(coverHref);
       if (coverEntry) {
-        const ext = getPath().extname(coverHref).toLowerCase();
+        const ext = nodePath().extname(coverHref).toLowerCase();
         const mediaTypes: Record<string, string> = {
           ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
           ".png": "image/png", ".gif": "image/gif",
@@ -855,8 +849,8 @@ export async function parseEpub(
       ref.$.type === "cover" || ref.$.type === "other.ms-coverimage"
     );
     if (coverGuideRef?.$.href) {
-      const guideHref = getPath().join(basePath, coverGuideRef.$.href).replace(/\\/g, "/");
-      const ext = getPath().extname(guideHref).toLowerCase();
+      const guideHref = nodePath().join(basePath, coverGuideRef.$.href).replace(/\\/g, "/");
+      const ext = nodePath().extname(guideHref).toLowerCase();
       const imageExts = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"];
       if (imageExts.includes(ext)) {
         const guideEntry = zip.getEntry(guideHref);
@@ -887,7 +881,7 @@ export async function parseEpub(
         if (coverHref) {
           const coverEntry = zip.getEntry(coverHref);
           if (coverEntry) {
-            const ext = getPath().extname(coverHref).toLowerCase();
+            const ext = nodePath().extname(coverHref).toLowerCase();
             coverImage = {
               name: `cover${ext || ".jpg"}`,
               data: coverEntry.getData(),

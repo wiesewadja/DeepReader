@@ -1,16 +1,18 @@
 /**
  * pageindex-ocr: OCR module for scanned PDFs
  * Uses system poppler tools for PDF→image conversion and GLM-OCR for text extraction
- * 
+ *
  * Node.js compatible version - uses native fetch API (no openai SDK dependency)
  */
 
-import { spawn } from "child_process";
-import { existsSync } from "fs";
-import * as fs from "fs/promises";
-import * as os from "os";
-import * as path from "path";
 import { apiLog } from "../../utils/logger.js";
+import {
+  nodeChildProcess,
+  nodeFsPromises,
+  nodeFsSync,
+  nodeOs,
+  nodePath,
+} from "../../utils/node-compat.js";
 import { safeRequest } from "../../utils/safe-request.js";
 import { log as piLog } from "../core/logger";
 import { countTokens } from "../core/utils";
@@ -24,6 +26,8 @@ import type { PdfPage } from "./pdf";
 
 /** 解析 poppler 工具可执行文件路径（兼容 macOS Electron renderer 进程） */
 function popplerBin(name: string): string {
+	const path = nodePath();
+	const { existsSync } = nodeFsSync();
 	if (process.platform !== "darwin") return name;
 	for (const dir of ["/opt/homebrew/bin", "/usr/local/bin"]) {
 		const full = path.join(dir, name);
@@ -71,6 +75,7 @@ interface LayoutParsingResponse {
  * Check if poppler tools are installed on the system
  */
 export async function checkPopplerInstalled(): Promise<boolean> {
+  const { spawn } = nodeChildProcess();
   const cmd = popplerBin("pdftocairo");
   return new Promise((resolve) => {
     const child = spawn(cmd, ["-v"], { stdio: "ignore" });
@@ -86,6 +91,7 @@ export async function checkPopplerInstalled(): Promise<boolean> {
  * Get PDF page count using pdfinfo
  */
 async function getPdfPageCount(pdfPath: string): Promise<number> {
+  const { spawn } = nodeChildProcess();
   return new Promise((resolve) => {
     const child = spawn(popplerBin("pdfinfo"), [pdfPath], { stdio: ["ignore", "pipe", "ignore"] });
     let stdout = "";
@@ -106,6 +112,10 @@ export async function pdfToImages(
   pdfPath: string,
   options: Pick<OcrOptions, "imageFormat" | "imageDpi"> = {}
 ): Promise<string[]> {
+  const { spawn } = nodeChildProcess();
+  const fs = nodeFsPromises();
+  const os = nodeOs();
+  const path = nodePath();
   const format = options.imageFormat || DEFAULT_OCR_OPTIONS.imageFormat;
   const dpi = options.imageDpi || DEFAULT_OCR_OPTIONS.imageDpi;
 
@@ -160,6 +170,9 @@ export async function pdfBufferToImages(
   pdfBuffer: Buffer | ArrayBuffer,
   options: Pick<OcrOptions, "imageFormat" | "imageDpi"> = {}
 ): Promise<string[]> {
+  const fs = nodeFsPromises();
+  const os = nodeOs();
+  const path = nodePath();
   // Write buffer to temp file
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "pageindex-pdf-"));
   const tempPdfPath = path.join(tempDir, "input.pdf");
@@ -183,6 +196,7 @@ export async function ocrImage(
   imagePath: string,
   options: OcrOptions = {}
 ): Promise<string> {
+  const fs = nodeFsPromises();
   const model = options.ocrModel || DEFAULT_OCR_OPTIONS.ocrModel;
 
   if (!options.apiKey) {
@@ -267,6 +281,7 @@ export async function parsePdfWithOcr(
   input: string | Buffer | ArrayBuffer,
   options: OcrOptions = {}
 ): Promise<{ pages: PdfPage[]; tempDir?: string }> {
+  const path = nodePath();
   piLog("[OCR Mode] Converting PDF to images...");
 
   let imagePaths: string[];
@@ -311,7 +326,9 @@ async function cleanupTempImages(imagePaths: string[]): Promise<void> {
 
   const firstPath = imagePaths[0];
   if (!firstPath) return;
-  
+
+  const fs = nodeFsPromises();
+  const path = nodePath();
   const tempDir = path.dirname(firstPath);
 
   // Delete all images

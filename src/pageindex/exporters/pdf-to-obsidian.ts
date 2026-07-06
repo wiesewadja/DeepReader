@@ -10,10 +10,11 @@
  *     → 按 leaf 节点拆分为 Obsidian 笔记
  */
 
-import * as fs from "fs";
-import * as path from "path";
+
+import { nodeFsSync, nodePath } from "../../utils/node-compat.js";
 import { log as piLog } from "../core/logger";
 import type { PageIndexResult, TreeNode } from "../core/types";
+
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -218,8 +219,8 @@ export async function exportPdfToObsidian(
 
   // 3. 输出目录（使用 exportName 统一命名）
   const dirName = options.exportName || sanitizeFileName(docName);
-  const bookDir = path.join(options.outputDir, dirName);
-  fs.mkdirSync(bookDir, { recursive: true });
+  const bookDir = nodePath().join(options.outputDir, dirName);
+  nodeFsSync().mkdirSync(bookDir, { recursive: true });
 
   // 4. 生成笔记
   piLog(`[pdf-to-obsidian] Step 2: 生成 ${sections.length} 个笔记...`);
@@ -228,7 +229,7 @@ export async function exportPdfToObsidian(
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];
     const fileName = sectionFileNames[i];
-    const filePath = path.join(bookDir, `${fileName}.md`);
+    const filePath = nodePath().join(bookDir, `${fileName}.md`);
 
     let content: string;
 
@@ -307,7 +308,7 @@ export async function exportPdfToObsidian(
 
   // 5. MOC
   const mocName = options.mocName || `${dirName} - MOC`;
-  const mocPath = path.join(bookDir, `${mocName}.md`);
+  const mocPath = nodePath().join(bookDir, `${mocName}.md`);
 
   // MOC frontmatter
   const mocFrontmatter: Record<string, unknown> = {
@@ -342,9 +343,9 @@ export async function exportPdfToObsidian(
   moc += `\n---\n\n*由 PageIndex 自动生成*\n`;
 
   // 6. 写入
-  fs.writeFileSync(mocPath, moc);
+  nodeFsSync().writeFileSync(mocPath, moc);
   for (const note of notes) {
-    fs.writeFileSync(note.filePath, `${generateFrontmatter(note.frontmatter)}\n${note.content}`);
+    nodeFsSync().writeFileSync(note.filePath, `${generateFrontmatter(note.frontmatter)}\n${note.content}`);
   }
 
   // 7. 构建 nodeFileMap（不再写入 tree.json，由 book-indexer 统一写到 .pageindex/）

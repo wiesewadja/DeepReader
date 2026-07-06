@@ -3,8 +3,8 @@
  * Uses MinerU cloud API for PDF parsing
  */
 
-import * as fs from "fs/promises";
 import { MineruClient } from "../../services/mineru-api";
+import { nodeFsPromises } from "../../utils/node-compat.js";
 import { log as piLog } from "../core/logger";
 import type { PageContent } from "../core/types";
 import { countTokens } from "../core/utils";
@@ -23,6 +23,7 @@ export async function parsePdf(
   token?: string,
   onProgress?: (message: string) => void
 ): Promise<MineruPdfResult> {
+  const fs = nodeFsPromises();
   let dataBuffer: Buffer;
   if (typeof input === "string") {
     dataBuffer = await fs.readFile(input);

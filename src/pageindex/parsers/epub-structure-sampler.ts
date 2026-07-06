@@ -15,8 +15,10 @@
  * for most cases.
  */
 
-import * as path from "path";
+
 import type AdmZip from "adm-zip";
+import { nodePath } from "../../utils/node-compat.js";
+
 
 // ─── Strategy interface ─────────────────────────────────────────
 
@@ -77,7 +79,7 @@ export function extractEpubStructureSample(zip: AdmZip): string {
   for (const id of spineIds) {
     const href = manifestMap.get(id);
     if (!href) continue;
-    const fullPath = path.join(basePath, href).replace(/\\/g, "/");
+    const fullPath = nodePath().join(basePath, href).replace(/\\/g, "/");
     const entry = zip.getEntry(fullPath);
     if (!entry) continue;
     const html = entry.getData().toString("utf-8");
@@ -141,7 +143,7 @@ export function inferStrategyFromZip(zip: AdmZip): EpubParsingStrategy {
   for (const id of spineIds) {
     const href = manifestMap.get(id);
     if (!href) continue;
-    const fullPath = path.join(basePath, href).replace(/\\/g, "/");
+    const fullPath = nodePath().join(basePath, href).replace(/\\/g, "/");
     const entry = zip.getEntry(fullPath);
     if (!entry) continue;
     const html = entry.getData().toString("utf-8");
@@ -315,7 +317,7 @@ function parseOpfMeta(zip: AdmZip): {
     .getData()
     .toString("utf-8");
   const opfPath = containerXml.match(/full-path=["']([^"']+)["']/)![1];
-  const basePath = path.dirname(opfPath);
+  const basePath = nodePath().dirname(opfPath);
   const opfXml = zip.getEntry(opfPath)!.getData().toString("utf-8");
   return { opfPath, basePath, opfXml };
 }
