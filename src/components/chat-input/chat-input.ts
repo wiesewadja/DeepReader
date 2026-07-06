@@ -219,17 +219,9 @@ export class ChatInput {
 
 		// 首次使用时懒创建 VoiceOverlay
 		if (!this.voiceOverlay) {
-			this.voiceOverlay = new VoiceOverlay(this.inputContainer, {
-				onCancel: () => this.options.onVoiceCancel?.(),
-				onSend: () => {
-					// 停止录音并直接发送
-					this.options.onVoiceStop?.();
-					// 标记为直接发送
-					this.pendingVoiceSend = true;
-				},
-			});
+			this.voiceOverlay = new VoiceOverlay(this.inputContainer);
 		}
-		this.voiceOverlay.showRecording();
+		this.voiceOverlay.show('正在聆听...', true);
 	}
 
 	private removeVoiceOverlay(): void {
