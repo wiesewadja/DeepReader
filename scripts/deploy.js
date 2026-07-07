@@ -117,8 +117,9 @@ function getDevVersion(baseVersion) {
     // 忽略
   }
   // feat/async-visualizer → async-visualizer；main → main
+  // 前缀清单对齐 .project-rules/09-branching.md 的分支命名（feat|fix|refactor|perf|docs|test|chore）
   const feature = branch
-    .replace(/^(feat|fix|refactor|chore|docs|test|release)\//, '')
+    .replace(/^(feat|fix|refactor|perf|docs|test|chore)\//, '')
     .replace(/[^a-zA-Z0-9-]/g, '')
     .slice(0, 30) || 'main';
   const now = new Date();
