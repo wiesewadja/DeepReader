@@ -171,6 +171,14 @@ export class ReadingModeService implements ScrollPatchService {
 		return this.paginationCoordinator.getCurrentPage();
 	}
 
+	/**
+	 * 暴露底层 PagePaginator 实例（恢复 readingModeService.paginator 对外 API）。
+	 * I5 将分页逻辑迁入 PaginationCoordinator 时误删了该字段，导致 e2e reading-mode-pagination 步骤失败。
+	 */
+	get paginator(): PagePaginator | null {
+		return this.paginationCoordinator.getPaginator();
+	}
+
 	getPageParagraphs(pageNumber?: number): { element: HTMLElement; text: string }[] {
 		return this.paginationCoordinator.getPageParagraphs(pageNumber);
 	}
