@@ -7,6 +7,7 @@
  */
 
 import { evalObsidian, waitForSelector } from '../../smoke/lib/obsidian-cli.mjs';
+import { createStepRecorder } from '../steps.mjs';
 
 const PLUGIN_ID = 'deepreader-dev';
 const BOOK_ID = 'ee090e29';
@@ -22,16 +23,7 @@ export default {
 	},
 
 	async run({ log }) {
-		const steps = [];
-
-		function pass(name, duration, detail) {
-			steps.push({ name, status: 'pass', duration, detail });
-			log?.info?.(`  ✓ ${name} (${duration}ms)${detail ? '  ' + detail : ''}`);
-		}
-
-		function fail(name, duration, error) {
-			steps.push({ name, status: 'fail', duration, error: error.message });
-		}
+		const { steps, pass, fail } = createStepRecorder();
 
 		// 检查插件和索引
 		{
@@ -55,7 +47,7 @@ export default {
 				pass('基线检查', Date.now() - t0, `索引OK, 章节存在`);
 			} catch (e) {
 				fail('基线检查', Date.now() - t0, e);
-				return { steps };
+				return { steps, live: true };
 			}
 		}
 
@@ -84,7 +76,7 @@ export default {
 				pass('打开章节并激活阅读模式', Date.now() - t0);
 			} catch (e) {
 				fail('打开章节并激活阅读模式', Date.now() - t0, e);
-				return { steps };
+				return { steps, live: true };
 			}
 		}
 
@@ -92,6 +84,7 @@ export default {
 		{
 			const t0 = Date.now();
 			let ready = false;
+			log?.warn?.('  等待阅读模式内容渲染…');
 			for (let i = 0; i < 14; i++) {
 				ready = await evalObsidian(`(() => {
 					const view = document.querySelector(".markdown-preview-view");
@@ -207,6 +200,6 @@ export default {
 			})()`);
 		}
 
-		return { steps };
+		return { steps, live: true };
 	},
 };

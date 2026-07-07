@@ -128,6 +128,7 @@ async function runOne(spec, ctx) {
 			status,
 			duration: Date.now() - start,
 			steps,
+			live: result?.live,
 			...(status === 'fail' ? { error: new Error(`${failedSteps.length} 个步骤失败`) } : {}),
 		};
 	} catch (err) {
@@ -179,6 +180,13 @@ function formatDur(ms) {
 	return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
+/** 终端着色（NO_COLOR 时退化为纯文本） */
+function paint(text, code) {
+	if (process.env.NO_COLOR) return text;
+	const C = { reset: '\x1b[0m', green: '\x1b[32m', red: '\x1b[31m', yellow: '\x1b[33m', gray: '\x1b[90m' };
+	return `${C[code]}${text}${C.reset}`;
+}
+
 /** 输出 spec 的内部步骤 */
 function reportSteps(steps) {
 	for (const step of steps) {
@@ -228,7 +236,8 @@ async function main() {
 
 	// baseline 前置检查 + 串行执行
 	const allResults = [];
-	for (const spec of specs) {
+	for (let i = 0; i < specs.length; i++) {
+		const spec = specs[i];
 		if (spec.requires && Object.keys(spec.requires).length > 0) {
 			const baseline = await checkRequires(spec.requires);
 			if (!baseline.ok) {
@@ -246,14 +255,18 @@ async function main() {
 			}
 		}
 
+		// 实时进度反馈：spec 开始时打印
+		const seq = `[${String(i + 1).padStart(2, '0')}/${String(specs.length).padStart(2, '0')}]`;
+		console.log(`${paint('▶', 'gray')} ${seq} ${spec.id}  ${spec.name}`);
+
 		const result = await runOne(spec, ctx);
 		allResults.push(result);
 
 		// spec 级别报告（自行格式化，适应长 ID）
 		reportSpec(result);
 
-		// 内部步骤报告
-		if (result.steps?.length > 0) {
+		// 内部步骤报告（live spec 已在运行时实时打印，避免重复）
+		if (result.steps?.length > 0 && !result.live) {
 			reportSteps(result.steps);
 		}
 	}

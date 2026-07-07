@@ -7,6 +7,7 @@
 
 import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
 import { countBySelector } from '../../smoke/lib/dom-query.mjs';
+import { createStepRecorder } from '../steps.mjs';
 
 export default {
 	id: 'reading-mode-pagination',
@@ -19,16 +20,7 @@ export default {
 	},
 
 	async run({ log }) {
-		const steps = [];
-
-		function pass(name, duration, detail) {
-			steps.push({ name, status: 'pass', duration, detail });
-			log?.info?.(`  ✓ ${name} (${duration}ms)${detail ? '  ' + detail : ''}`);
-		}
-
-		function fail(name, duration, error) {
-			steps.push({ name, status: 'fail', duration, error: error.message });
-		}
+		const { steps, pass, fail } = createStepRecorder();
 
 		// ===== Setup: plugin loaded =====
 		{
@@ -39,7 +31,7 @@ export default {
 				pass('plugin loaded', Date.now() - t0);
 			} catch (e) {
 				fail('plugin loaded', Date.now() - t0, e);
-				return { steps };
+				return { steps, live: true };
 			}
 		}
 
@@ -62,20 +54,22 @@ export default {
 				pass('activate reading mode', Date.now() - t0, `file=${result.file} style=${result.style}`);
 			} catch (e) {
 				fail('activate reading mode', Date.now() - t0, e);
-				return { steps };
+				return { steps, live: true };
 			}
 		}
 
 		// 等待阅读模式内容渲染（替换固定 1200ms 盲等；initPaginator 守卫依赖 .markdown-preview-content 出现）
 		{
-			let rendered = false;
-			for (let i = 0; i < 24; i++) {
+		let rendered = false;
+		log?.warn?.('  等待阅读模式内容渲染…');
+		for (let i = 0; i < 24; i++) {
 				rendered = await evalObsidian(`(() => {
 					const c = document.querySelector(".markdown-preview-content");
 					const svc = app.plugins.plugins["deepreader-dev"].readingModeService;
 					return (!!(c && c.querySelector("p,li,h1,h2,h3,h4"))) || !!svc.paginator;
 				})()`);
 				if (rendered) break;
+				if (i % 6 === 5) log?.warn?.(`    渲染等待中… (${(i + 1) * 0.5}s)`);
 				await new Promise(r => setTimeout(r, 500));
 			}
 			if (!rendered) {
@@ -170,6 +164,6 @@ export default {
 			}
 		}
 
-		return { steps };
+		return { steps, live: true };
 	},
 };
