@@ -43,29 +43,45 @@ export default {
 			}
 		}
 
-		// ===== activate reading mode =====
+		// ===== activate reading mode（显式锁定 paginated 风格）=====
 		{
 			const t0 = Date.now();
 			try {
 				const result = await evalObsidian(`(() => {
 					const svc = app.plugins.plugins["deepreader-dev"].readingModeService;
+					svc.setStyle("paginated");
 					svc.deactivate();
 					const leaf = app.workspace.getLeavesOfType("markdown")[0];
 					app.workspace.setActiveLeaf(leaf);
 					const file = leaf?.view?.file;
 					if (file) svc.activate(file);
-					return { isActive: svc.isActive, file: file?.path };
+					return { isActive: svc.isActive, file: file?.path, style: svc.getStyle() };
 				})()`);
 				if (!result?.isActive) throw new Error(`reading mode not activated (result=${JSON.stringify(result)})`);
-				pass('activate reading mode', Date.now() - t0, `file=${result.file}`);
+				if (result?.style !== 'paginated') throw new Error(`reading mode 风格非 paginated (style=${result?.style})`);
+				pass('activate reading mode', Date.now() - t0, `file=${result.file} style=${result.style}`);
 			} catch (e) {
 				fail('activate reading mode', Date.now() - t0, e);
 				return { steps };
 			}
 		}
 
-		// 等 paginator 渲染
-		await new Promise(r => setTimeout(r, 1200));
+		// 等待阅读模式内容渲染（替换固定 1200ms 盲等；initPaginator 守卫依赖 .markdown-preview-content 出现）
+		{
+			let rendered = false;
+			for (let i = 0; i < 24; i++) {
+				rendered = await evalObsidian(`(() => {
+					const c = document.querySelector(".markdown-preview-content");
+					const svc = app.plugins.plugins["deepreader-dev"].readingModeService;
+					return (!!(c && c.querySelector("p,li,h1,h2,h3,h4"))) || !!svc.paginator;
+				})()`);
+				if (rendered) break;
+				await new Promise(r => setTimeout(r, 500));
+			}
+			if (!rendered) {
+				log?.warn?.('内容未在 12s 内渲染（可能 e2e 激活路径未触发渲染，属环境/配置限制）');
+			}
+		}
 
 		// ===== paginator initialized =====
 		{
@@ -73,7 +89,7 @@ export default {
 			try {
 				const state = await evalObsidian(`JSON.stringify({
 					hasPaginator: !!app.plugins.plugins["deepreader-dev"].readingModeService.paginator,
-					style: app.plugins.plugins["deepreader-dev"].readingModeService.style,
+					style: app.plugins.plugins["deepreader-dev"].readingModeService.getStyle(),
 				})`);
 				const obj = JSON.parse(state);
 				if (!obj.hasPaginator) throw new Error('paginator not initialized');

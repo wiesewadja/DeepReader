@@ -88,6 +88,26 @@ export default {
 			}
 		}
 
+		// 等待阅读模式内容渲染（替换固定 1000ms 盲等，避免内容未渲染就选文本）
+		{
+			const t0 = Date.now();
+			let ready = false;
+			for (let i = 0; i < 14; i++) {
+				ready = await evalObsidian(`(() => {
+					const view = document.querySelector(".markdown-preview-view");
+					const p = view?.querySelector("p");
+					return !!(p && p.textContent.trim());
+				})()`);
+				if (ready) break;
+				await new Promise(r => setTimeout(r, 500));
+			}
+			if (ready) {
+				pass('等待内容渲染', Date.now() - t0);
+			} else {
+				fail('等待内容渲染', Date.now() - t0, new Error('12s 内未渲染出文本段落'));
+			}
+		}
+
 		// 程序化选中文本
 		{
 			const t0 = Date.now();

@@ -118,12 +118,17 @@ async function runOne(spec, ctx) {
 		// 提取内部 steps
 		const steps = result?.steps || [];
 
+		// 步骤里只要有失败，spec 即判 FAIL（否则会假 PASS 掩盖真实失败，见 e2e-light 框架缺陷）
+		const failedSteps = steps.filter(s => s.status === 'fail' || s.status === 'error');
+		const status = failedSteps.length > 0 ? 'fail' : 'pass';
+
 		return {
 			id: spec.id,
 			name: spec.name,
-			status: 'pass',
+			status,
 			duration: Date.now() - start,
 			steps,
+			...(status === 'fail' ? { error: new Error(`${failedSteps.length} 个步骤失败`) } : {}),
 		};
 	} catch (err) {
 		if (err && err.skip === true) {
