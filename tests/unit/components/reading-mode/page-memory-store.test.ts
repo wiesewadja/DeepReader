@@ -3,10 +3,15 @@ import { TFile, App } from "obsidian";
 import { PageMemoryStore } from "../../../../src/components/reading-mode/page-memory-store.js";
 
 // 持久化与 vault 路径助手：解析到与实现相同的绝对模块，便于 vi.mock 拦截
-vi.mock("../../../../src/pageindex/last-page-store.js", () => ({
-	loadLastPages: vi.fn(),
-	saveLastPages: vi.fn(),
-}));
+// 用 importOriginal 穿透真实常量（如 MAX_ENTRIES），保持测试与实现单一事实源
+vi.mock("../../../../src/pageindex/last-page-store.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../../../src/pageindex/last-page-store.js")>();
+	return {
+		...actual,
+		loadLastPages: vi.fn(),
+		saveLastPages: vi.fn(),
+	};
+});
 vi.mock("../../../../src/utils/mobile-fs.js", () => ({
 	getVaultPath: vi.fn(),
 }));
@@ -18,7 +23,7 @@ const VL = vi.mocked(loadLastPages);
 const GVP = vi.mocked(getVaultPath);
 const SLP = vi.mocked((await import("../../../../src/pageindex/last-page-store.js")).saveLastPages);
 
-function makeStore(totalPagesProvider: () => number = () => 0): {
+function makeStore(totalPagesProvider: () => number | undefined = () => undefined): {
 	store: PageMemoryStore;
 	app: InstanceType<typeof App>;
 } {

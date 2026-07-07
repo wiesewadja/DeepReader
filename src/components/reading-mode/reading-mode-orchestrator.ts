@@ -99,7 +99,7 @@ export class ReadingModeService implements ScrollPatchService {
 		this.app = app;
 		this.callbacks = callbacks || null;
 		this._pluginId = pluginId;
-		this.pageMemoryStore = new PageMemoryStore(app, pluginId, () => this.paginator?.getTotalPages() ?? 0);
+		this.pageMemoryStore = new PageMemoryStore(app, pluginId, () => this.paginator?.getTotalPages());
 	}
 
 	/**
@@ -1009,8 +1009,6 @@ export class ReadingModeService implements ScrollPatchService {
 	async openMostRecent(): Promise<boolean> {
 		const file = this.pageMemoryStore.resolveMostRecentFile();
 		if (!file) return false;
-
-		serviceLog("[ReadingMode] openMostRecent:", file.path);
 
 		// 如果文件已在某个 tab 中打开，激活该 tab
 		const existingLeaf = this.app.workspace

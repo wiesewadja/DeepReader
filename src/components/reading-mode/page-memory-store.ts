@@ -12,23 +12,23 @@
 
 import type { App } from "obsidian";
 import { TFile } from "obsidian";
-import { loadLastPages, saveLastPages } from "../../pageindex/last-page-store.js";
+import { loadLastPages, saveLastPages, MAX_ENTRIES } from "../../pageindex/last-page-store.js";
 import { getVaultPath } from "../../utils/mobile-fs.js";
 import { serviceLog } from "../../utils/logger.js";
-
-/** 与 last-page-store.MAX_ENTRIES 对齐，防止长期运行 map 无限增长 */
-const MAX_ENTRIES = 500;
 
 export class PageMemoryStore {
 	private app: App;
 	private pluginId: string;
-	/** 翻页上限来源（由 Shell 注入 paginator.getTotalPages），用于 recordPage 的越界守卫 */
-	private totalPagesProvider: () => number;
+	/**
+	 * 翻页上限来源（由 Shell 注入 paginator.getTotalPages），用于 recordPage 的越界守卫。
+	 * 返回 undefined 表示"无总页信息"，守卫静默放行——语义优于魔法值 0。
+	 */
+	private totalPagesProvider: () => number | undefined;
 	private pageMemory: Map<string, number> = new Map();
 	private lastReadAt: Map<string, number> = new Map();
 	private _saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-	constructor(app: App, pluginId: string, totalPagesProvider: () => number = () => 0) {
+	constructor(app: App, pluginId: string, totalPagesProvider: () => number | undefined = () => undefined) {
 		this.app = app;
 		this.pluginId = pluginId;
 		this.totalPagesProvider = totalPagesProvider;
@@ -59,23 +59,12 @@ export class PageMemoryStore {
 		if (!filePath) return;
 		if (typeof page !== "number" || !Number.isFinite(page) || page < 1) return;
 		const total = this.totalPagesProvider();
-		if (total > 0 && page > total) return;
+		if (total != null && page > total) return;
 		this.pageMemory.set(filePath, page);
 		this.lastReadAt.set(filePath, Date.now());
-		// 内存侧淘汰：与 last-page-store MAX_ENTRIES 同步
+		// 内存侧淘汰：与 last-page-store MAX_ENTRIES 共用同一常量，避免漂移
 		if (this.pageMemory.size > MAX_ENTRIES) {
-			let oldest: string | null = null;
-			let oldestTime = Infinity;
-			for (const [k, ts] of this.lastReadAt) {
-				if (ts < oldestTime) {
-					oldestTime = ts;
-					oldest = k;
-				}
-			}
-			if (oldest) {
-				this.pageMemory.delete(oldest);
-				this.lastReadAt.delete(oldest);
-			}
+			this.evictOldest();
 		}
 		this.scheduleSave();
 	}
@@ -113,15 +102,9 @@ export class PageMemoryStore {
 	 * 用于书库点击书籍时定位到上次阅读的章节。
 	 */
 	findMostRecentInFolder(folderPath: string): string | null {
-		let bestPath: string | null = null;
-		let bestTime = -1;
-		for (const [path, time] of this.lastReadAt) {
-			if (path.startsWith(folderPath + "/") && time > bestTime) {
-				bestTime = time;
-				bestPath = path;
-			}
-		}
-		return bestPath;
+		const prefix = folderPath + "/";
+		const best = this.pickMaxByTime((p) => p.startsWith(prefix));
+		return best?.path ?? null;
 	}
 
 	/**
@@ -129,13 +112,9 @@ export class PageMemoryStore {
 	 * @returns 最近阅读的时间戳，如果没有阅读记录返回 0
 	 */
 	getBookLastReadTime(folderPath: string): number {
-		let bestTime = 0;
-		for (const [path, time] of this.lastReadAt) {
-			if (path.startsWith(folderPath + "/") && time > bestTime) {
-				bestTime = time;
-			}
-		}
-		return bestTime;
+		const prefix = folderPath + "/";
+		const best = this.pickMaxByTime((p) => p.startsWith(prefix));
+		return best?.time ?? 0;
 	}
 
 	/**
@@ -146,37 +125,59 @@ export class PageMemoryStore {
 	}
 
 	/**
-	 * 从 lastReadAt 中找出最近阅读的文件路径（不含存在性校验）。
-	 * 供 resolveMostRecentFile 复用。
-	 */
-	private findMostRecentPath(): string | null {
-		let bestPath: string | null = null;
-		let bestTime = -1;
-		for (const [path, time] of this.lastReadAt) {
-			if (time > bestTime) {
-				bestTime = time;
-				bestPath = path;
-			}
-		}
-		return bestPath;
-	}
-
-	/**
 	 * 解析最近阅读的文件（含存在性校验 + 删除清理）。
 	 * 供 Shell.openMostRecent 调用：返回 TFile 或 null。
 	 */
 	resolveMostRecentFile(): TFile | null {
-		const path = this.findMostRecentPath();
-		if (!path) return null;
-		const file = this.app.vault.getAbstractFileByPath(path);
+		const best = this.pickMaxByTime(() => true);
+		if (!best) {
+			serviceLog("[ReadingMode] openMostRecent: no last-read history");
+			return null;
+		}
+		const file = this.app.vault.getAbstractFileByPath(best.path);
 		if (!(file instanceof TFile)) {
 			// 文件已被删除，清理历史
-			serviceLog("[ReadingMode] openMostRecent: file no longer exists:", path);
-			this.pageMemory.delete(path);
-			this.lastReadAt.delete(path);
+			serviceLog("[ReadingMode] openMostRecent: file no longer exists:", best.path);
+			this.pageMemory.delete(best.path);
+			this.lastReadAt.delete(best.path);
 			this.scheduleSave();
 			return null;
 		}
+		serviceLog("[ReadingMode] openMostRecent:", best.path, "at", best.time);
 		return file;
+	}
+
+	/**
+	 * 在 lastReadAt 中按 filter 找 time 最大的条目（无匹配返回 null）。
+	 * findMostRecentInFolder / getBookLastReadTime / resolveMostRecentFile 共用。
+	 */
+	private pickMaxByTime(filter: (path: string) => boolean): { path: string; time: number } | null {
+		let bestPath: string | null = null;
+		let bestTime = -Infinity;
+		for (const [path, time] of this.lastReadAt) {
+			if (filter(path) && time > bestTime) {
+				bestTime = time;
+				bestPath = path;
+			}
+		}
+		return bestPath === null ? null : { path: bestPath, time: bestTime };
+	}
+
+	/**
+	 * 淘汰最旧条目（容量超限时调用）。找最小 time 与 pickMaxByTime 方向相反，独立保留。
+	 */
+	private evictOldest(): void {
+		let oldestPath: string | null = null;
+		let oldestTime = Infinity;
+		for (const [k, ts] of this.lastReadAt) {
+			if (ts < oldestTime) {
+				oldestTime = ts;
+				oldestPath = k;
+			}
+		}
+		if (oldestPath) {
+			this.pageMemory.delete(oldestPath);
+			this.lastReadAt.delete(oldestPath);
+		}
 	}
 }
