@@ -14,31 +14,42 @@
  * 不持有 Paginator / DOM / 聊天态，保持单一职责。
  */
 
+import type { App } from "obsidian";
 import { TFile } from "obsidian";
 import type { ChapterNavigation } from "./chapter-detection.js";
 
 export interface ChapterNavigatorDeps {
+	/** Obsidian App（用于打开目标章节文件） */
+	app: App;
 	/** 读取当前章节导航信息（来自 ChapterDetection） */
 	getChapterNavigation: () => ChapterNavigation | null;
 	/** 切章时停止原文朗读（Shell 注入闭包，读取实时 callbacks） */
 	onStopReadingTTS: () => void;
-	/** 打开目标章节文件 */
-	openFile: (file: TFile) => Promise<void>;
 	/** 写入跨章回退标记（R2 共享状态，由 Shell 持有并复位） */
 	setJumpToLastPage: (value: boolean) => void;
 }
 
 export class ChapterNavigator {
+	private app: App;
 	private getChapterNavigation: () => ChapterNavigation | null;
 	private onStopReadingTTS: () => void;
-	private openFile: (file: TFile) => Promise<void>;
 	private setJumpToLastPage: (value: boolean) => void;
 
 	constructor(deps: ChapterNavigatorDeps) {
+		this.app = deps.app;
 		this.getChapterNavigation = deps.getChapterNavigation;
 		this.onStopReadingTTS = deps.onStopReadingTTS;
-		this.openFile = deps.openFile;
 		this.setJumpToLastPage = deps.setJumpToLastPage;
+	}
+
+	/**
+	 * 打开目标章节文件。
+	 */
+	async openFile(file: TFile): Promise<void> {
+		const leaf = this.app.workspace.getLeaf(false);
+		if (leaf) {
+			await leaf.openFile(file, { active: true });
+		}
 	}
 
 	/**

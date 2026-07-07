@@ -108,16 +108,11 @@ export class ReadingModeService implements ScrollPatchService {
 		this._pluginId = pluginId;
 		this.chapterDetection = new ChapterDetection(this.app, () => this.currentFile);
 		this.chapterNavigator = new ChapterNavigator({
+			app: this.app,
 			getChapterNavigation: () => this.getChapterNavigation(),
 			// 闭包读取实时 callbacks，确保 setCallbacks 替换后仍能命中最新回调
 			onStopReadingTTS: () => {
 				this.callbacks?.onStopReadingTTS?.();
-			},
-			openFile: async (file: TFile) => {
-				const leaf = this.app.workspace.getLeaf(false);
-				if (leaf) {
-					await leaf.openFile(file, { active: true });
-				}
 			},
 			setJumpToLastPage: (value: boolean) => {
 				this._jumpToLastPage = value;
@@ -422,17 +417,8 @@ export class ReadingModeService implements ScrollPatchService {
 			frontmatter?.index_id || frontmatter?.pdf_index_id || "",
 		);
 
-		// 兼容多种 frontmatter 字段获取书名：pdf_name (旧), book (EPUB), source (PDF)
-		let bookName =
-			frontmatter?.pdf_name || frontmatter?.book || frontmatter?.source || "";
-
-		// 如果没有书名，从文件路径提取书籍名称
-		if (!bookName) {
-			const pathParts = file.path.split("/");
-			if (pathParts.length >= 2 && pathParts[0] === "DeepReader") {
-				bookName = pathParts[1];
-			}
-		}
+		// 从 frontmatter 或路径提取书名
+		const bookName = this.getBookNameFromFile(file);
 
 		// 只要有书名就可以尝试切换（即使没有 index_id，也可以通过书名查找）
 		if (bookName) {

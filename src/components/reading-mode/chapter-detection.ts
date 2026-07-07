@@ -14,6 +14,9 @@ import type { App } from "obsidian";
 import { TFile } from "obsidian";
 import { serviceLog } from "../../utils/logger.js";
 
+/** 书籍内容根目录（相对 Vault 根路径） */
+const BOOKS_FOLDER = "DeepReader";
+
 export interface ChapterNavigation {
 	prev: TFile | null;
 	next: TFile | null;
@@ -37,7 +40,7 @@ export class ChapterDetection {
 	 */
 	isChapterFile(file: TFile): boolean {
 		if (file.extension !== "md") return false;
-		if (!file.path.startsWith("DeepReader/")) return false;
+		if (!file.path.startsWith(`${BOOKS_FOLDER}/`)) return false;
 
 		const cache = this.app.metadataCache.getFileCache(file);
 		const frontmatter = cache?.frontmatter;
@@ -73,7 +76,7 @@ export class ChapterDetection {
 			frontmatter?.pdf_name || frontmatter?.book || frontmatter?.source || "";
 		if (bookName) return bookName;
 		const pathParts = file.path.split("/");
-		if (pathParts.length >= 2 && pathParts[0] === "DeepReader") {
+		if (pathParts.length >= 2 && pathParts[0] === BOOKS_FOLDER) {
 			return pathParts[1];
 		}
 		return "";

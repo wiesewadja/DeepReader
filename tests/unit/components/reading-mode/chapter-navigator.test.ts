@@ -7,6 +7,7 @@ function makeFile(path: string): TFile {
 	return new TFile(path);
 }
 
+let app: { workspace: { getLeaf: ReturnType<typeof vi.fn> } };
 let getChapterNavigation: ReturnType<typeof vi.fn>;
 let onStopReadingTTS: ReturnType<typeof vi.fn>;
 let openFile: ReturnType<typeof vi.fn>;
@@ -19,14 +20,19 @@ function navWith(prev: TFile | null, next: TFile | null): ChapterNavigation {
 }
 
 beforeEach(() => {
+	openFile = vi.fn().mockResolvedValue(undefined);
+	app = {
+		workspace: {
+			getLeaf: vi.fn(() => ({ openFile })),
+		},
+	};
 	getChapterNavigation = vi.fn(() => null);
 	onStopReadingTTS = vi.fn();
-	openFile = vi.fn().mockResolvedValue(undefined);
 	setJumpToLastPage = vi.fn();
 	navigator = new ChapterNavigator({
+		app: app as any,
 		getChapterNavigation,
 		onStopReadingTTS,
-		openFile,
 		setJumpToLastPage,
 	});
 });
@@ -57,7 +63,7 @@ describe("ChapterNavigator.navigateToPrev", () => {
 		expect(result).toBe(true);
 		expect(onStopReadingTTS).toHaveBeenCalledTimes(1);
 		expect(setJumpToLastPage).toHaveBeenCalledWith(true);
-		expect(openFile).toHaveBeenCalledWith(prev);
+		expect(openFile).toHaveBeenCalledWith(prev, { active: true });
 	});
 
 	it("调用顺序：先停止 TTS 与置位标记，再打开文件", async () => {
@@ -96,7 +102,7 @@ describe("ChapterNavigator.navigateToNext", () => {
 
 		expect(result).toBe(true);
 		expect(onStopReadingTTS).toHaveBeenCalledTimes(1);
-		expect(openFile).toHaveBeenCalledWith(next);
+		expect(openFile).toHaveBeenCalledWith(next, { active: true });
 		expect(setJumpToLastPage).not.toHaveBeenCalled();
 	});
 });
