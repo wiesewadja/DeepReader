@@ -63,12 +63,17 @@ npm run smoke:full
 
 # 指定场景
 node scripts/smoke/smoke.mjs --only S-22,S-23
+
+# 跳过环境检查（不推荐）
+node scripts/smoke/smoke.mjs --no-env-check
 ```
 
 - **入口**: `scripts/smoke/smoke.mjs`
 - **场景定义**: `scripts/smoke/checks/core/` 和 `scripts/smoke/checks/full/`
 - **底层工具**: `scripts/smoke/lib/obsidian-cli.mjs` 的 `evalObsidian()` 函数
 - **适用场景**: 部署后快速验证、CI 看门、问题排查
+- **环境检查**: 运行前自动检查环境（除非使用 `--no-env-check`）
+- **多 vault 支持**: 通过 `TARGET_VAULT` 环境变量指定目标 vault（默认 `test-vault`）
 - **典型场景**:
   - S-LD: 插件加载与完整性检查
   - S-22: Sidebar 聊天界面
@@ -93,6 +98,8 @@ node scripts/e2e-light/run.mjs --spec scripts/e2e-light/specs/<name>.spec.mjs
 - **底层工具**: `scripts/smoke/lib/obsidian-cli.mjs` 的 `evalObsidian()` 函数
 - **适用场景**: 索引质量验证、Agent 对话测试、微信读书集成、阅读模式分页等
 - **优势**: 比完整 WebdriverIO E2E 快一个数量级，适合开发过程中快速验证
+- **环境检查**: 运行前自动检查环境
+- **多 vault 支持**: 通过 `TARGET_VAULT` 环境变量指定目标 vault（默认 `test-vault`）
 - **典型测试**:
   - `langgraph-agent.spec.mjs` — Agent 三层对话
   - `pdf-parsing.spec.mjs` — PDF 解析质量
@@ -141,6 +148,35 @@ npx wdio run tests/wdio.conf.ts --spec tests/e2e/specs/<file>.e2e.ts
 | 多步交互流程 | ❌ | ❌ | ❌ | ✅ |
 | 视觉/截图验证 | ❌ | ❌ | ❌ | ✅ |
 | 跨视图导航 | ❌ | ❌ | ❌ | ✅ |
+
+## 环境配置
+
+### 一键配置
+
+```bash
+npm run setup:test-env      # 完整配置（自动修复）
+npm run setup:test-env:check  # 仅检查
+```
+
+### 环境检查已集成到测试脚本
+
+| 测试脚本 | 环境检查 | 跳过选项 |
+|----------|----------|----------|
+| `npm run smoke:core` | ✅ 自动检查 | `--no-env-check` |
+| `npm run smoke:full` | ✅ 自动检查 | `--no-env-check` |
+| `npm run e2e-light` | ✅ 自动检查 | 无 |
+
+### 多 vault 支持
+
+通过 `TARGET_VAULT` 环境变量指定目标 vault（默认 `test-vault`）：
+
+```bash
+# 使用默认 vault
+npm run smoke:core
+
+# 指定其他 vault
+TARGET_VAULT=my-vault npm run smoke:core
+```
 
 ## 重点覆盖
 

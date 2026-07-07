@@ -39,15 +39,20 @@ export const PLUGIN_ID = 'deepreader-dev';
 /** 轮询间隔（毫秒） */
 const POLL_INTERVAL = 300;
 
+/** 目标 vault 名称（支持多 vault 场景） */
+const TARGET_VAULT = process.env.TARGET_VAULT || 'test-vault';
+
 /**
  * 执行 obsidian CLI 子命令
  * @param {string} subcommand  如 "plugin:reload"
  * @param {string[]} args      如 ["id=deepreader"]
+ * @param {{ timeout?: number, vault?: string }} [options]
  * @returns {Promise<{stdout: string, stderr: string, code: number}>}
  */
-export async function exec(subcommand, args = [], { timeout: execTimeout = 15_000 } = {}) {
+export async function exec(subcommand, args = [], { timeout: execTimeout = 15_000, vault } = {}) {
+	const vaultArgs = vault ? [`vault=${vault}`] : [];
 	try {
-		const { stdout, stderr } = await execFileAsync(OBSIDIAN_CLI, [subcommand, ...args], {
+		const { stdout, stderr } = await execFileAsync(OBSIDIAN_CLI, [...vaultArgs, subcommand, ...args], {
 			timeout: execTimeout,
 			maxBuffer: 10 * 1024 * 1024,
 		});
@@ -68,10 +73,10 @@ export async function exec(subcommand, args = [], { timeout: execTimeout = 15_00
  * 主进程上下文里跑 JS，拿 `app` / `document` 等运行时对象。
  *
  * @param {string} expression - JS 表达式（支持返回 Promise，会自动 await）
- * @param {{ timeout?: number }} [options]
+ * @param {{ timeout?: number, vault?: string }} [options]
  * @returns {Promise<any>} 表达式的求值结果
  */
-export async function evalObsidian(expression, { timeout = 30_000 } = {}) {
+export async function evalObsidian(expression, { timeout = 30_000, vault } = {}) {
 	const params = JSON.stringify({
 		expression,
 		returnByValue: true,
@@ -80,7 +85,7 @@ export async function evalObsidian(expression, { timeout = 30_000 } = {}) {
 	const r = await exec('dev:cdp', [
 		'method=Runtime.evaluate',
 		`params=${params}`,
-	], { timeout });
+	], { timeout, vault: vault || TARGET_VAULT });
 	if (r.code !== 0) {
 		throw new Error(`evalObsidian 失败: ${r.stderr || r.stdout}`);
 	}

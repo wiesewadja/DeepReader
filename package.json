@@ -39,6 +39,8 @@
     "smoke:verbose": "node scripts/smoke/smoke.mjs --verbose",
     "e2e-light": "node scripts/e2e-light/run.mjs",
     "e2e-light:verbose": "node scripts/e2e-light/run.mjs --verbose",
+    "setup:test-env": "node scripts/setup-test-env.mjs",
+    "setup:test-env:check": "node scripts/setup-test-env.mjs --check",
     "worktree:create": "bash scripts/setup-worktree.sh"
   },
   "keywords": [
