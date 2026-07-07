@@ -2,7 +2,7 @@
  * providers.ts 单元测试
  */
 import { describe, it, expect } from 'vitest';
-import { resolveRoleConfig, getAvailableProvidersForRole, PROVIDER_CONFIGS, normalizeBaseUrl, getProviderName, getProviderBaseUrl } from '@/config/providers';
+import { resolveRoleConfig, getAvailableProvidersForRole, PROVIDER_CONFIGS, normalizeBaseUrl, getProviderName } from '@/config/providers';
 import { ROLE_CAPABILITY } from '@/config/ai-roles';
 import type { DeepPDFSettings } from '@/config/settings';
 import { DEFAULT_SETTINGS } from '@/config/settings';
@@ -142,5 +142,52 @@ describe('xiaomi provider + tts role', () => {
 		const providers = getAvailableProvidersForRole('tts', settings);
 		expect(providers).toContain('xiaomi');
 		expect(providers).not.toContain('deepseek');
+	});
+});
+
+describe('normalizeBaseUrl', () => {
+	it('returns empty for empty string', () => {
+		expect(normalizeBaseUrl('')).toBe('');
+	});
+
+	it('appends /v1 when no version path', () => {
+		expect(normalizeBaseUrl('https://example.com/proxy')).toBe('https://example.com/proxy/v1');
+	});
+
+	it('strips trailing slashes and appends /v1', () => {
+		expect(normalizeBaseUrl('https://example.com/proxy/')).toBe('https://example.com/proxy/v1');
+		expect(normalizeBaseUrl('https://example.com/proxy///')).toBe('https://example.com/proxy/v1');
+	});
+
+	it('keeps existing /v1', () => {
+		expect(normalizeBaseUrl('https://example.com/proxy/v1')).toBe('https://example.com/proxy/v1');
+	});
+
+	it('keeps existing /v2 or other versions', () => {
+		expect(normalizeBaseUrl('https://example.com/proxy/v2')).toBe('https://example.com/proxy/v2');
+	});
+
+	it('strips trailing slash from /v1/', () => {
+		expect(normalizeBaseUrl('https://example.com/proxy/v1/')).toBe('https://example.com/proxy/v1');
+	});
+});
+
+describe('getProviderName', () => {
+	it('returns label for built-in provider', () => {
+		const settings = { ...DEFAULT_SETTINGS };
+		expect(getProviderName('deepseek', settings)).toBe('DeepSeek');
+		expect(getProviderName('xiaomi', settings)).toBe('小米 MIMO');
+		expect(getProviderName('openai', settings)).toBe('OpenAI');
+	});
+
+	it('returns custom name from settings for custom provider', () => {
+		const settings = { ...DEFAULT_SETTINGS };
+		settings.providers.mycorp = { apiKey: 'sk-test', name: 'My Corp' };
+		expect(getProviderName('mycorp', settings)).toBe('My Corp');
+	});
+
+	it('returns id when no label and no custom name', () => {
+		const settings = { ...DEFAULT_SETTINGS };
+		expect(getProviderName('unknown-provider', settings)).toBe('unknown-provider');
 	});
 });

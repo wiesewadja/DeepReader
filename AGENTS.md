@@ -25,6 +25,7 @@ Obsidian 插件，奚童，AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
 - ⛔ 未经用户明确指示，不自行 `git commit` / `push` / 改远端分支
 - ⛔ 业务代码禁止静态 `import` Node 核心模块（fs/path/crypto/os/child_process）或 `adm-zip`，会让插件在移动端加载即崩。统一走 `utils/node-compat.ts` 惰性工厂。
 - ⛔ 调试 Obsidian UI 用 obsidian-ui-debug，禁用浏览器 MCP / Playwright
+- ⛔ **测试必须分模块执行** — 先评估修改影响了哪些模块，然后针对受影响的模块运行测试。全量测试仅在：(1) 跨模块修改 (2) 合并前验证 (3) 用户明确要求时执行
 - worktree 合入 `dev` 前 `npm run test:run` 必须过；测试工程师代理只在 dev→main 这层跑，worktree→dev 不跑
 
 ## 约束

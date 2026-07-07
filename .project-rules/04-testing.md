@@ -23,12 +23,23 @@ DeepReader 采用四层测试架构，按"能用轻量就别用全量"原则选�
 # 监听模式
 npm run test
 
-# 单次运行
+# 单次运行（全量）
 npm run test:run
+
+# 分模块运行（推荐）
+npx vitest run tests/unit/utils/           # 只跑 utils 模块
+npx vitest run tests/unit/agent/           # 只跑 agent 模块
+npx vitest run tests/unit/pageindex/       # 只跑 pageindex 模块
+npx vitest run tests/unit/components/      # 只跑 components 模块
+
+# 运行单个测试文件
+npx vitest run tests/unit/utils/time.test.ts
 
 # UI 界面
 npm run test:ui
 ```
+
+**分模块原则**：先 `git diff` 评估修改了哪些 `src/` 文件，映射到模块后只跑该模块的测试。全量测试仅在跨模块修改、合并前验证、或用户明确要求时执行。
 
 - **配置**: `vitest.config.ts`
 - **环境**: `jsdom`，`globals: true`

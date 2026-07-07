@@ -68,6 +68,7 @@
     "@types/xml2js": "^0.4.14",
     "@typescript-eslint/eslint-plugin": "^8.60.1",
     "@typescript-eslint/parser": "^8.60.1",
+    "@vitest/coverage-v8": "^4.1.10",
     "@vitest/ui": "^1.0.0",
     "@wdio/appium-service": "^9.29.0",
     "@wdio/cli": "^9.27.0",

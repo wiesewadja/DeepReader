@@ -23,6 +23,7 @@ function createMockReadingTopbar() {
 	return {
 		setReadingTTSState: vi.fn(),
 		setMascotExpression: vi.fn(),
+		setMascotVisible: vi.fn(),
 	};
 }
 
