@@ -416,21 +416,6 @@ export class ReadingModeService implements ScrollPatchService {
 
 
 	/**
-	 * 获取当前视图的 .markdown-preview-view 元素（实际阅读区域）
-	 */
-	private getViewContent(): HTMLElement | null {
-		if (this.activeContainerEl) {
-			return this.activeContainerEl.querySelector(
-				".markdown-preview-view",
-			) as HTMLElement | null;
-		}
-		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		return view?.containerEl.querySelector(
-			".markdown-preview-view",
-		) as HTMLElement | null;
-	}
-
-	/**
 	 * 切换当前 leaf 到阅读视图
 	 */
 	private switchToReadingView(): void {
@@ -671,13 +656,6 @@ export class ReadingModeService implements ScrollPatchService {
 	}
 
 	/**
-	 * 调度 debounced 持久化（200ms 内合并多次翻页）
-	 */
-	private scheduleSave(): void {
-		this.pageMemoryStore.scheduleSave();
-	}
-
-	/**
 	 * 立即保存到磁盘（取消 pending timer）
 	 */
 	async flushSave(): Promise<void> {
@@ -807,26 +785,6 @@ export class ReadingModeService implements ScrollPatchService {
 	 */
 	async navigateToNext(): Promise<boolean> {
 		return this.chapterNavigator.navigateToNext();
-	}
-
-	/**
-	 * 标记摘录文本（添加虚线下划线）
-	 * @param range 选中的文本范围
-	 */
-	markExcerpt(range: Range): void {
-		try {
-			const excerptMark = document.createElement("mark");
-			excerptMark.setAttribute("data-excerpt", "true");
-
-			// 使用 extractContents 和 insertNode 来包装选中内容
-			const fragment = range.extractContents();
-			excerptMark.appendChild(fragment);
-			range.insertNode(excerptMark);
-
-			serviceLog("[DeepPDF] Marked excerpt text with dotted underline");
-		} catch (err) {
-			serviceLog("[DeepPDF] Failed to mark excerpt text:", err);
-		}
 	}
 
 	/**
