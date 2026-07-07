@@ -1,6 +1,7 @@
 /**
  * 阅读模式编排器
- * 管理章节文件的书籍化阅读体验 — 创建并编排 SelectionToolbar/ChapterNav/PagePaginator/MobileReadingFab 的完整生命周期
+ * 管理章节文件的书籍化阅读体验 — 创建并编排 SelectionToolbar/ChapterNav/PagePaginator 的完整生命周期
+ * （聊天组件由 ChatWidgetCoordinator 托管，页码记忆由 PageMemoryStore 托管，章节识别/导航由 ChapterDetection/ChapterNavigator 托管）
  */
 
 import {
@@ -8,7 +9,6 @@ import {
 	TFile,
 	type EventRef,
 	MarkdownView,
-	Platform,
 } from "obsidian";
 import type { DeepPDFSettings } from "../../config/settings.js";
 import {
@@ -19,10 +19,9 @@ import type { HighlightColorId } from "../../types/highlight.js";
 import type { QuoteMetadata } from "../../types/quote.js";
 import { serviceLog } from "../../utils/logger.js";
 import { getVaultPath } from "../../utils/mobile-fs.js";
-import { SIDEBAR_VIEW_TYPE } from "../../views/sidebar/sidebar-view.js";
 import { ChapterNav } from "./chapter-nav.js";
 import type { ChapterNavOptions } from "./chapter-nav.js";
-import { MobileReadingFab } from "./mobile-reading-fab.js";
+import { ChatWidgetCoordinator } from "./chat-widget-coordinator.js";
 import { PagePaginator } from "./page-paginator.js";
 import {
 	installScrollPatch,
@@ -32,7 +31,6 @@ import {
 import { SelectionToolbar } from "./selection-toolbar.js";
 import type { SelectionToolbarOptions } from "./selection-toolbar.js";
 import { getDualPageMetrics } from "./viewport-state.js";
-import { XitongFloatWidget } from "./xitong-float-widget.js";
 
 export interface ReadingModeCallbacks {
 	onQuote: (metadata: QuoteMetadata) => void;
@@ -75,7 +73,6 @@ export class ReadingModeService implements ScrollPatchService {
 	private callbacks: ReadingModeCallbacks | null = null;
 	private autoEnable: boolean = true;
 	private style: "paginated" | "scrolling" = "paginated";
-	private mobileFab: MobileReadingFab | null = null;
 	private hashChangeHandler: ((e: HashChangeEvent) => void) | null = null;
 	private currentBookName: string = "";
 	private pendingRetry: ReturnType<typeof setTimeout> | null = null;
@@ -91,11 +88,7 @@ export class ReadingModeService implements ScrollPatchService {
 	/** 跨章回退标记：从后一章按 ← 时，前一章应恢复到最后一页 */
 	private _jumpToLastPage: boolean = false;
 
-	private xitongWidget: XitongFloatWidget | null = null;
-	private isChatThinking: boolean = false;
-	private hasUnreadChatReply: boolean = false;
-	/** 缓存上次右边栏开合状态，仅状态翻转时才动 DOM/打日志，避免 layout-change/resize 高频触发刷屏 */
-	private lastSidebarOpen: boolean | null = null;
+	private chatWidget: ChatWidgetCoordinator;
 	private layoutChangeHandler: EventRef | null = null;
 	private resizeHandler: EventRef | null = null;
 
@@ -107,6 +100,17 @@ export class ReadingModeService implements ScrollPatchService {
 		this.app = app;
 		this.callbacks = callbacks || null;
 		this._pluginId = pluginId;
+		this.chatWidget = new ChatWidgetCoordinator(this.app, {
+			getIsActive: () => this.isActive,
+			getActiveContainerEl: () => this.activeContainerEl,
+			// 闭包读实时 callbacks，确保 setCallbacks 替换后仍命中最新
+			onQuickQuestion: (question: string) =>
+				this.callbacks?.onQuickQuestion?.(question) ?? Promise.resolve(),
+			onRevealSidebar: () => {
+				this.callbacks?.onRevealSidebar?.();
+			},
+			sidebarViewType: "deeppdf-sidebar-view",
+		});
 	}
 
 	/**
@@ -429,13 +433,13 @@ export class ReadingModeService implements ScrollPatchService {
 		this.notifyBookDetected(file);
 
 		// 初始化移动端浮动按钮
-		this.initMobileFab();
+		this.chatWidget.initMobileFab();
 
 		// 初始化/显示桌面端提问悬浮球
-		this.updateXitongWidgetVisibility();
+		this.chatWidget.updateVisibility();
 
 		// 隐藏 Obsidian 移动端底部导航栏，最大化阅读区域
-		this.toggleMobileNavbar(false);
+		this.chatWidget.toggleMobileNavbar(false);
 
 		serviceLog("[ReadingMode] Activated for:", file.path);
 	}
@@ -479,130 +483,29 @@ export class ReadingModeService implements ScrollPatchService {
 	}
 
 	/**
-	 * 显示/隐藏 Obsidian 移动端底部导航栏
-	 * 阅读模式下隐藏以最大化阅读区域，退出时恢复
-	 */
-	private toggleMobileNavbar(visible: boolean): void {
-		if (!Platform.isMobile) return;
-		const navbar = document.querySelector('.mobile-navbar') as HTMLElement | null;
-		if (navbar) {
-			navbar.style.display = visible ? '' : 'none';
-		}
-	}
-
-	private initMobileFab(): void {
-		if (!Platform.isMobile) return;
-		this.mobileFab = new MobileReadingFab(() => {
-			const leaf = this.app.workspace.getRightLeaf(false);
-			if (leaf) {
-				leaf.setViewState({ type: "deepreader-sidebar", active: true });
-				this.app.workspace.revealLeaf(leaf);
-				// 确保在手机端侧边栏滑动抽屉能正常拉出/展开
-				const rightSplit = (this.app.workspace as any).rightSplit;
-				if (rightSplit && typeof rightSplit.expand === 'function') {
-					rightSplit.expand();
-				}
-			}
-		});
-		this.mobileFab.show();
-	}
-
-	/**
-	 * 更新 FAB 未读状态
+	 * 更新 FAB 未读状态（委托 ChatWidgetCoordinator）
 	 */
 	setFabUnread(hasUnread: boolean): void {
-		this.mobileFab?.setUnread(hasUnread);
-	}
-
-	private updateXitongWidgetVisibility(): void {
-		if (!this.isActive || !this.activeContainerEl) {
-			if (this.xitongWidget) {
-				this.xitongWidget.hide();
-				this.xitongWidget = null;
-			}
-			this.lastSidebarOpen = null;
-			return;
-		}
-
-		// 移动端：只要阅读模式激活就显示奚童（移动端阅读/右边栏是独立视图，不会同时显示）
-		// 桌面端：右边栏在视口中时隐藏奚童，不在时显示
-		let shouldShow = true;
-
-		if (!Platform.isMobile) {
-			const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
-			if (leaves.length > 0) {
-				const sidebarEl = (leaves[0].view as any)?.containerEl;
-				if (sidebarEl) {
-					const rect = sidebarEl.getBoundingClientRect();
-					const isSidebarVisible = rect.width > 0 && rect.right > 0;
-					shouldShow = !isSidebarVisible;
-				}
-			}
-		}
-
-		// 仅在状态翻转时执行 DOM 操作与日志
-		if (shouldShow === this.lastSidebarOpen) return;
-		this.lastSidebarOpen = shouldShow;
-
-		serviceLog("[ReadingMode] updateXitongWidgetVisibility: shouldShow=" + shouldShow);
-
-		if (!shouldShow) {
-			this.hasUnreadChatReply = false;
-			if (this.xitongWidget) {
-				this.xitongWidget.hide();
-				this.xitongWidget = null;
-			}
-		} else {
-			if (!this.xitongWidget) {
-				this.xitongWidget = new XitongFloatWidget(
-					this.app,
-					this.activeContainerEl,
-					async (question) => {
-						if (this.callbacks?.onQuickQuestion) {
-							await this.callbacks.onQuickQuestion(question);
-						}
-					},
-					() => {
-						this.hasUnreadChatReply = false;
-						if (this.callbacks?.onRevealSidebar) {
-							this.callbacks.onRevealSidebar();
-						}
-					}
-				);
-				this.xitongWidget.show();
-				if (this.isChatThinking) {
-					this.xitongWidget.setThinking(true);
-				} else if (this.hasUnreadChatReply) {
-					this.xitongWidget.setUnread(true);
-				}
-			}
-		}
+		this.chatWidget.setFabUnread(hasUnread);
 	}
 
 	notifyChatStarted(): void {
-		this.isChatThinking = true;
-		this.hasUnreadChatReply = false;
-		this.xitongWidget?.setThinking(true);
+		this.chatWidget.notifyChatStarted();
 	}
 
 	/** AI 回复到达（含出错）：若处于思考态则标记未读，并清除思考态 */
 	notifyChatReplyReceived(): void {
-		if (this.isChatThinking) {
-			this.hasUnreadChatReply = true;
-			this.xitongWidget?.setUnread(true);
-		}
-		this.clearChatThinking();
+		this.chatWidget.notifyChatReplyReceived();
 	}
 
 	/** 仅清除思考态，不产生未读副作用。用于 reset / 取消等重置场景 */
 	clearChatThinking(): void {
-		this.isChatThinking = false;
-		this.xitongWidget?.setThinking(false);
+		this.chatWidget.clearChatThinking();
 	}
 
 	/** TTS 朗读状态变化时驱动悬浮球朗读动效（message + reading 两路朗读统一入口） */
 	setXitongReading(reading: boolean): void {
-		this.xitongWidget?.setReading(reading);
+		this.chatWidget.setXitongReading(reading);
 	}
 
 
@@ -648,16 +551,8 @@ export class ReadingModeService implements ScrollPatchService {
 			this.recordPage(this.currentFile.path, this.paginator.getCurrentPage());
 		}
 
-		// 清理移动端浮动按钮
-		this.mobileFab?.destroy();
-		this.mobileFab = null;
-
-		// 清理桌面端提问悬浮球
-		if (this.xitongWidget) {
-			this.xitongWidget.hide();
-			this.xitongWidget = null;
-		}
-		this.lastSidebarOpen = null;
+		// 清理聊天组件（移动端 FAB + 桌面端提问悬浮球）
+		this.chatWidget.destroy();
 
 		this.paginator?.destroy();
 		this.paginator = null;
@@ -685,7 +580,7 @@ export class ReadingModeService implements ScrollPatchService {
 		this.chapterNav?.hide();
 
 		// 恢复 Obsidian 移动端底部导航栏
-		this.toggleMobileNavbar(true);
+		this.chatWidget.toggleMobileNavbar(true);
 
 		this.isActive = false;
 		this.currentFile = null;
@@ -715,7 +610,7 @@ export class ReadingModeService implements ScrollPatchService {
 
 		// 监听布局变更和窗口缩放事件以动态显示/隐藏桌面端提问悬浮球
 		this.layoutChangeHandler = this.app.workspace.on("layout-change", () => {
-			this.updateXitongWidgetVisibility();
+			this.chatWidget.updateVisibility();
 			if (this.paginator && this.paginator.isActive()) {
 				this.paginator.updateLayout();
 				setTimeout(() => {
@@ -726,7 +621,7 @@ export class ReadingModeService implements ScrollPatchService {
 			}
 		});
 		this.resizeHandler = this.app.workspace.on("resize", () => {
-			this.updateXitongWidgetVisibility();
+			this.chatWidget.updateVisibility();
 			if (this.paginator && this.paginator.isActive()) {
 				this.paginator.updateLayout();
 			}
