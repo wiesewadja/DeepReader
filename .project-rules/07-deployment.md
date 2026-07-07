@@ -27,6 +27,12 @@ dev 目标的 manifest.version 自动注入为 `<baseVersion>-<feature>.<HHMM>` 
 
 **这条规则只在 dev 目标生效**。daily 目标（坚果云）保持原版本号，因为它是发布版本，不应带特性标识。
 
+### 分支模型下的部署语义（见 [`09-branching.md`](./09-branching.md)）
+
+- worktree 开发期：从当前 worktree 代码部署，version = `<baseVersion>-<feature>.<HHMM>`（feature = 去前缀的分支名）
+- dev→main 发布前验收：**在 dev 分支上**执行 `npm run deploy`，version 自动变为 `<baseVersion>-dev.<HHMM>`，作为"dev 集成态候选包"做最后一次肉眼验收
+- main：**不单独部署**（main 是快照，内容来自已验证的 dev squash）
+
 ## 为什么不能按分支隔离
 
 历史上的 deploy.js 曾经按分支名生成独立插件目录（如 `deepreader-wt-feat-async-visualizer`），看似优雅，实际有三个问题：

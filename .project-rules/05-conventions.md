@@ -50,3 +50,7 @@ chore:    构建/工具链相关
 ```
 
 **未经明确指示，不要自行提交代码。**
+
+## 分支与合并模型
+
+采用 **worktree → dev → main** 三层模型，分支命名前缀与上方提交 type 同构（`feat/` `fix/` `refactor/` `perf/` `docs/` `test/` `chore/`）。完整规则见 [`09-branching.md`](./09-branching.md)。
