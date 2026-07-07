@@ -22,7 +22,8 @@ import type { ChapterNavigation } from "./chapter-detection.js";
 import { ChapterNavigator } from "./chapter-navigator.js";
 import { PageMemoryStore } from "./page-memory-store.js";
 import { ChatWidgetCoordinator } from "./chat-widget-coordinator.js";
-import { PagePaginator } from "./page-paginator.js";
+import type { PagePaginator } from "./page-paginator.js";
+import { PaginationCoordinator } from "./pagination-coordinator.js";
 import {
 	installScrollPatch,
 	uninstallScrollPatch,
@@ -30,7 +31,6 @@ import {
 } from "./scroll-patch.js";
 import { SelectionToolbar } from "./selection-toolbar.js";
 import type { SelectionToolbarOptions } from "./selection-toolbar.js";
-import { getDualPageMetrics } from "./viewport-state.js";
 
 export interface ReadingModeCallbacks {
 	onQuote: (metadata: QuoteMetadata) => void;
@@ -65,11 +65,10 @@ export class ReadingModeService implements ScrollPatchService {
 	private chapterNav: ChapterNav | null = null;
 	private chapterDetection: ChapterDetection;
 	private chapterNavigator: ChapterNavigator;
-	private paginator: PagePaginator | null = null;
+	private paginationCoordinator: PaginationCoordinator;
 	private callbacks: ReadingModeCallbacks | null = null;
 	private autoEnable: boolean = true;
 	private style: "paginated" | "scrolling" = "paginated";
-	private hashChangeHandler: ((e: HashChangeEvent) => void) | null = null;
 	private currentBookName: string = "";
 	private pendingRetry: ReturnType<typeof setTimeout> | null = null;
 	/** 已激活分页阅读模式的书籍名（同书新章节不重复激活） */
@@ -92,7 +91,7 @@ export class ReadingModeService implements ScrollPatchService {
 		this.app = app;
 		this.callbacks = callbacks || null;
 		this._pluginId = pluginId;
-		this.pageMemoryStore = new PageMemoryStore(app, pluginId, () => this.paginator?.getTotalPages());
+		this.pageMemoryStore = new PageMemoryStore(app, pluginId, () => this.paginationCoordinator.getPaginator()?.getTotalPages());
 		this.chapterDetection = new ChapterDetection(this.app, () => this.currentFile);
 		this.chapterNavigator = new ChapterNavigator({
 			app: this.app,
@@ -115,6 +114,26 @@ export class ReadingModeService implements ScrollPatchService {
 				this.callbacks?.onRevealSidebar?.();
 			},
 			sidebarViewType: SIDEBAR_VIEW_TYPE,
+		});
+
+		// 分页生命周期编排器：注入式解耦翻章 / 章节识别 / 页码记忆 / 共享态 R2
+		this.paginationCoordinator = new PaginationCoordinator({
+			getActiveContainerEl: () => this.getActiveContainerEl(),
+			getCurrentFile: () => this.currentFile,
+			getBookName: () => this.currentBookName,
+			isActive: () => this.isActive,
+			extractChapterName: () => this.extractChapterName(),
+			navigateToPrev: () => this.navigateToPrev(),
+			navigateToNext: () => this.navigateToNext(),
+			getChapterNavigation: () => this.getChapterNavigation(),
+			recordPage: (filePath, page) => this.recordPage(filePath, page),
+			getSavedPage: (filePath) => this.pageMemoryStore.getPage(filePath),
+			getPluginSettings: () => this.pluginSettings,
+			onStopReadingTTS: () => this.callbacks?.onStopReadingTTS?.(),
+			getJumpToLastPage: () => this._jumpToLastPage,
+			clearJumpToLastPage: () => {
+				this._jumpToLastPage = false;
+			},
 		});
 	}
 
@@ -148,81 +167,27 @@ export class ReadingModeService implements ScrollPatchService {
 	 * 获取当前页的纯文本内容（委托给 PagePaginator）
 	 */
 	getCurrentPageText(): string {
-		return this.paginator?.getCurrentPageText() || '';
+		return this.paginationCoordinator.getCurrentPageText();
 	}
 
-	/**
-	 * 获取当前页码
-	 */
 	getCurrentPage(): number {
-		return this.paginator?.getCurrentPage() || 1;
+		return this.paginationCoordinator.getCurrentPage();
 	}
 
-	/**
-	 * 获取指定或当前页的段落列表（元素 + 文本），供逐段 TTS 朗读
-	 * 分页模式：委托 paginator 按页码过滤
-	 * 滚动模式：降级为获取当前视口内可见段落
-	 */
 	getPageParagraphs(pageNumber?: number): { element: HTMLElement; text: string }[] {
-		if (this.paginator?.isActive()) {
-			return this.paginator.getPageParagraphs(pageNumber);
-		}
-		// 滚动模式：获取当前视口内可见段落
-		if (!this.activeContainerEl) return [];
-		const sizer = this.activeContainerEl.querySelector('.markdown-preview-sizer') as HTMLElement;
-		if (!sizer) return [];
-		const allParagraphs = Array.from(
-			sizer.querySelectorAll<HTMLElement>('p, h1, h2, h3, h4, h5, h6, li'),
-		);
-		const viewTop = 0;
-		const viewBottom = window.innerHeight;
-		return allParagraphs
-			.filter(el => {
-				const rect = el.getBoundingClientRect();
-				const text = el.textContent?.trim() || '';
-				if (!text) return false;
-				// 段落与视口有交集
-				return rect.bottom > viewTop && rect.top < viewBottom;
-			})
-			.map(el => ({ element: el, text: el.textContent?.trim() || '' }));
+		return this.paginationCoordinator.getPageParagraphs(pageNumber);
 	}
 
-	/**
-	 * 高亮指定的段落元素
-	 * 分页模式：委托 paginator
-	 * 滚动模式：直接高亮 + 滚动到可见区域
-	 */
 	highlightElement(el: HTMLElement): void {
-		if (this.paginator?.isActive()) {
-			this.paginator.highlightElement(el);
-		} else {
-			// 滚动模式：清除旧高亮，添加新高亮，滚动到视口
-			this.clearHighlight();
-			el.classList.add('deeppdf-tts-reading-paragraph');
-			el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-		}
+		this.paginationCoordinator.highlightElement(el);
 	}
 
-	/**
-	 * 清除所有高亮
-	 * 分页模式：委托 paginator
-	 * 滚动模式：直接移除高亮 class
-	 */
 	clearHighlight(): void {
-		if (this.paginator?.isActive()) {
-			this.paginator.clearHighlight();
-		} else if (this.activeContainerEl) {
-			this.activeContainerEl
-				.querySelectorAll('.deeppdf-tts-reading-paragraph')
-				.forEach(el => el.classList.remove('deeppdf-tts-reading-paragraph'));
-		}
+		this.paginationCoordinator.clearHighlight();
 	}
 
-	/**
-	 * 翻到下一页（供原文朗读 TTS 自动翻页使用）
-	 */
 	nextPage(): boolean {
-		return this.paginator?.nextPage() ?? false;
+		return this.paginationCoordinator.nextPage();
 	}
 
 	/**
@@ -265,7 +230,7 @@ export class ReadingModeService implements ScrollPatchService {
 	 * 获取当前是否处于双页阅读模式
 	 */
 	isDualPageMode(): boolean {
-		return this.paginator?.isDualPageMode || false;
+		return this.paginationCoordinator.isDualPageMode();
 	}
 
 	/**
@@ -354,8 +319,7 @@ export class ReadingModeService implements ScrollPatchService {
 		}
 
 		// 立即销毁旧分页器（含底栏 DOM），防止新旧书籍信息叠加
-		this.paginator?.destroy();
-		this.paginator = null;
+		this.paginationCoordinator.destroyPaginator();
 
 		this.currentFile = file;
 		this.isActive = true;
@@ -376,7 +340,7 @@ export class ReadingModeService implements ScrollPatchService {
 			setTimeout(() => {
 				serviceLog("[DeepPDF] ReadingMode: initializing paginator");
 
-				this.waitForRenderAndInitPaginator();
+				this.paginationCoordinator.initPaginator();
 			}, 200);
 
 			// 拦截 scrollIntoView，修复 multi-column 布局下的 blockId 跳转
@@ -384,7 +348,7 @@ export class ReadingModeService implements ScrollPatchService {
 			installScrollPatch(this);
 
 			// 监听 hashchange，处理 blockId 跳转（双重保险）
-			this.setupHashChangeHandler();
+			this.paginationCoordinator.setupHashChangeHandler();
 		}
 
 		// 通知书籍检测回调
@@ -489,15 +453,14 @@ export class ReadingModeService implements ScrollPatchService {
 		this.callbacks?.onStopReadingTTS?.();
 
 		// 保存当前页码到记忆（含 lastReadAt 标记，触发持久化）
-		if (this.currentFile && this.paginator) {
-			this.recordPage(this.currentFile.path, this.paginator.getCurrentPage());
+		if (this.currentFile) {
+			this.paginationCoordinator.recordCurrentPage();
 		}
 
 		// 清理聊天组件（移动端 FAB + 桌面端提问悬浮球）
 		this.chatWidget.destroy();
 
-		this.paginator?.destroy();
-		this.paginator = null;
+		this.paginationCoordinator.destroyPaginator();
 
 		// 清理旧的章节导航 UI 元素（如果有）
 		const oldNavElements = document.querySelectorAll(".deeppdf-chapter-nav");
@@ -507,7 +470,7 @@ export class ReadingModeService implements ScrollPatchService {
 		uninstallScrollPatch(this);
 
 		// 清理 hashchange 监听
-		this.teardownHashChangeHandler();
+		this.paginationCoordinator.teardownHashChangeHandler();
 
 		// 从记录的 containerEl 上移除 CSS 类（而非从当前 active view 移除，避免错误清理其他 tab）
 		if (this.activeContainerEl) {
@@ -553,19 +516,19 @@ export class ReadingModeService implements ScrollPatchService {
 		// 监听布局变更和窗口缩放事件以动态显示/隐藏桌面端提问悬浮球
 		this.layoutChangeHandler = this.app.workspace.on("layout-change", () => {
 			this.chatWidget.updateVisibility();
-			if (this.paginator && this.paginator.isActive()) {
-				this.paginator.updateLayout();
+			if (this.paginationCoordinator.getPaginator()?.isActive()) {
+				this.paginationCoordinator.updateLayout();
 				setTimeout(() => {
-					if (this.paginator && this.paginator.isActive()) {
-						this.paginator.updateLayout();
+					if (this.paginationCoordinator.getPaginator()?.isActive()) {
+						this.paginationCoordinator.updateLayout();
 					}
 				}, 300);
 			}
 		});
 		this.resizeHandler = this.app.workspace.on("resize", () => {
 			this.chatWidget.updateVisibility();
-			if (this.paginator && this.paginator.isActive()) {
-				this.paginator.updateLayout();
+			if (this.paginationCoordinator.getPaginator()?.isActive()) {
+				this.paginationCoordinator.updateLayout();
 			}
 		});
 
@@ -675,111 +638,11 @@ export class ReadingModeService implements ScrollPatchService {
 			onNavigatePrev: () => this.navigateToPrev(),
 			onNavigateNext: () => this.navigateToNext(),
 			getNavigation: () => this.getChapterNavigation(),
-			getPaginator: () => this.paginator,
+			getPaginator: () => this.paginationCoordinator.getPaginator(),
 			isActive: () => this.isActive,
 		});
 		this.chapterNav.init();
 		serviceLog("[ReadingMode] Chapter navigation initialized");
-	}
-
-	/**
-	 * 等待渲染完成后初始化分页器
-	 * 轮询检测 .markdown-preview-sizer 是否已有内容
-	 */
-	private waitForRenderAndInitPaginator(): void {
-		this.paginator?.destroy();
-		this.paginator = null;
-
-		const maxAttempts = 15;
-		let attempts = 0;
-
-		// 提取章节名称（去除编号前缀）
-		const chapterName = this.extractChapterName();
-
-		const tryInit = () => {
-			attempts++;
-			const container = this.activeContainerEl?.querySelector(
-				".markdown-preview-sizer",
-			) as HTMLElement;
-
-			if (container && container.children.length > 1) {
-				const settings = this.pluginSettings;
-				this.paginator = new PagePaginator({
-					container,
-					onNavigatePrev: () => this.navigateToPrev(),
-					onNavigateNext: () => this.navigateToNext(),
-					hasPrevChapter: () => this.getChapterNavigation()?.prev != null,
-					hasNextChapter: () => this.getChapterNavigation()?.next != null,
-					onPageChange: (page) => {
-						// 每翻页都记录 + 调度持久化（debounced 200ms）
-						if (this.currentFile) {
-							this.recordPage(this.currentFile.path, page);
-						}
-						this.callbacks?.onStopReadingTTS?.();
-					},
-					chapterName,
-					bookName: this.currentBookName,
-					autoDualPage: settings?.autoDualPage ?? true,
-				});
-				this.paginator.paginateAndShow();
-
-				// 恢复页码（双 rAF 确保 paginator 布局完成）
-				if (this.currentFile) {
-					// 跨章回退：跳到最后一页（翻书语义）
-					const restoreLastPage = this._jumpToLastPage;
-					this._jumpToLastPage = false;
-
-					const savedPage = restoreLastPage
-						? undefined
-						: this.pageMemoryStore.getPage(this.currentFile.path);
-					const shouldRestore =
-						restoreLastPage || (savedPage != null && savedPage > 1);
-					if (shouldRestore) {
-						requestAnimationFrame(() => {
-							requestAnimationFrame(() => {
-								if (!this.paginator) return;
-								const scrollView = this.activeContainerEl?.querySelector(
-									".markdown-preview-view",
-								) as HTMLElement;
-								if (!scrollView) return;
-
-								const totalPages = this.paginator.getTotalPages();
-								const targetPage = restoreLastPage
-									? totalPages
-									: Math.max(1, Math.min(savedPage!, totalPages || savedPage!));
-								if (targetPage <= 1 && !restoreLastPage) return;
-
-								const dualMetrics = this.isDualPageMode() ? getDualPageMetrics(scrollView) : null;
-								const step = dualMetrics ? dualMetrics.spreadStep : scrollView.clientWidth;
-								const targetScroll = dualMetrics
-									? Math.floor((targetPage - 1) / 2) * step
-									: (targetPage - 1) * step;
-								const maxScroll = Math.max(
-									0,
-									scrollView.scrollWidth - scrollView.clientWidth,
-								);
-
-								this.paginator.setCurrentPage(targetPage);
-								scrollView.scrollLeft = Math.min(targetScroll, maxScroll);
-							});
-						});
-					}
-				}
-
-				serviceLog("[ReadingMode] Paginator initialized");
-				return;
-			}
-
-			if (attempts < maxAttempts) {
-				setTimeout(tryInit, 150);
-			} else {
-				serviceLog.warn(
-					"[ReadingMode] Paginator: render not ready after timeout",
-				);
-			}
-		};
-
-		tryInit();
 	}
 
 	/**
@@ -898,10 +761,7 @@ export class ReadingModeService implements ScrollPatchService {
 			this.chapterNav.destroy();
 			this.chapterNav = null;
 		}
-		if (this.paginator) {
-			this.paginator.destroy();
-			this.paginator = null;
-		}
+		this.paginationCoordinator.destroyPaginator();
 	}
 
 	/**
@@ -915,7 +775,7 @@ export class ReadingModeService implements ScrollPatchService {
 	 * 获取分页器实例（供 ChapterNav 路由键盘事件）
 	 */
 	getPaginator(): PagePaginator | null {
-		return this.paginator;
+		return this.paginationCoordinator.getPaginator();
 	}
 
 	/**
@@ -983,126 +843,7 @@ export class ReadingModeService implements ScrollPatchService {
 		element: HTMLElement,
 		scrollView: HTMLElement,
 	): void {
-		// 双层 rAF：第一层等待当前帧渲染完成，第二层等待布局重新计算
-		requestAnimationFrame(() => {
-			requestAnimationFrame(() => {
-				const elemRect = element.getBoundingClientRect();
-				const containerRect = scrollView.getBoundingClientRect();
-				const computedStyle = window.getComputedStyle(scrollView);
-				const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
-
-				// 元素在可滚动内容中的绝对水平位置
-				// elemRect.left 是相对视口的，containerRect.left 也是相对视口的
-				// scrollLeft 是当前已滚动的距离
-				// paddingLeft 补偿 CSS padding 带来的偏移
-				const absoluteLeft =
-					elemRect.left - containerRect.left + scrollView.scrollLeft;
-				const viewWidth = scrollView.clientWidth;
-
-				if (viewWidth === 0) return;
-
-				const isDual = this.isDualPageMode();
-				let targetScrollLeft = 0;
-				let targetPage = 0; // 0-based logical page
-
-				if (isDual) {
-					// 动态读取列度量，避免与 CSS 的 padding(50)/column-gap(60) 硬编码耦合
-					const spreadStep = getDualPageMetrics(scrollView).spreadStep;
-					const spreadIndex = Math.floor(Math.max(0, absoluteLeft - paddingLeft) / spreadStep);
-					targetScrollLeft = spreadIndex * spreadStep;
-					targetPage = spreadIndex * 2;
-				} else {
-					targetPage = Math.floor(absoluteLeft / viewWidth);
-					targetScrollLeft = targetPage * viewWidth;
-				}
-
-				serviceLog(
-					`[ReadingMode] BlockId jump: absoluteLeft=${absoluteLeft.toFixed(0)}, viewWidth=${viewWidth}, targetPage=${targetPage + 1}, scrollLeft=${targetScrollLeft}`,
-				);
-
-				// 平滑滚动到目标列
-				scrollView.scrollTo({
-					left: targetScrollLeft,
-					behavior: "smooth",
-				});
-
-				// 更新分页器的当前页码
-				if (this.paginator) {
-					this.paginator.setCurrentPage(targetPage + 1);
-				}
-
-				// 高亮目标元素
-				element.classList.add("deeppdf-block-highlight");
-				setTimeout(() => {
-					element.classList.remove("deeppdf-block-highlight");
-				}, 2000);
-			});
-		});
-	}
-
-	/**
-	 * 设置 hashchange 监听器，处理 blockId 舜转
-	 * 这是双重保险机制：当 URL 中有 #^blockId 时，手动处理跳转
-	 */
-	private setupHashChangeHandler(): void {
-		if (this.hashChangeHandler) return;
-
-		this.hashChangeHandler = (e: HashChangeEvent) => {
-			if (!this.isActive) return;
-
-			const hash = window.location.hash;
-			if (!hash.startsWith("#^")) return;
-
-			const blockId = hash.substring(2); // 移除 #^
-			serviceLog("[ReadingMode] Hashchange detected for blockId:", blockId);
-
-			// 等待 DOM 更新
-			requestAnimationFrame(() => {
-				this.jumpToBlockId(blockId);
-			});
-		};
-
-		window.addEventListener("hashchange", this.hashChangeHandler);
-		serviceLog("[ReadingMode] Hashchange handler setup");
-	}
-
-	/**
-	 * 清理 hashchange 监听器
-	 */
-	private teardownHashChangeHandler(): void {
-		if (this.hashChangeHandler) {
-			window.removeEventListener("hashchange", this.hashChangeHandler);
-			this.hashChangeHandler = null;
-			serviceLog("[ReadingMode] Hashchange handler teardown");
-		}
-	}
-
-	/**
-	 * 跳转到指定的 blockId
-	 * 在 CSS multi-column 布局中手动计算横向位置
-	 */
-	private jumpToBlockId(blockId: string): void {
-		const scrollView = document.querySelector(
-			".deeppdf-reading-mode .markdown-preview-view",
-		) as HTMLElement;
-		if (!scrollView) {
-			serviceLog("[ReadingMode] No scrollView found for blockId jump");
-			return;
-		}
-
-		// Obsidian 会将 ^blockId 转为 id="blockId" 的属性
-		const targetElement = scrollView.querySelector(
-			`[id="${blockId}"]`,
-		) as HTMLElement;
-		if (!targetElement) {
-			serviceLog(
-				"[ReadingMode] Target element not found for blockId:",
-				blockId,
-			);
-			return;
-		}
-
-		this.scrollToElementInColumn(targetElement, scrollView);
-		serviceLog("[ReadingMode] Jumped to blockId:", blockId);
+		// 逻辑委托 PaginationCoordinator；Shell 保留此方法以满足 ScrollPatchService 契约
+		this.paginationCoordinator.scrollToElementInColumn(element, scrollView);
 	}
 }
