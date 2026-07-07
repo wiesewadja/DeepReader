@@ -152,8 +152,8 @@ export default {
 				const state = await evalObsidian(`(async () => {
 					const svc = app.plugins.plugins["deepreader-dev"].readingModeService;
 					await svc.flushSave();
-					const page = svc.pageMemory.get(${JSON.stringify(chapterFilePath)});
-					const ts = svc.lastReadAt.get(${JSON.stringify(chapterFilePath)});
+					const page = svc.pageMemoryStore.getPage(${JSON.stringify(chapterFilePath)});
+					const ts = svc.pageMemoryStore.lastReadAt.get(${JSON.stringify(chapterFilePath)});
 					return JSON.stringify({ page, tsSet: ts > 0 });
 				})()`);
 				const obj = JSON.parse(state);

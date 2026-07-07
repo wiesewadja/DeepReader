@@ -22,7 +22,8 @@
 import { nodeFs } from '../utils/node-fs.js';
 import { pageindexPaths } from './paths';
 
-const MAX_ENTRIES = 500;  // 与 pageMemory 容量匹配
+/** 容量上限：内存 map 与落盘共用同一阈值，避免漂移。单一事实源，供 PageMemoryStore 复用。 */
+export const MAX_ENTRIES = 500;
 
 export interface LastPageEntry {
 	page: number;

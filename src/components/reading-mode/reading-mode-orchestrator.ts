@@ -11,18 +11,14 @@ import {
 	Platform,
 } from "obsidian";
 import type { DeepPDFSettings } from "../../config/settings.js";
-import {
-	loadLastPages,
-	saveLastPages,
-} from "../../pageindex/last-page-store.js";
 import type { HighlightColorId } from "../../types/highlight.js";
 import type { QuoteMetadata } from "../../types/quote.js";
 import { serviceLog } from "../../utils/logger.js";
-import { getVaultPath } from "../../utils/mobile-fs.js";
 import { SIDEBAR_VIEW_TYPE } from "../../views/sidebar/sidebar-view.js";
 import { ChapterNav } from "./chapter-nav.js";
 import type { ChapterNavOptions } from "./chapter-nav.js";
 import { MobileReadingFab } from "./mobile-reading-fab.js";
+import { PageMemoryStore } from "./page-memory-store.js";
 import { PagePaginator } from "./page-paginator.js";
 import {
 	installScrollPatch,
@@ -81,12 +77,8 @@ export class ReadingModeService implements ScrollPatchService {
 	private pendingRetry: ReturnType<typeof setTimeout> | null = null;
 	/** 已激活分页阅读模式的书籍名（同书新章节不重复激活） */
 	private activatedBookForReading: string = "";
-	/** 页码记忆：filePath → 上次阅读的页码 */
-	private pageMemory: Map<string, number> = new Map();
-	/** 最近一次 pageMemory 变更时间（用于"最近阅读"判定） */
-	private lastReadAt: Map<string, number> = new Map();
-	/** debounced 持久化定时器 */
-	private _saveTimer: ReturnType<typeof setTimeout> | null = null;
+	/** 页码记忆存储（已抽到 PageMemoryStore 深模块） */
+	private pageMemoryStore: PageMemoryStore;
 	private _pluginId: string;
 	/** 跨章回退标记：从后一章按 ← 时，前一章应恢复到最后一页 */
 	private _jumpToLastPage: boolean = false;
@@ -107,6 +99,7 @@ export class ReadingModeService implements ScrollPatchService {
 		this.app = app;
 		this.callbacks = callbacks || null;
 		this._pluginId = pluginId;
+		this.pageMemoryStore = new PageMemoryStore(app, pluginId, () => this.paginator?.getTotalPages());
 	}
 
 	/**
@@ -894,7 +887,7 @@ export class ReadingModeService implements ScrollPatchService {
 
 					const savedPage = restoreLastPage
 						? undefined
-						: this.pageMemory.get(this.currentFile.path);
+						: this.pageMemoryStore.getPage(this.currentFile.path);
 					const shouldRestore =
 						restoreLastPage || (savedPage != null && savedPage > 1);
 					if (shouldRestore) {
@@ -965,78 +958,28 @@ export class ReadingModeService implements ScrollPatchService {
 	 * 冷启动后用户在 ~100ms 内打开文件可能丢失恢复，但实际操作间隔通常远大于此。
 	 */
 	private loadLastPagesFromDisk(): void {
-		const vaultPath = getVaultPath(this.app);
-		if (!vaultPath) return;
-		loadLastPages(vaultPath, this._pluginId)
-			.then(({ pages, lastReadAt }) => {
-				this.pageMemory = pages;
-				this.lastReadAt = lastReadAt;
-				serviceLog("[ReadingMode] Loaded last-pages:", pages.size, "entries");
-			})
-			.catch((err) => {
-				serviceLog("[ReadingMode] loadLastPages failed:", err);
-			});
+		this.pageMemoryStore.loadLastPagesFromDisk();
 	}
 
 	/**
 	 * 记录页码 + 标记最近阅读时间 + 调度 debounced 持久化
 	 */
 	private recordPage(filePath: string, page: number): void {
-		if (!filePath) return;
-		if (typeof page !== "number" || !Number.isFinite(page) || page < 1) return;
-		const total = this.paginator?.getTotalPages() ?? 0;
-		if (total > 0 && page > total) return;
-		this.pageMemory.set(filePath, page);
-		this.lastReadAt.set(filePath, Date.now());
-		// 内存侧淘汰：与 last-page-store MAX_ENTRIES 同步，防止长期运行 map 无限增长
-		if (this.pageMemory.size > 500) {
-			let oldest: string | null = null;
-			let oldestTime = Infinity;
-			for (const [k, ts] of this.lastReadAt) {
-				if (ts < oldestTime) {
-					oldestTime = ts;
-					oldest = k;
-				}
-			}
-			if (oldest) {
-				this.pageMemory.delete(oldest);
-				this.lastReadAt.delete(oldest);
-			}
-		}
-		this.scheduleSave();
+		this.pageMemoryStore.recordPage(filePath, page);
 	}
 
 	/**
 	 * 调度 debounced 持久化（200ms 内合并多次翻页）
 	 */
 	private scheduleSave(): void {
-		if (this._saveTimer) clearTimeout(this._saveTimer);
-		this._saveTimer = setTimeout(() => {
-			this._saveTimer = null;
-			this.flushSave().catch((err) => {
-				serviceLog("[ReadingMode] flushSave failed:", err);
-			});
-		}, 200);
+		this.pageMemoryStore.scheduleSave();
 	}
 
 	/**
 	 * 立即保存到磁盘（取消 pending timer）
 	 */
 	async flushSave(): Promise<void> {
-		if (this._saveTimer) {
-			clearTimeout(this._saveTimer);
-			this._saveTimer = null;
-		}
-		const vaultPath = getVaultPath(this.app);
-		if (!vaultPath) return;
-		// 没有历史可写
-		if (this.pageMemory.size === 0) return;
-		await saveLastPages(
-			vaultPath,
-			this.pageMemory,
-			this.lastReadAt,
-			this._pluginId,
-		);
+		return this.pageMemoryStore.flushSave();
 	}
 
 	/**
@@ -1046,15 +989,7 @@ export class ReadingModeService implements ScrollPatchService {
 	 * @returns 最近阅读的文件路径，或 null
 	 */
 	findMostRecentInFolder(folderPath: string): string | null {
-		let bestPath: string | null = null;
-		let bestTime = -1;
-		for (const [path, time] of this.lastReadAt) {
-			if (path.startsWith(folderPath + "/") && time > bestTime) {
-				bestTime = time;
-				bestPath = path;
-			}
-		}
-		return bestPath;
+		return this.pageMemoryStore.findMostRecentInFolder(folderPath);
 	}
 
 	/**
@@ -1063,13 +998,7 @@ export class ReadingModeService implements ScrollPatchService {
 	 * @param folderPath 书籍章节文件夹路径（如 "DeepReader/书名"）
 	 * @returns 最近阅读的时间戳，如果没有阅读记录返回 0
 	 */	getBookLastReadTime(folderPath: string): number {
-		let bestTime = 0;
-		for (const [path, time] of this.lastReadAt) {
-			if (path.startsWith(folderPath + "/") && time > bestTime) {
-				bestTime = time;
-			}
-		}
-		return bestTime;
+		return this.pageMemoryStore.getBookLastReadTime(folderPath);
 	}
 
 	/**
@@ -1078,39 +1007,8 @@ export class ReadingModeService implements ScrollPatchService {
 	 * @returns true 表示找到并打开了；false 表示无历史或文件已删除
 	 */
 	async openMostRecent(): Promise<boolean> {
-		if (this.lastReadAt.size === 0) {
-			serviceLog("[ReadingMode] openMostRecent: no last-read history");
-			return false;
-		}
-		let mostRecentPath: string | null = null;
-		let mostRecentTime = -1;
-		for (const [path, time] of this.lastReadAt) {
-			if (time > mostRecentTime) {
-				mostRecentTime = time;
-				mostRecentPath = path;
-			}
-		}
-		if (!mostRecentPath) return false;
-
-		const file = this.app.vault.getAbstractFileByPath(mostRecentPath);
-		if (!(file instanceof TFile)) {
-			// 文件已被删除，清理历史
-			serviceLog(
-				"[ReadingMode] openMostRecent: file no longer exists:",
-				mostRecentPath,
-			);
-			this.lastReadAt.delete(mostRecentPath);
-			this.pageMemory.delete(mostRecentPath);
-			this.scheduleSave();
-			return false;
-		}
-
-		serviceLog(
-			"[ReadingMode] openMostRecent:",
-			mostRecentPath,
-			"at",
-			mostRecentTime,
-		);
+		const file = this.pageMemoryStore.resolveMostRecentFile();
+		if (!file) return false;
 
 		// 如果文件已在某个 tab 中打开，激活该 tab
 		const existingLeaf = this.app.workspace
