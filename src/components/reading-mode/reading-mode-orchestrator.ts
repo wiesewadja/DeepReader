@@ -17,6 +17,9 @@ import { serviceLog } from "../../utils/logger.js";
 import { SIDEBAR_VIEW_TYPE } from "../../views/sidebar/sidebar-view.js";
 import { ChapterNav } from "./chapter-nav.js";
 import type { ChapterNavOptions } from "./chapter-nav.js";
+import { ChapterDetection } from "./chapter-detection.js";
+import type { ChapterNavigation } from "./chapter-detection.js";
+import { ChapterNavigator } from "./chapter-navigator.js";
 import { MobileReadingFab } from "./mobile-reading-fab.js";
 import { PageMemoryStore } from "./page-memory-store.js";
 import { PagePaginator } from "./page-paginator.js";
@@ -42,13 +45,7 @@ export interface ReadingModeCallbacks {
 	onRevealSidebar?: () => void;
 }
 
-export interface ChapterNavigation {
-	prev: TFile | null;
-	next: TFile | null;
-	current: TFile;
-	total: number;
-	currentIndex: number;
-}
+export type { ChapterNavigation } from "./chapter-detection.js";
 
 export class ReadingModeService implements ScrollPatchService {
 	private app: App;
@@ -67,6 +64,8 @@ export class ReadingModeService implements ScrollPatchService {
 	private fileOpenHandler: EventRef | null = null;
 	private selectionToolbar: SelectionToolbar | null = null;
 	private chapterNav: ChapterNav | null = null;
+	private chapterDetection: ChapterDetection;
+	private chapterNavigator: ChapterNavigator;
 	private paginator: PagePaginator | null = null;
 	private callbacks: ReadingModeCallbacks | null = null;
 	private autoEnable: boolean = true;
@@ -100,6 +99,18 @@ export class ReadingModeService implements ScrollPatchService {
 		this.callbacks = callbacks || null;
 		this._pluginId = pluginId;
 		this.pageMemoryStore = new PageMemoryStore(app, pluginId, () => this.paginator?.getTotalPages());
+		this.chapterDetection = new ChapterDetection(this.app, () => this.currentFile);
+		this.chapterNavigator = new ChapterNavigator({
+			app: this.app,
+			getChapterNavigation: () => this.getChapterNavigation(),
+			// 闭包读取实时 callbacks，确保 setCallbacks 替换后仍能命中最新回调
+			onStopReadingTTS: () => {
+				this.callbacks?.onStopReadingTTS?.();
+			},
+			setJumpToLastPage: (value: boolean) => {
+				this._jumpToLastPage = value;
+			},
+		});
 	}
 
 	/**
@@ -280,61 +291,14 @@ export class ReadingModeService implements ScrollPatchService {
 	 * 3. frontmatter 中必须包含 source 字段（书籍标识）
 	 */
 	isChapterFile(file: TFile): boolean {
-		// 必须是 Markdown 文件
-		if (file.extension !== "md") {
-			return false;
-		}
-
-		// 路径以 DeepReader/ 开头
-		if (!file.path.startsWith("DeepReader/")) {
-			return false;
-		}
-
-		// 检查 frontmatter 标识字段
-		const cache = this.app.metadataCache.getFileCache(file);
-		const frontmatter = cache?.frontmatter;
-		if (!frontmatter) {
-			serviceLog("[ReadingMode] No frontmatter:", file.path);
-			return false;
-		}
-
-		// 排除 MOC 文件（MOC 不需要沉浸式阅读模式）
-		const isMoc =
-			frontmatter.type === "pdf-moc" || frontmatter.type === "epub-moc";
-		if (isMoc) {
-			return false;
-		}
-
-		// 必须有 source 字段（书籍来源）
-		const hasSource = !!(
-			frontmatter.source ||
-			frontmatter.pdf_name ||
-			frontmatter.book
-		);
-		if (!hasSource) {
-			serviceLog("[ReadingMode] File missing source:", file.path, frontmatter);
-			return false;
-		}
-
-		serviceLog("[ReadingMode] Chapter file detected:", file.path);
-		return true;
+		return this.chapterDetection.isChapterFile(file);
 	}
 
 	/**
 	 * 从文件中提取书籍名称（用于同书判断）
 	 */
 	private getBookNameFromFile(file: TFile): string {
-		const cache = this.app.metadataCache.getFileCache(file);
-		const frontmatter = cache?.frontmatter;
-		const bookName =
-			frontmatter?.pdf_name || frontmatter?.book || frontmatter?.source || "";
-		if (bookName) return bookName;
-		// 从路径提取
-		const pathParts = file.path.split("/");
-		if (pathParts.length >= 2 && pathParts[0] === "DeepReader") {
-			return pathParts[1];
-		}
-		return "";
+		return this.chapterDetection.getBookNameFromFile(file);
 	}
 
 	/**
@@ -446,17 +410,8 @@ export class ReadingModeService implements ScrollPatchService {
 			frontmatter?.index_id || frontmatter?.pdf_index_id || "",
 		);
 
-		// 兼容多种 frontmatter 字段获取书名：pdf_name (旧), book (EPUB), source (PDF)
-		let bookName =
-			frontmatter?.pdf_name || frontmatter?.book || frontmatter?.source || "";
-
-		// 如果没有书名，从文件路径提取书籍名称
-		if (!bookName) {
-			const pathParts = file.path.split("/");
-			if (pathParts.length >= 2 && pathParts[0] === "DeepReader") {
-				bookName = pathParts[1];
-			}
-		}
+		// 从 frontmatter 或路径提取书名
+		const bookName = this.getBookNameFromFile(file);
 
 		// 只要有书名就可以尝试切换（即使没有 index_id，也可以通过书名查找）
 		if (bookName) {
@@ -943,12 +898,7 @@ export class ReadingModeService implements ScrollPatchService {
 	 * 例如: "23 - 第十九章 如何阅读社会科学" -> "第十九章 如何阅读社会科学"
 	 */
 	private extractChapterName(): string {
-		if (!this.currentFile) return "";
-
-		const basename = this.currentFile.basename;
-		// 匹配 "数字 - " 或 "数字- " 格式并去除
-		const match = basename.match(/^\d+\s*[-–]\s*(.+)$/);
-		return match ? match[1] : basename;
+		return this.chapterDetection.extractChapterName();
 	}
 
 	/**
@@ -1093,76 +1043,21 @@ export class ReadingModeService implements ScrollPatchService {
 	 * 获取章节导航信息
 	 */
 	getChapterNavigation(): ChapterNavigation | null {
-		if (!this.currentFile) return null;
-
-		const parent = this.currentFile.parent;
-		if (!parent) return null;
-
-		// 获取同文件夹下的所有章节文件
-		const chapterFiles = parent.children
-			.filter((child): child is TFile => {
-				if (!(child instanceof TFile)) return false;
-				if (child.extension !== "md") return false;
-				// 匹配 "01 - 标题" 或 "01-标题" 格式
-				return /^\d+/.test(child.basename);
-			})
-			.sort((a, b) =>
-				a.basename.localeCompare(b.basename, undefined, { numeric: true }),
-			);
-
-		const currentIndex = chapterFiles.findIndex(
-			(f) => f.path === this.currentFile?.path,
-		);
-
-		if (currentIndex === -1) return null;
-
-		return {
-			prev: currentIndex > 0 ? chapterFiles[currentIndex - 1] : null,
-			next:
-				currentIndex < chapterFiles.length - 1
-					? chapterFiles[currentIndex + 1]
-					: null,
-			current: this.currentFile,
-			total: chapterFiles.length,
-			currentIndex: currentIndex + 1, // 1-based index
-		};
+		return this.chapterDetection.getChapterNavigation();
 	}
 
 	/**
-	 * 跳转到上一章
+	 * 跳转到上一章（委托 ChapterNavigator）
 	 */
 	async navigateToPrev(): Promise<boolean> {
-		const nav = this.getChapterNavigation();
-		if (nav?.prev) {
-			this.callbacks?.onStopReadingTTS?.();
-			this._jumpToLastPage = true;
-			await this.openFile(nav.prev);
-			return true;
-		}
-		return false;
+		return this.chapterNavigator.navigateToPrev();
 	}
 
 	/**
-	 * 跳转到下一章
+	 * 跳转到下一章（委托 ChapterNavigator）
 	 */
 	async navigateToNext(): Promise<boolean> {
-		const nav = this.getChapterNavigation();
-		if (nav?.next) {
-			this.callbacks?.onStopReadingTTS?.();
-			await this.openFile(nav.next);
-			return true;
-		}
-		return false;
-	}
-
-	/**
-	 * 打开文件
-	 */
-	private async openFile(file: TFile): Promise<void> {
-		const leaf = this.app.workspace.getLeaf(false);
-		if (leaf) {
-			await leaf.openFile(file, { active: true });
-		}
+		return this.chapterNavigator.navigateToNext();
 	}
 
 	/**
