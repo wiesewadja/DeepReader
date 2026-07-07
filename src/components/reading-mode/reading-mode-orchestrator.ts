@@ -19,6 +19,7 @@ import type { HighlightColorId } from "../../types/highlight.js";
 import type { QuoteMetadata } from "../../types/quote.js";
 import { serviceLog } from "../../utils/logger.js";
 import { getVaultPath } from "../../utils/mobile-fs.js";
+import { SIDEBAR_VIEW_TYPE } from "../../views/sidebar/sidebar-view.js";
 import { ChapterNav } from "./chapter-nav.js";
 import type { ChapterNavOptions } from "./chapter-nav.js";
 import { ChatWidgetCoordinator } from "./chat-widget-coordinator.js";
@@ -109,7 +110,7 @@ export class ReadingModeService implements ScrollPatchService {
 			onRevealSidebar: () => {
 				this.callbacks?.onRevealSidebar?.();
 			},
-			sidebarViewType: "deeppdf-sidebar-view",
+			sidebarViewType: SIDEBAR_VIEW_TYPE,
 		});
 	}
 
@@ -480,13 +481,6 @@ export class ReadingModeService implements ScrollPatchService {
 			);
 			this.callbacks.onBookDetected(indexId, bookName);
 		}
-	}
-
-	/**
-	 * 更新 FAB 未读状态（委托 ChatWidgetCoordinator）
-	 */
-	setFabUnread(hasUnread: boolean): void {
-		this.chatWidget.setFabUnread(hasUnread);
 	}
 
 	notifyChatStarted(): void {

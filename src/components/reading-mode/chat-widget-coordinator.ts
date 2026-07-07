@@ -65,7 +65,7 @@ export class ChatWidgetCoordinator {
 		this.mobileFab = new MobileReadingFab(() => {
 			const leaf = this.app.workspace.getRightLeaf(false);
 			if (leaf) {
-				leaf.setViewState({ type: "deepreader-sidebar", active: true });
+				leaf.setViewState({ type: this.sidebarViewType, active: true });
 				this.app.workspace.revealLeaf(leaf);
 				// 确保在手机端侧边栏滑动抽屉能正常拉出/展开
 				const rightSplit = (this.app.workspace as any).rightSplit;
@@ -90,13 +90,6 @@ export class ChatWidgetCoordinator {
 	}
 
 	/**
-	 * 更新 FAB 未读状态
-	 */
-	setFabUnread(hasUnread: boolean): void {
-		this.mobileFab?.setUnread(hasUnread);
-	}
-
-	/**
 	 * 动态显示/隐藏桌面端提问悬浮球（R3：由 Shell 的 layout-change/resize handler 回调）
 	 * 桌面端：右边栏在视口中时隐藏奚童，不在时显示；
 	 * 移动端：只要阅读模式激活就显示。
@@ -104,10 +97,7 @@ export class ChatWidgetCoordinator {
 	 */
 	updateVisibility(): void {
 		if (!this.getIsActive() || !this.getActiveContainerEl()) {
-			if (this.xitongWidget) {
-				this.xitongWidget.hide();
-				this.xitongWidget = null;
-			}
+			this.disposeXitongWidget();
 			this.lastSidebarOpen = null;
 			return;
 		}
@@ -134,10 +124,7 @@ export class ChatWidgetCoordinator {
 
 		if (!shouldShow) {
 			this.hasUnreadChatReply = false;
-			if (this.xitongWidget) {
-				this.xitongWidget.hide();
-				this.xitongWidget = null;
-			}
+			this.disposeXitongWidget();
 		} else {
 			if (!this.xitongWidget) {
 				this.xitongWidget = new XitongFloatWidget(
@@ -189,16 +176,24 @@ export class ChatWidgetCoordinator {
 	}
 
 	/**
-	 * 清理聊天组件（由 Shell 在 deactivate 时调用）：销毁 FAB、隐藏悬浮球、复位状态
+	 * 清理聊天组件（由 Shell 在 deactivate 时调用）：销毁 FAB、隐藏悬浮球、复位状态。
+	 * 复位思考态/未读态，避免单例跨 activate 周期携带陈旧动效。
 	 */
 	destroy(): void {
 		this.mobileFab?.destroy();
 		this.mobileFab = null;
 
+		this.disposeXitongWidget();
+		this.lastSidebarOpen = null;
+		this.isChatThinking = false;
+		this.hasUnreadChatReply = false;
+	}
+
+	/** 隐藏并丢弃当前奚童悬浮球（统一 destroy / 非激活 / shouldShow=false 三处清理路径） */
+	private disposeXitongWidget(): void {
 		if (this.xitongWidget) {
 			this.xitongWidget.hide();
 			this.xitongWidget = null;
 		}
-		this.lastSidebarOpen = null;
 	}
 }

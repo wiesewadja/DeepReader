@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Platform } from "obsidian";
 import { ChatWidgetCoordinator } from "@/components/reading-mode/chat-widget-coordinator.js";
 
@@ -77,6 +77,11 @@ beforeEach(() => {
 	});
 });
 
+// 还原全局可变状态，避免污染同进程后续测试文件
+afterEach(() => {
+	(Platform as any).isMobile = false;
+});
+
 describe("ChatWidgetCoordinator 聊天态联动", () => {
 	it("notifyChatStarted 置思考态并驱动悬浮球 setThinking(true)", () => {
 		// 先激活态建一个 widget
@@ -134,17 +139,13 @@ describe("ChatWidgetCoordinator 聊天态联动", () => {
 	});
 });
 
-describe("ChatWidgetCoordinator FAB 未读", () => {
-	it("initMobileFab 在移动端创建 FAB 并 show；setFabUnread 透传", () => {
+describe("ChatWidgetCoordinator FAB", () => {
+	it("initMobileFab 在移动端创建 FAB 并 show", () => {
 		(Platform as any).isMobile = true;
 		coordinator.initMobileFab();
 		const fab = getFabInstances()[0];
 		expect(fab).toBeTruthy();
 		expect(fab.show).toHaveBeenCalledTimes(1);
-
-		fab.setUnread.mockClear();
-		coordinator.setFabUnread(true);
-		expect(fab.setUnread).toHaveBeenCalledWith(true);
 	});
 
 	it("initMobileFab 在桌面端不创建 FAB（早退）", () => {
