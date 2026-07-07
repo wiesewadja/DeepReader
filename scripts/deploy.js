@@ -208,4 +208,16 @@ if (targets.includes('dev')) {
     console.error('\n❌ 部署后置校验失败，请按提示修复');
     process.exit(1);
   }
+
+  // 自动 reload 插件（确保最新代码生效）
+  console.log('\n🔄 正在 reload 插件...');
+  try {
+    execSync('obsidian vault=test-vault plugin:reload id=deepreader-dev', {
+      stdio: 'inherit',
+      cwd: path.join(__dirname, '..'),
+    });
+    console.log('✅ 插件已 reload');
+  } catch (e) {
+    console.log('⚠️  插件 reload 失败（可能 Obsidian 未运行）');
+  }
 }
