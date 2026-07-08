@@ -109,13 +109,6 @@ export class SidebarView extends ItemView {
 			app: this.app,
 			plugin: this.plugin,
 			eventBus: this.eventBus,
-			startNewSession: (indexId) => self.sessionDomain?.startNewSession(indexId) ?? Promise.resolve(),
-			restoreFromSessionStore: (sessionId) => self.sessionDomain?.restoreSession(sessionId) ?? Promise.resolve(false),
-			getSessionId: () => self.sessionDomain?.sessionId ?? null,
-			setSessionId: (id) => { if (self.sessionDomain) self.sessionDomain.sessionId = id; },
-			getSessionStore: () => self.sessionDomain?.sessionStore ?? null,
-			ensureSessionStore: () => self.sessionDomain?.ensureSessionStore() ?? Promise.resolve(),
-			cancelActiveStream: () => self.sessionDomain?.cancelStream(),
 		});
 		this.sessionDomain = new SessionDomain({
 			app: this.app,
@@ -163,6 +156,38 @@ export class SidebarView extends ItemView {
 		this.sessionDomain.crossBookMode = false;
 		this.sessionDomain.generalChatMode = false;
 		await this.bookDomain.selectIndex(indexId);
+
+		// 协调会话（BookDomain 已简化，不再处理会话）
+		await this.coordinateSessionForBook(indexId);
+	}
+
+	private async coordinateSessionForBook(indexId: string): Promise<void> {
+		if (!this.sessionDomain) return;
+
+		// 取消活跃流
+		if (this.sessionDomain.currentStreamController) {
+			this.sessionDomain.cancelStream();
+		}
+
+		// 查找保存的会话
+		const savedSessions = this.plugin.settings.savedSessions || {};
+		const bookDomain = this.bookDomain;
+		const normalizedBookName = (bookDomain.currentPdfName || "")
+			.replace(/\.pdf$/i, "")
+			.replace(/\.epub$/i, "") || indexId;
+		const savedSessionId = savedSessions[normalizedBookName] || savedSessions[indexId];
+
+		if (savedSessionId) {
+			// 尝试恢复会话
+			const restored = await this.sessionDomain.restoreSession(savedSessionId);
+			if (restored) {
+				this.sessionDomain.sessionId = savedSessionId;
+				return;
+			}
+		}
+
+		// 无保存会话或恢复失败，创建新会话
+		await this.sessionDomain.startNewSession(indexId);
 	}
 
 	public async selectBookByName(bookName: string): Promise<void> {
@@ -175,6 +200,12 @@ export class SidebarView extends ItemView {
 		await this.bookDomain.selectBooklist(
 			this.bookDomain.normalizeBooklistItems(booklist),
 		);
+
+		// 协调会话
+		if (this.sessionDomain.currentStreamController) {
+			this.sessionDomain.cancelStream();
+		}
+		await this.sessionDomain.startNewSession(booklist.id);
 	}
 
 	/** 重新进入历史书单：恢复已有会话，无会话则新建 */
@@ -209,12 +240,23 @@ export class SidebarView extends ItemView {
 	public exitBooklist(): void {
 		this.bookDomain.clearBooklist();
 		this.sessionDomain.crossBookMode = false;
+
+		// 协调会话
+		if (this.sessionDomain.currentStreamController) {
+			this.sessionDomain.cancelStream();
+		}
+		this.sessionDomain.sessionId = null;
 	}
 
 	public restoreBooklist(booklist: Booklist): void {
 		this.bookDomain.restoreBooklist(
 			this.bookDomain.normalizeBooklistItems(booklist),
 		);
+
+		// 协调会话
+		if (this.sessionDomain.currentStreamController) {
+			this.sessionDomain.cancelStream();
+		}
 	}
 
 	public getCurrentIndexId(): string | null {
