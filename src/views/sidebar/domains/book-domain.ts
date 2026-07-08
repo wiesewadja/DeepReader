@@ -31,15 +31,6 @@ export interface BookDomainOptions {
 	app: App;
 	plugin: DeepReaderPluginInterface;
 	eventBus: EventBus<SidebarEventMap>;
-	
-	// Delegations
-	startNewSession(indexId: string): Promise<void>;
-	restoreFromSessionStore(sessionId: string): Promise<boolean>;
-	getSessionId(): string | null;
-	setSessionId(id: string | null): void;
-	getSessionStore(): any;
-	ensureSessionStore(): Promise<void>;
-	cancelActiveStream(): void;
 }
 
 export class BookDomain {
@@ -492,69 +483,8 @@ export class BookDomain {
 			this._currentDocDescription = null;
 		}
 
-		this.options.cancelActiveStream();
-
-		// Session Restoration
-		const savedSessions = this.plugin.settings.savedSessions || {};
-		const normalizedBookName = (this._currentPdfName || "").replace(/\.pdf$/i, "").replace(/\.epub$/i, "") || this._currentIndexId || "";
-		const savedSessionId = savedSessions[normalizedBookName] || savedSessions[indexId];
-
-		if (savedSessionId) {
-			try {
-				await this.options.ensureSessionStore();
-				const store = this.options.getSessionStore();
-				let session = store ? await store.get(savedSessionId) : null;
-				let activeSessionId = savedSessionId;
-
-				// 自愈：savedSession 仅含 welcome（messages<=1，多由恢复失败 fallback 污染），
-				// 找同 indexId 下更完整的历史 session 迁移指向，恢复真实历史对话。
-				if (session && session.messages.length <= 1 && store) {
-					const betterId = await store.findBestSessionForIndex(indexId, savedSessionId);
-					if (betterId) {
-						const better = await store.get(betterId);
-						if (better && better.messages.length > 1) {
-							log(`[BookDomain] 自愈：savedSession ${savedSessionId} 仅 ${session.messages.length} 条，迁移到 ${betterId} (${better.messages.length} 条)`);
-							session = better;
-							activeSessionId = betterId;
-							savedSessions[normalizedBookName] = betterId;
-							savedSessions[indexId] = betterId;
-							await this.plugin.saveSettings();
-						}
-					}
-				}
-
-				if (session) {
-					const sessionIndexId = String(session.indexId);
-					const sessionBookName = sessionIndexId.replace(/\.pdf$/i, "").replace(/\.epub$/i, "");
-					const isMatch = sessionIndexId === indexId ||
-						sessionIndexId === normalizedBookName ||
-						sessionBookName === normalizedBookName ||
-						sessionBookName === indexId;
-
-					if (!isMatch) {
-						await this.options.startNewSession(indexId);
-						this.emitChanged(true);
-						return;
-					}
-
-					this.options.setSessionId(activeSessionId);
-					const restored = await this.options.restoreFromSessionStore(activeSessionId);
-					if (restored) {
-						this.emitChanged(false);
-						return;
-					}
-				}
-				await this.options.startNewSession(indexId);
-				this.emitChanged(true);
-			} catch (e) {
-				logError("[BookDomain] Session restoration failed, starting new session:", e);
-				await this.options.startNewSession(indexId);
-				this.emitChanged(true);
-			}
-		} else {
-			await this.options.startNewSession(indexId);
-			this.emitChanged(true);
-		}
+		// Session orchestration moved to SidebarView
+		this.emitChanged(true);
 	}
 
 	async selectBookByName(bookName: string): Promise<void> {
@@ -741,7 +671,6 @@ export class BookDomain {
 		this._currentBooklist = booklist;
 		this._booklistCovers = undefined;
 
-		this.options.cancelActiveStream();
 		this.emitChanged(true);
 		this.loadAndApplyBooklistCovers(booklist);
 	}
@@ -846,15 +775,12 @@ export class BookDomain {
 
 		await this.plugin.saveSettings();
 
-		this.options.cancelActiveStream();
-		await this.options.startNewSession(booklist.id);
 		this.emitChanged(true);
 	}
 
 	clearBooklist(): void {
 		if (!this._currentBooklist) return;
 
-		this.options.cancelActiveStream();
 		this._currentBooklist = null;
 		this._currentDocDescription = null;
 		this._booklistCovers = undefined;
@@ -863,7 +789,6 @@ export class BookDomain {
 		this.plugin.settings.lastSelectedIndexId = undefined;
 		this.plugin.settings.lastActiveBooklistId = undefined;
 		this.plugin.saveSettings();
-		this.options.setSessionId(null);
 		this.emitChanged(true);
 	}
 
