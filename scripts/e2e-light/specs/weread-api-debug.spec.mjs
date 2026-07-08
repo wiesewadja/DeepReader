@@ -10,17 +10,32 @@ import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
 const GATEWAY_URL = 'https://i.weread.qq.com/api/agent/gateway';
 
 async function callGateway(apiName, body, apiKey) {
-	return evalObsidian(`(() => {
-		const { requestUrl } = require('obsidian');
-		return requestUrl({
-			url: ${JSON.stringify(GATEWAY_URL)},
-			method: 'POST',
-			headers: {
-				'Authorization': 'Bearer ' + ${JSON.stringify(apiKey)},
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(${JSON.stringify({ api_name: apiName, skill_version: '1.0.3', ...body })}),
-		}).then(r => r.json);
+	return evalObsidian(`(async () => {
+		const url = ${JSON.stringify(GATEWAY_URL)};
+		const headers = {
+			'Authorization': 'Bearer ' + ${JSON.stringify(apiKey)},
+			'Content-Type': 'application/json',
+		};
+		const bodyData = ${JSON.stringify({ api_name: apiName, skill_version: '1.0.3', ...body })};
+		
+		// 使用 XMLHttpRequest 替代 require('obsidian')
+		return new Promise((resolve, reject) => {
+			const xhr = new XMLHttpRequest();
+			xhr.open('POST', url, true);
+			xhr.setRequestHeader('Authorization', headers.Authorization);
+			xhr.setRequestHeader('Content-Type', headers['Content-Type']);
+			xhr.onload = function() {
+				try {
+					resolve(JSON.parse(xhr.responseText));
+				} catch (e) {
+					reject(new Error('Failed to parse response'));
+				}
+			};
+			xhr.onerror = function() {
+				reject(new Error('Request failed'));
+			};
+			xhr.send(JSON.stringify(bodyData));
+		});
 	})()`, { timeout: 30_000 });
 }
 

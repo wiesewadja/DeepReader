@@ -62,18 +62,19 @@ export default {
 		{
 		let rendered = false;
 		log?.warn?.('  等待阅读模式内容渲染…');
-		for (let i = 0; i < 24; i++) {
+		for (let i = 0; i < 40; i++) {
 				rendered = await evalObsidian(`(() => {
 					const c = document.querySelector(".markdown-preview-content");
+					const sizer = document.querySelector(".markdown-preview-sizer");
 					const svc = app.plugins.plugins["deepreader-dev"].readingModeService;
-					return (!!(c && c.querySelector("p,li,h1,h2,h3,h4"))) || !!svc.paginator;
+					return (!!(c && c.querySelector("p,li,h1,h2,h3,h4"))) || !!(sizer && sizer.children.length > 1) || !!svc.paginator;
 				})()`);
 				if (rendered) break;
-				if (i % 6 === 5) log?.warn?.(`    渲染等待中… (${(i + 1) * 0.5}s)`);
+				if (i % 8 === 7) log?.warn?.(`    渲染等待中… (${(i + 1) * 0.5}s)`);
 				await new Promise(r => setTimeout(r, 500));
 			}
 			if (!rendered) {
-				log?.warn?.('内容未在 12s 内渲染（可能 e2e 激活路径未触发渲染，属环境/配置限制）');
+				log?.warn?.('内容未在 20s 内渲染（可能 e2e 激活路径未触发渲染，属环境/配置限制）');
 			}
 		}
 
