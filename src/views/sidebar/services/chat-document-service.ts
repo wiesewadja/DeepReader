@@ -8,6 +8,7 @@
 import { type App, TFile } from "obsidian";
 import { EventBus } from "../event-bus.js";
 import type { SidebarEventMap } from "../events.js";
+import { uiLog as log } from "../../../utils/logger.js";
 
 export interface LoadedDocument {
 	/** File path */
@@ -142,6 +143,47 @@ export class ChatDocumentService {
 			parts.push(`---\n文档: ${doc.name}\n路径: ${doc.path}\n---\n${doc.content}`);
 		}
 		return parts.join("\n\n");
+	}
+
+	/**
+	 * 自动同步当前章节到上下文
+	 *
+	 * 默认行为：
+	 * - 首次打开章节时，自动加载到上下文
+	 * - 切换章节时，自动更新为新章节
+	 * - 只有用户手动点击按钮才能卸载文档
+	 */
+	async syncCurrentChapter(currentPdfName: string | null): Promise<void> {
+		if (!currentPdfName) return;
+
+		const activeFile = this.app.workspace.getActiveFile();
+		if (!activeFile || activeFile.extension !== "md") return;
+
+		// 检查当前文件是否属于正在阅读的书籍
+		const bookPath = `DeepReader/${currentPdfName}/`;
+		if (!activeFile.path.startsWith(bookPath)) return;
+
+		// 排除书籍主文件（只加载章节文件）
+		if (activeFile.path === `${bookPath}${currentPdfName}.md`) return;
+
+		// 检查当前章节是否已在上下文中
+		if (this.hasDocument(activeFile.path)) return;
+
+		// 找到当前书籍的章节文档（source === 'current' 的文档）
+		const docs = this.getLoadedDocuments();
+		const currentChapterDoc = Array.from(docs.values()).find(
+			(doc) => doc.source === "current" && doc.path.startsWith(bookPath),
+		);
+
+		if (currentChapterDoc) {
+			// 卸载旧的章节
+			this.removeDocument(currentChapterDoc.path);
+			log(`[DeepPDF] 自动卸载旧章节: ${currentChapterDoc.name}`);
+		}
+
+		// 加载新的章节到上下文
+		await this.loadByPath(activeFile.path, "current");
+		log(`[DeepPDF] 自动加载章节: ${activeFile.basename}`);
 	}
 
 	private notifyChange(): void {

@@ -272,6 +272,24 @@ export class BookDomain {
 		return BookDomain.getDisplayName(pdfName);
 	}
 
+	/**
+	 * 补全书单的 items 字段（历史书单不含 items）。
+	 * 已有非空 items 直接返回；否则从 indexes 查 pdf_name，fallback 到 bookNames。
+	 */
+	normalizeBooklistItems(booklist: Booklist): Booklist {
+		if (booklist.items && booklist.items.length > 0) {
+			return booklist;
+		}
+		const items = booklist.bookIds.map((id, i) => {
+			const idx = this._indexes.find((ix) => ix.id === id);
+			const name = stripFileExtension(
+				idx?.pdf_name || booklist.bookNames?.[i] || id,
+			);
+			return { id, name, author: idx?.author };
+		});
+		return { ...booklist, items };
+	}
+
 	// ── Library View Interaction ──
 
 	async openLibrary(): Promise<void> {

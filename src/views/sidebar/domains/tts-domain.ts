@@ -33,6 +33,10 @@ export interface TTSDomainOptions {
 	highlightElement?: (el: HTMLElement) => void;
 	clearHighlight?: () => void;
 	goToNextPage?: () => boolean;
+	/** 当前朗读顶栏状态（用于 toggle 判断） */
+	getReadingTTSState?: () => "idle" | "loading" | "playing";
+	/** 当前选区文本（朗读优先走选区） */
+	getSelectionText?: () => string;
 }
 
 export class TTSDomain {
@@ -125,6 +129,56 @@ export class TTSDomain {
 
 		if (resetIndex) {
 			this.lastReadParagraphIndex = 0;
+		}
+	}
+
+	/**
+	 * 停止原文朗读（翻页/切章/关闭阅读模式时调用）。
+	 * 程序翻页（autoPageTurn）时朗读会自然结束，跳过手动停止。
+	 */
+	stopReadingTTS(resetIndex = true): void {
+		if (this.isAutoPageTurn) return; // 程序翻页，朗读在 readCurrentPage 内自然结束
+		this.stopReading(resetIndex);
+	}
+
+	/**
+	 * 切换原文朗读（按钮点击 / Hotkey）。
+	 * - 正在朗读 → 停止
+	 * - 有选区 → 朗读选区
+	 * - 无选区且当前页有内容 → 朗读当前页
+	 * - 无内容 → 提示
+	 * 顶栏朗读状态由 tts:state-changed 事件驱动（ChatPresenter 订阅），此处不手动设置。
+	 */
+	async toggleReading(): Promise<void> {
+		// 正在朗读 → 停止
+		const readingState = this.options.getReadingTTSState?.() ?? "idle";
+		if (readingState !== "idle") {
+			this.stopReadingTTS(false);
+			return;
+		}
+
+		// 优先朗读选区
+		const selection = this.options.getSelectionText?.()?.trim();
+		if (selection) {
+			try {
+				await this.readCurrentPage(selection);
+			} catch {
+				// 状态已由事件回 idle
+			}
+			return;
+		}
+
+		// 无选区时检查当前页是否有内容
+		const paragraphs = this.options.getPageParagraphs?.() || [];
+		if (paragraphs.length === 0) {
+			new Notice("当前没有可朗读的文本");
+			return;
+		}
+
+		try {
+			await this.readCurrentPage(); // 无参数走页面朗读
+		} catch {
+			// 状态已由事件回 idle
 		}
 	}
 

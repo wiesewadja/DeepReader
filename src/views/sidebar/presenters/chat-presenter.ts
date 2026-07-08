@@ -18,6 +18,10 @@ export interface ChatPresenterOptions {
 	get messageList(): MessageList | null;
 	get chatInput(): ChatInput | null;
 	get readingTopbar(): ReadingTopbar | null;
+	/** 当前活跃文件路径（用于判断文档加载按钮态），由 View 注入避免 Presenter 持有 app */
+	getActiveFilePath: () => string | null;
+	/** 文档变化时触发的布局回调（padding 重算等 View 层关注点） */
+	onDocumentsChanged?: (hasDocs: boolean) => void;
 }
 
 export class ChatPresenter {
@@ -25,6 +29,8 @@ export class ChatPresenter {
 	private getMessageList: () => MessageList | null;
 	private getChatInput: () => ChatInput | null;
 	private getReadingTopbar: () => ReadingTopbar | null;
+	private getActiveFilePath: () => string | null;
+	private onDocumentsChanged?: (hasDocs: boolean) => void;
 	private unsubscribe: (() => void)[] = [];
 
 	constructor(options: ChatPresenterOptions) {
@@ -32,6 +38,8 @@ export class ChatPresenter {
 		this.getMessageList = () => options.messageList;
 		this.getChatInput = () => options.chatInput;
 		this.getReadingTopbar = () => options.readingTopbar;
+		this.getActiveFilePath = options.getActiveFilePath;
+		this.onDocumentsChanged = options.onDocumentsChanged;
 		this.subscribe();
 	}
 
@@ -246,6 +254,19 @@ export class ChatPresenter {
 		this.unsubscribe.push(
 			this.eventBus.on("book:index-delete-failed", (event) => {
 				new Notice(`删除失败: ${event.pdfName} (${event.error})`);
+			}),
+		);
+
+		this.unsubscribe.push(
+			this.eventBus.on("chat:documents-changed", ({ documents }) => {
+				// 更新加载按钮的激活状态（检查当前活跃文件是否已加载）
+				const activePath = this.getActiveFilePath();
+				const isCurrentDocLoaded = activePath
+					? documents.some((d) => d.path === activePath)
+					: false;
+				this.getChatInput()?.setLoadBtnActive(isCurrentDocLoaded);
+				// 触发 View 层布局重算（padding 等）
+				this.onDocumentsChanged?.(documents.length > 0);
 			}),
 		);
 	}
