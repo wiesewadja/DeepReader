@@ -5,32 +5,31 @@
 import { apiLog } from "../utils/logger.js";
 import { nodeCrypto, nodeFsPromises, nodePath } from "../utils/node-compat.js";
 import { safeRequest } from "../utils/safe-request.js";
-import { buildBM25Index } from "./bm25.js";
 import type {
   BookIndexOptions,
   BookIndexResult,
   BookMeta,
-  IndexErrorCode,
-  BM25Data,
  TreeData } from "./book-types.js";
-import { IndexErrorCode as ErrorCode, IndexError } from "./book-types.js";
-import { log as piLog } from "./core/logger";
+import { IndexError } from "./book-types.js";
+import { log as piLog } from "./core/logger.js";
 import type { PageIndexResult, TreeNode } from "./core/types.js";
-import {
-  DEFAULT_ADD_NODE_TEXT,
-  DEFAULT_ADD_NODE_SUMMARY,
-  DEFAULT_ADD_DOC_DESCRIPTION,
-  DEFAULT_EXPORT_DIR,
-  DEFAULT_COVERS_PATH,
-  DEFAULT_INCLUDE_INDEX,
-  DEFAULT_ASSETS_PATH,
-} from "./defaults.js";
-import { createTracer, type Tracer } from "./index-tracer.js";
-import { PageIndex } from "./pageindex.js";
-import type { MineruImage } from "./parsers/mineru-types.js";
+import { DEFAULT_EXPORT_DIR } from "./defaults.js";
 import { getPageindexRoot, getBookDir } from "./paths.js";
-import { indexPropositions } from "./proposition-indexer.js";
+import type { MineruImage } from "./parsers/mineru-types.js";
 import type { EmbeddingOptions } from "./vault/types.js";
+
+// Pipeline executor + steps
+import { executePipeline } from "./book-indexer/executor.js";
+import { validateStep } from "./book-indexer/steps/validate.js";
+import { parseStep } from "./book-indexer/steps/parse.js";
+import { coverStep } from "./book-indexer/steps/cover.js";
+import { exportStep } from "./book-indexer/steps/export.js";
+import { metadataStep } from "./book-indexer/steps/metadata.js";
+import { vectorizeStep } from "./book-indexer/steps/vectorize.js";
+import { bm25Step } from "./book-indexer/steps/bm25.js";
+import { propositionsStep } from "./book-indexer/steps/propositions.js";
+import { finalizeStep } from "./book-indexer/steps/finalize.js";
+import type { PipelineContext } from "./book-indexer/pipeline-types.js";
 
 const BOOK_ID_HEAD_BYTES = 65536; // 64KB sample for content-based ID
 const MIGRATION_MARKER = ".migrated-content-id-v1";
@@ -119,672 +118,69 @@ export async function deleteBookIndex(filePath: string, vaultPath: string): Prom
 }
 
 /**
- * Index a single book
+ * Create a minimal PipelineContext for the pipeline executor.
+ * The validate step populates bookId, indexDir, tracer, reportProgress, etc.
+ */
+function createPipelineContext(
+  options: BookIndexOptions,
+  plugin?: any,
+  app?: any,
+): PipelineContext {
+  return {
+    bookId: "",
+    indexDir: "",
+    deepReaderDir: "",
+    bookDir: "",
+    exportName: "",
+    rootTitle: "",
+    filePath: options.filePath,
+    fileType: options.fileType,
+    options,
+    tracer: undefined as any, // set by validate step
+    reportProgress: () => {}, // set by validate step
+    plugin,
+    app,
+  };
+}
+
+/**
+ * Index a single book via pipeline executor.
  * @param options - Book index options
  * @param options.outputDir - Vault root path (where .pageindex directory will be created)
  */
 export async function indexBook(options: BookIndexOptions): Promise<BookIndexResult> {
-  const fs = nodeFsPromises();
-  const path = nodePath();
-  // Validate file exists
+  const ctx = createPipelineContext(options);
+
+  const steps = [
+    validateStep,
+    parseStep,
+    coverStep,
+    exportStep,
+    metadataStep,
+    vectorizeStep,
+    bm25Step,
+    propositionsStep,
+    finalizeStep,
+  ];
+
+  // Wrap in try-finally to ensure status cleanup on error
   try {
-    await fs.access(options.filePath);
-  } catch {
-    throw new IndexError(
-      `File not found: ${options.filePath}`,
-      ErrorCode.FILE_NOT_FOUND,
-      `文件不存在: ${options.filePath}`,
-      "请确认文件路径是否正确，或重新选择文件"
-    );
-  }
-
-  const bookId = await generateBookId(options.filePath);
-  const indexDir = getBookDir(options.outputDir, bookId);
-
-  // 创建追踪日志（INDEX_TRACE_ENABLED=false 时为 NoopIndexTracer，零开销）
-  const tracer = createTracer(
-    bookId,
-    path.basename(options.filePath, path.extname(options.filePath)),
-    options.filePath,
-    options.fileType,
-    {
-      pageindexModel: options.model || "unknown",
-      embeddingProvider: options.embedding?.provider,
-      embeddingModel: options.embedding?.model,
-      mineruUsed: !!options.mineruApiKey,
-    },
-    options.outputDir,
-    bookId,
-  );
-
-  // Create indexing status file so progress survives modal close/reopen
-  await fs.mkdir(indexDir, { recursive: true });
-  const indexingStatusPath = path.join(indexDir, ".indexing.json");
-
-  // Clean stale status from previous interrupted indexing
-  try { await fs.unlink(indexingStatusPath); } catch { /* not exists */ }
-
-  const reportProgress = (progress: { percent: number; step: string; stepLabel: string; message?: string }) => {
-    options.onProgress?.(progress);
-    // Persist to file (fire-and-forget)
-    fs.writeFile(indexingStatusPath, JSON.stringify({
-      bookId,
-      filePath: options.filePath,
+    await executePipeline(steps, ctx);
+    return {
+      bookId: ctx.bookId,
+      title: ctx.rootTitle,
       fileType: options.fileType,
-      title: path.basename(options.filePath, path.extname(options.filePath)),
-      ...progress,
-    })).catch(() => {});
-  };
-
-  // Clean up indexing status file only on successful completion
-  // On failure, the file is preserved so loadIndexes can show "failed" status
-  const cleanupStatus = () => {
-    fs.unlink(indexingStatusPath).catch(() => {});
-  };
-
-  // Wrap entire pipeline in try-finally to ensure status cleanup on any error
-  try {
-    let quality: "good" | "degraded" | "poor" = "good";
-    let qualityReason: string | undefined = undefined;
-
-  // B0 validate
-  tracer.startPhase("validate");
-  // (file access already checked above, record file size)
-  let fileSizeBytes = 0;
-  try { fileSizeBytes = (await fs.stat(options.filePath)).size; } catch {}
-  tracer.endPhase({ fileSizeBytes });
-  tracer.save();
-
-  // Step 1: Document parsing + LLM indexing (most time-consuming, 5%-70%)
-  reportProgress({
-    percent: 5,
-    step: "parse_document",
-    stepLabel: "解析文档",
-  });
-
-  // Map PageIndex internal progress to book-indexer range (5%-70%)
-  // PageIndex goes through: parsing → tree building → summary generation
-  const onParseProgress = (progress: { percent: number; message: string; stage: string }) => {
-    const mappedPercent = 5 + Math.round(progress.percent * 0.65);
-    // Map internal "complete" to "parse_complete" to prevent .indexing.json
-    // from being misread as fully complete by loadIndexes polling (which
-    // checks step === "complete"). We're only 70% done at this point.
-    const safeStep = progress.stage === 'complete' ? 'parse_complete' : (progress.stage || 'parse_document');
-    reportProgress({
-      percent: Math.min(mappedPercent, 70),
-      step: safeStep,
-      stepLabel: progress.message || "处理文档",
-    });
-  };
-
-  // B1 parse_document
-  tracer.startPhase("parse_document");
-
-  // Early cover save: EPUB cover is available right after parseEpub (~5% progress),
-  // well before the full indexing pipeline completes. Save it immediately so the
-  // library UI can show the cover during the remaining LLM-heavy steps.
-  let earlyCoverSaved = false;
-  const deepReaderDir = path.join(options.outputDir, DEFAULT_EXPORT_DIR);
-
-  const pageIndex = new PageIndex({
-    model: options.model,
-    apiKey: options.apiKey,
-    baseUrl: options.baseUrl,
-    mineruApiKey: options.mineruApiKey,
-    addNodeText: DEFAULT_ADD_NODE_TEXT,
-    addNodeSummary: options.addNodeSummary ?? DEFAULT_ADD_NODE_SUMMARY,
-    addDocDescription: options.addDocDescription ?? DEFAULT_ADD_DOC_DESCRIPTION,
-    onProgress: onParseProgress,
-    onLlmCall: (call) => tracer.recordLlmCall(call),
-    onCoverReady: (cover, title) => {
-      if (!cover) return;
-      try {
-        const exportName = simplifyTitle(title);
-        const coversDir = path.join(deepReaderDir, DEFAULT_COVERS_PATH);
-        fs.mkdir(coversDir, { recursive: true }).then(() => {
-          const ext = path.extname(cover.name) || ".jpg";
-          const coverPath = path.join(coversDir, `${exportName}${ext}`);
-          fs.writeFile(coverPath, cover.data).then(() => {
-            earlyCoverSaved = true;
-            piLog(`[book-indexer] Early cover saved: ${coverPath}`);
-          }).catch(() => {});
-        }).catch(() => {});
-      } catch { /* best-effort, non-blocking */ }
-    },
-  });
-
-  let parseResult;
-  try {
-    if (options.fileType === "pdf") {
-      parseResult = await pageIndex.fromPdf(options.filePath);
-    } else {
-      parseResult = await pageIndex.fromEpub(options.filePath);
-    }
-  } catch (error) {
-    throw new IndexError(
-      `Document parsing failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-      ErrorCode.FILE_NOT_FOUND,
-      "文档解析失败",
-      "请检查文件格式是否正确"
-    );
-  }
-
-  tracer.endPhase({
-    chaptersCount: parseResult.structure.length,
-    totalNodes: parseResult.structure.reduce((acc, n) => acc + 1 + (n.nodes?.length || 0), 0),
-  });
-  tracer.save();
-
-  // 记录解析路径决策
-  if (options.fileType === "epub") {
-    tracer.recordPathDecision({
-      phase: "parse_document",
-      decision: "epub_direct",
-      reason: `EPUB has ${parseResult.structure.length} chapters from spine`,
-    });
-  } else {
-    tracer.recordPathDecision({
-      phase: "parse_document",
-      decision: "llm_toc",
-      reason: `PDF parsed via LLM, ${parseResult.structure.length} chapters extracted`,
-    });
-  }
-  tracer.save();
-
-  reportProgress({
-    percent: 70,
-    step: "parse_complete",
-    stepLabel: "文档索引完成",
-  });
-
-  const rootTitle = parseResult.docName || parseResult.structure[0]?.title || "Unknown";
-  // Simplify export name: strip subtitles after separators for cleaner directory names
-  const exportName = simplifyTitle(rootTitle);
-  tracer.setTitle(exportName);
-  const bookDir = path.join(deepReaderDir, exportName);
-
-  // Ensure DeepReader directory exists
-  await fs.mkdir(deepReaderDir, { recursive: true });
-
-  // B1.5 Save cover image
-  tracer.startPhase("save_cover");
-  const coversDir = path.join(deepReaderDir, DEFAULT_COVERS_PATH);
-  await fs.mkdir(coversDir, { recursive: true });
-
-  // Track cover relative path for frontmatter
-  let coverRelPath = "";
-  if (earlyCoverSaved && parseResult.coverImage) {
-    // Already saved by onCoverReady callback during parseEpub — just compute path
-    const ext = path.extname(parseResult.coverImage.name) || ".jpg";
-    coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}${ext}`;
-  } else if (parseResult.coverImage) {
-    // EPUB: save extracted cover image (early save didn't fire or failed)
-    try {
-      const ext = path.extname(parseResult.coverImage.name) || ".jpg";
-      const coverPath = path.join(coversDir, `${exportName}${ext}`);
-      await fs.writeFile(coverPath, parseResult.coverImage.data);
-      coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}${ext}`;
-      piLog(`[book-indexer] Cover saved: ${coverPath}`);
-    } catch (err) {
-      apiLog.warn("[book-indexer] Failed to save cover:", err);
-    }
-  } else if (parseResult.coverPng && parseResult.coverPng.length > 100) {
-    // PDF: save rendered first page as PNG (only if valid, >100 bytes)
-    try {
-      const coverPath = path.join(coversDir, `${exportName}.png`);
-      await fs.writeFile(coverPath, parseResult.coverPng);
-      coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}.png`;
-      piLog(`[book-indexer] PDF cover saved: ${coverPath} (${parseResult.coverPng.length} bytes)`);
-    } catch (err) {
-      apiLog.warn("[book-indexer] Failed to save PDF cover:", err);
-    }
-  } else {
-    // No cover available: generate text-based SVG cover
-    try {
-      const svgCover = generateTextCover(exportName, options.fileType);
-      const coverPath = path.join(coversDir, `${exportName}.svg`);
-      await fs.writeFile(coverPath, svgCover, "utf-8");
-      coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}.svg`;
-      piLog(`[book-indexer] Text cover generated: ${coverPath}`);
-    } catch (err) {
-      apiLog.warn("[book-indexer] Failed to generate text cover:", err);
-    }
-  }
-  tracer.endPhase();
-  tracer.save();
-
-  // B1.6: Download images (PDF only)
-  if (options.fileType === "pdf" && parseResult.images && parseResult.images.length > 0) {
-    tracer.startPhase("download_images");
-    const imagesDir = path.join(bookDir, "images");
-    await fs.mkdir(imagesDir, { recursive: true });
-
-    reportProgress({
-      percent: 70,
-      step: "download_images",
-      stepLabel: `下载图片 (0/${parseResult.images.length})`,
-    });
-
-    await downloadImages(parseResult.images, imagesDir, (done, total) => {
-      reportProgress({
-        percent: 70,
-        step: "download_images",
-        stepLabel: `下载图片 (${done}/${total})`,
-      });
-    });
-
-    piLog(`[book-indexer] Downloaded images to ${imagesDir}`);
-    tracer.endPhase({ imageCount: parseResult.images.length });
-    tracer.save();
-  }
-
-  // B2 export_markdown
-  // TOC LLM Cleanup before running exporters
-  try {
-    const { cleanTocTitles } = await import("./core/toc-cleaner.js");
-    const cleanup = await cleanTocTitles(parseResult.structure, {
-      bookTitle: rootTitle,
-      model: options.tocModel || options.model || "deepseek-chat",
-      apiKey: options.apiKey,
-      baseUrl: options.baseUrl,
-      onLlmCall: (call) => tracer.recordLlmCall(call),
-    });
-
-    parseResult.structure = cleanup.structure;
-    quality = cleanup.result.quality;
-    qualityReason = cleanup.result.qualityReason;
-
-    // Sync cleaned titles to epubInfo chapters for EPUB
-    // Match by root-level tree node index (epub chapters → tree nodes are 1:1)
-    if (options.fileType === "epub" && parseResult.epubInfo) {
-      const limit = Math.min(parseResult.structure.length, parseResult.epubInfo.chapters.length);
-      for (let i = 0; i < limit; i++) {
-        const node = parseResult.structure[i];
-        if (node && node.title) {
-          parseResult.epubInfo.chapters[i]!.title = node.title;
-        }
-      }
-    }
-  } catch (err) {
-    piLog(`[TOC Cleanup] Failed to run TOC cleanup: ${err}`);
-    quality = "degraded";
-    qualityReason = `TOC Cleanup failed: ${err instanceof Error ? err.message : String(err)}`;
-  }
-
-  tracer.startPhase("export_markdown");
-  reportProgress({
-    percent: 70,
-    step: "export_markdown",
-    stepLabel: "导出 Markdown",
-  });
-
-  try {
-    if (options.fileType === "pdf") {
-      const { exportPdfToObsidian } = await import("./exporters/pdf-to-obsidian.js");
-      const exportResult = await exportPdfToObsidian({
-        outputDir: deepReaderDir,
-        parseResult,
-        includeIndex: DEFAULT_INCLUDE_INDEX,
-        sourcePdf: options.filePath,
-        exportName,
-        author: parseResult.author,
-        coverPath: coverRelPath || undefined,
-        bookId,
-      });
-      // Store nodeFileMap for tree.json
-      parseResult._nodeFileMap = exportResult.nodeFileMap;
-    } else {
-      const { exportToObsidian } = await import("./exporters/epub-to-obsidian.js");
-      const exportResult = await exportToObsidian(
-        options.filePath,
-        {
-          outputDir: deepReaderDir,
-          includeIndex: DEFAULT_INCLUDE_INDEX,
-          assetsPath: DEFAULT_ASSETS_PATH,
-          docDescription: parseResult.docDescription,
-          nodeSummaries: collectNodeSummaries(parseResult.structure),
-          exportName,
-          coverPath: coverRelPath || undefined,
-          bookId,
-        },
-        parseResult.epubInfo,  // reuse parsed epubInfo instead of re-parsing
-      );
-      parseResult._nodeFileMap = exportResult.nodeFileMap;
-      parseResult._hierarchicalTree = exportResult.treeNodes;
-    }
-  } catch (error) {
-    throw new IndexError(
-      `Markdown export failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-      ErrorCode.MD_PARSE_ERROR,
-      "Markdown 导出失败",
-      "请检查输出目录是否有写入权限"
-    );
-  }
-
-  tracer.endPhase();
-  tracer.save();
-
-  reportProgress({
-    percent: 80,
-    step: "export_complete",
-    stepLabel: "Markdown 导出完成",
-  });
-
-  // B3 build_meta
-  tracer.startPhase("build_meta");
-  reportProgress({
-    percent: 82,
-    step: "build_meta",
-    stepLabel: "构建元数据",
-  });
-
-  const bookMeta = await buildBookMeta(
-    parseResult,
-    bookId,
-    bookDir,
-    options.filePath,
-    options.fileType,
-    options.embedding,
-    parseResult.author
-  );
-
-  await fs.mkdir(indexDir, { recursive: true });
-  await fs.writeFile(
-    path.join(indexDir, "book-meta.json"),
-    JSON.stringify(bookMeta, null, 2)
-  );
-  tracer.endPhase();
-  tracer.save();
-
-  // Step 3.5: Write tree.json to .pageindex/{bookId}/ (single data source)
-  let treeData: TreeData = { title: rootTitle, exportName, structure: parseResult.structure, nodeFileMap: {} };
-  try {
-    const nodeFileMap = parseResult._nodeFileMap || {};
-    const hierarchicalTree = parseResult._hierarchicalTree;
-    let finalStructure = parseResult.structure;
-
-    if (hierarchicalTree && hierarchicalTree.length > 0) {
-      // Build nodeId → full node data map from flat parseResult
-      // parseResult has correct startIndex/endIndex/text from addNodeText()
-      const summaryMap = new Map<string, { summary?: string; text?: string; startIndex?: number; endIndex?: number }>();
-      for (const node of parseResult.structure || []) {
-        if (node.nodeId) {
-          summaryMap.set(node.nodeId, {
-            summary: node.summary,
-            text: node.text,
-            startIndex: node.startIndex,
-            endIndex: node.endIndex,
-          });
-        }
-      }
-      // Merge parseResult data into hierarchical tree, only keep TreeNode fields
-      const enrichNode = (n: TreeNode): TreeNode => {
-        const data = n.nodeId ? summaryMap.get(n.nodeId) : undefined;
-        const result: TreeNode = {
-          title: n.title,
-          nodeId: n.nodeId,
-          // Prefer parseResult's startIndex/endIndex (1-based, correct page range)
-          // over hierarchicalTree's (0-based, single-page)
-          startIndex: data?.startIndex ?? n.startIndex,
-          endIndex: data?.endIndex ?? n.endIndex,
-        };
-        if (data?.summary || n.summary) result.summary = data?.summary || n.summary;
-        if (data?.text || n.text) result.text = data?.text || n.text;
-        if (n.nodes?.length) result.nodes = n.nodes.map(enrichNode);
-        return result;
-      };
-      finalStructure = hierarchicalTree.map(enrichNode);
-    }
-
-    treeData = {
-      title: rootTitle,
-      exportName,
-      docDescription: parseResult.docDescription,
-      source: options.filePath,
-      nodeFileMap,
-      structure: finalStructure,
-      quality,
-      qualityReason,
+      chaptersCount: ctx.parseResult?.structure?.length ?? 0,
+      indexDir: ctx.indexDir,
     };
-    await fs.writeFile(
-      path.join(indexDir, "tree.json"),
-      JSON.stringify(treeData, null, 2)
-    );
-    piLog(`[book-indexer] tree.json written to ${indexDir}`);
-  } catch (err) {
-    piLog(`[book-indexer] Warning: tree.json write failed: ${err}`);
-  }
-
-  reportProgress({
-    percent: 85,
-    step: "meta_complete",
-    stepLabel: "元数据构建完成",
-  });
-
-  // Step 4: L0/L1 Vectorization (optional)
-  let vectorizationSuccess = false;
-  // Skip vectorization if provider is 'local' (means no vector index)
-  const shouldVectorize = options.embedding && options.embedding.provider !== 'local';
-
-  if (!shouldVectorize) {
-    tracer.recordPathDecision({
-      phase: "vectorize",
-      decision: "vectorize_skipped",
-      reason: options.embedding?.provider === 'local'
-        ? "embedding provider is 'local' (BM25-only)"
-        : "embedding role not configured",
-    });
-    tracer.save();
-  }
-
-  if (shouldVectorize) {
-    tracer.startPhase("vectorize");
-    reportProgress({
-    percent: 87,
-      step: "vectorize",
-      stepLabel: "向量索引",
-    });
-
-    try {
-      const nodeFileMap = parseResult._nodeFileMap || {};
-      const vectorResult = await vectorizeAllLevels(
-        parseResult, indexDir, options.embedding!, nodeFileMap, treeData, options.outputDir,
-        (msg: string) => reportProgress({ percent: 84, step: "vectorize", stepLabel: msg }),
-        (info) => tracer.recordEmbedCall({ model: info.model, durationMs: info.durationMs, inputTokens: info.inputTokens, batchSize: info.batchSize }),
-      );
-      vectorizationSuccess = true;
-
-      // Update book-meta with detected dimensions
-      if (vectorResult && options.embedding) {
-        bookMeta.embedding = {
-          provider: options.embedding.provider,
-          model: options.embedding.model || "text-embedding-3-small",
-          dimensions: vectorResult.dimensions,
-        };
-        await fs.writeFile(
-          path.join(indexDir, "book-meta.json"),
-          JSON.stringify(bookMeta, null, 2)
-        );
-
-        // Update global catalog
-        const { updateCatalogEntry } = await import("./vault/vectors.js");
-        await updateCatalogEntry(getPageindexRoot(options.outputDir), bookId, {
-          title: bookMeta.title || path.basename(options.filePath),
-          vectorModel: options.embedding.model || "text-embedding-3-small",
-          dimensions: vectorResult.dimensions,
-          nodeCount: vectorResult.nodeCount,
-          hasPropositions: false,
-          indexedAt: new Date().toISOString(),
-        });
-      }
-
-      tracer.endPhase({ totalVectors: vectorResult?.nodeCount || 0, dimensions: vectorResult?.dimensions || 0 });
-      tracer.save();
-
-      reportProgress({
-        percent: 92,
-        step: "vectorize_complete",
-        stepLabel: "向量索引完成",
-      });
-    } catch (error) {
-      apiLog.warn("[book-indexer] Vectorization failed, continuing with pure BM25:", error);
-
-      tracer.failPhase(error instanceof Error ? error.message : "Embedding API failed");
-      tracer.save();
-
-      bookMeta.embedding = undefined;
-      await fs.writeFile(
-        path.join(indexDir, "book-meta.json"),
-        JSON.stringify(bookMeta, null, 2)
-      );
-
-      reportProgress({
-        percent: 92,
-        step: "vectorize_skipped",
-        stepLabel: "向量索引跳过（使用纯 BM25）",
-        message: error instanceof Error ? error.message : "Embedding API failed",
-      });
-    }
-  }
-
-  // B5 build_bm25
-  tracer.startPhase("build_bm25");
-  reportProgress({
-    percent: 94,
-    step: "build_bm25",
-    stepLabel: "构建 BM25 索引",
-  });
-
-  try {
-    const bm25Data = buildBM25IndexFromParseResult(parseResult);
-    await fs.writeFile(
-      path.join(indexDir, "bm25.json"),
-      JSON.stringify(bm25Data, null, 2)
-    );
-    tracer.endPhase();
-    tracer.save();
   } catch (error) {
-    tracer.failPhase(error instanceof Error ? error.message : String(error));
-    tracer.save();
-    throw error;
-  }
-
-  reportProgress({
-    percent: 97,
-    step: "bm25_complete",
-    stepLabel: "BM25 索引构建完成",
-  });
-
-  // B6 extract_propositions
-  if (options.propositions?.enabled && options.propositions.apiKey) {
-    tracer.startPhase("extract_propositions");
-    reportProgress({
-      percent: 97,
-      step: "extract_propositions",
-      stepLabel: "提取命题卡片",
-    });
-
+    // On failure: finalize tracer + preserve .indexing.json with failed status
+    ctx.tracer?.finalize(false, error instanceof Error ? error.message : String(error));
+    const fs = nodeFsPromises();
+    const path = nodePath();
     try {
-      const treePath = path.join(indexDir, "tree.json");
-      const treeContent = await fs.readFile(treePath, "utf-8");
-      const treeData = JSON.parse(treeContent);
-
-      const propResult = await indexPropositions({
-        bookId,
-        vaultPath: options.outputDir,
-        treeData,
-        embedding: options.embedding?.provider !== 'local' ? options.embedding : undefined,
-        llm: {
-          model: options.propositions.model || 'Qwen/Qwen3-8B',
-          apiKey: options.propositions.apiKey,
-          baseUrl: options.propositions.baseUrl || 'https://api.siliconflow.cn/v1',
-        },
-        cardsPer500Words: options.propositions.cardsPer500Words,
-        onProgress: (p) => {
-          reportProgress({
-            percent: 97 + Math.round(p.percent * 0.02),
-            step: "extract_propositions",
-            stepLabel: p.message,
-          });
-        },
-      });
-
-      bookMeta.propositions = {
-        enabled: true,
-        totalCards: propResult.totalCards,
-        model: options.propositions.model || 'Qwen/Qwen3-8B',
-        generatedAt: new Date().toISOString(),
-      };
-
-      await fs.writeFile(
-        path.join(indexDir, "book-meta.json"),
-        JSON.stringify(bookMeta, null, 2)
-      );
-
-      tracer.endPhase({ totalCards: propResult.totalCards });
-      tracer.save();
-
-      piLog(`[book-indexer] Proposition cards: ${propResult.totalCards}`);
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      apiLog.warn("[book-indexer] Proposition extraction failed:", errorMsg);
-
-      tracer.endPhase();
-      tracer.save();
-
-      bookMeta.propositions = {
-        enabled: false,
-        totalCards: 0,
-        model: options.propositions.model || 'Qwen/Qwen3-8B',
-        error: errorMsg.slice(0, 200),
-      };
-
-      await fs.writeFile(
-        path.join(indexDir, "book-meta.json"),
-        JSON.stringify(bookMeta, null, 2)
-      );
-
-      reportProgress({
-        percent: 97,
-        step: "propositions_failed",
-        stepLabel: `命题卡片提取失败: ${errorMsg.slice(0, 50)}`,
-      });
-    }
-  }
-  // Step 8: Finalize — success path
-  // Notify UI directly (path A: onProgress callback) but do NOT write to
-  // .indexing.json — cleanupStatus will delete it momentarily, and writing
-  // step:"complete" / percent:100 there creates a race with loadIndexes
-  // (path B: polling) which may see it and prematurely mark the index as done.
-  if (options.onProgress) {
-    options.onProgress({ percent: 100, step: "complete", stepLabel: "索引完成" });
-  }
-  // Mark book-meta as ready BEFORE deleting .indexing.json so that
-  // loadIndexes never sees a gap (no .indexing.json + book-meta still "indexing")
-  try {
-    const metaPath = path.join(indexDir, "book-meta.json");
-    const metaRaw = await fs.readFile(metaPath, "utf-8");
-    const meta = JSON.parse(metaRaw);
-    meta.status = "ready";
-    await fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
-  } catch { /* best-effort */ }
-  tracer.finalize(true);
-  // 成功时清理进度文件 — .indexing.json 的删除标志着真正完成
-  cleanupStatus();
-  return {
-    bookId,
-    title: rootTitle,
-    fileType: options.fileType,
-    chaptersCount: parseResult.structure.length,
-    indexDir,
-  };
-  } catch (error) {
-    tracer.finalize(false, error instanceof Error ? error.message : String(error));
-    // 失败时保留 .indexing.json 以便 loadIndexes 显示 failed 状态
-    // 但确保写入 failed 状态（内层 catch 可能没写入或被异步竞争覆盖）
-    try {
-      await fs.writeFile(indexingStatusPath, JSON.stringify({
-        bookId,
+      await fs.writeFile(ctx.indexingStatusPath!, JSON.stringify({
+        bookId: ctx.bookId,
         filePath: options.filePath,
         fileType: options.fileType,
         title: path.basename(options.filePath, path.extname(options.filePath)),
@@ -799,48 +195,10 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
 }
 
 /**
- * Build book metadata v2 from parse result
- * Simplified: no chapters[] (chapters info is in tree.json)
- */
-async function buildBookMeta(
-  parseResult: PageIndexResult,
-  bookId: string,
-  bookDir: string,
-  filePath: string,
-  fileType: "pdf" | "epub",
-  embedding?: EmbeddingOptions,
-  author?: string
-): Promise<BookMeta> {
-  const path = nodePath();
-  const title = parseResult.docName || parseResult.structure[0]?.title || "Unknown";
-  // Extract the export directory name from bookDir (last path segment)
-  const exportName = path.basename(bookDir);
-
-  return {
-    version: 3,
-    bookId,
-    title,
-    exportName,
-    description: parseResult.docDescription || parseResult.structure[0]?.summary || "",
-    author,
-    filePath,
-    fileType,
-    indexedAt: new Date().toISOString(),
-    status: "indexing",
-    embedding: embedding ? {
-      provider: embedding.provider,
-      model: embedding.model || "text-embedding-3-small",
-      // dimensions will be updated after vectorization
-    } : undefined,
-    chapters: [],  // v2: chapters info is in tree.json
-  };
-}
-
-/**
  * Vectorize L0 (book) + L1 (chapter summaries) + L2 (paragraph chunks).
  * Returns { dimensions, nodeCount }
  */
-async function vectorizeAllLevels(
+export async function vectorizeAllLevels(
   parseResult: PageIndexResult,
   indexDir: string,
   embedding: EmbeddingOptions,
@@ -994,55 +352,6 @@ async function vectorizeAllLevels(
 }
 
 /**
- * Build BM25 index from parse result
- * Fix: iterate entire structure array (not just structure[0])
- * BM25 uses full text (title + summary + text) for keyword matching
- */
-function buildBM25IndexFromParseResult(parseResult: PageIndexResult): BM25Data {
-  const nodes: Array<{ id: string; title: string; text: string; level: "L0" | "L1" }> = [];
-
-  for (const rootNode of parseResult.structure || []) {
-    // Each top-level element as L0
-    nodes.push({
-      id: rootNode.nodeId || `L0-${nodes.length}`,
-      title: rootNode.title || "",
-      text: `${rootNode.title}\n${rootNode.summary || ""}\n${rootNode.text || ""}`,
-      level: "L0",
-    });
-
-    // Recursively collect all child nodes as L1 (with full text for BM25)
-    collectIndexLeafNodes(rootNode, nodes, true);
-  }
-
-  return buildBM25Index(nodes);
-}
-
-/**
- * Recursively collect all child nodes for BM25/vector indexing
- * @param includeFullText - If true, include node.text for BM25; if false, use title+summary only for vectorization
- */
-function collectIndexLeafNodes(
-  node: TreeNode,
-  nodes: Array<{ id: string; title: string; text: string; level: "L0" | "L1" }>,
-  includeFullText: boolean = false
-): void {
-  if (!node.nodes || node.nodes.length === 0) return;
-
-  for (const child of node.nodes) {
-    const text = includeFullText
-      ? `${child.title}\n${child.summary || ""}\n${child.text || ""}`
-      : `${child.title}\n${child.summary || ""}`;
-    nodes.push({
-      id: child.nodeId || `L1-${nodes.length}`,
-      title: child.title || "",
-      text,
-      level: "L1",
-    });
-    collectIndexLeafNodes(child, nodes, includeFullText);
-  }
-}
-
-/**
  * Collect chapter nodes into PendingChunk[] for L1 vectorization.
  */
 function collectAllChapterNodesForPending(
@@ -1122,7 +431,7 @@ export function collectNodeSummaries(
  * Generate a text-based SVG cover image
  * Used when no cover image is available (e.g., PDF without embedded cover)
  */
-function generateTextCover(title: string, fileType: string): string {
+export function generateTextCover(title: string, fileType: string): string {
   // Truncate title for display
   const maxLineChars = 14;
   const lines: string[] = [];
@@ -1184,7 +493,7 @@ const CONCURRENT_DOWNLOADS = 5;
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_IMAGE_HOST = 'cdn-mineru.openxlab.org.cn';
 
-async function downloadImages(
+export async function downloadImages(
   images: MineruImage[],
   imagesDir: string,
   onProgress: (done: number, total: number) => void
