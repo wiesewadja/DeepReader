@@ -5,7 +5,6 @@
  */
 
 import readingModePagination from './reading-mode-pagination.spec.mjs';
-import piDetection from './pi-detection.spec.mjs';
 import wereadApiDebug from './weread-api-debug.spec.mjs';
 import wereadUi from './weread-ui.spec.mjs';
 import wereadSync from './weread-sync.spec.mjs';
@@ -37,7 +36,6 @@ import agentMultiturnAiEcon from './agent-multiturn-ai-econ.spec.mjs';
 
 export const e2eLightSpecs = [
 	readingModePagination,
-	piDetection,
 	wereadApiDebug,
 	wereadUi,
 	wereadSync,

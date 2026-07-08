@@ -107,13 +107,13 @@ export default {
 			// 开 sidebar
 			await evalObsidian(`app.commands.executeCommandById("${PLUGIN_ID}:open-deepreader-sidebar")`);
 			await new Promise(r => setTimeout(r, 800));
-			// 选书 + 清空 + 发消息
+			// 选书 + 发消息（不清空消息列表）
 			await evalObsidian(`(() => {
 				const leaves = app.workspace.getLeavesOfType('deeppdf-sidebar-view');
 				if (leaves.length === 0) throw new Error('sidebar 未打开');
 				const view = leaves[0].view;
 				view.selectIndex(${JSON.stringify(BOOK_ID)});
-				if (typeof view.messageList?.clearMessages === 'function') view.messageList.clearMessages();
+				// 不要清空消息列表，保留历史消息
 				const textarea = view.chatInput?.textarea;
 				if (!textarea) throw new Error('chat input 不存在');
 				textarea.value = ${JSON.stringify(question)};

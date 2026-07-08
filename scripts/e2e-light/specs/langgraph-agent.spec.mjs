@@ -68,7 +68,7 @@ export default {
 				if (leaves.length === 0) throw new Error('sidebar 未打开');
 				const view = leaves[0].view;
 				${bookId ? `if (typeof view.selectIndex === 'function') view.selectIndex(${JSON.stringify(bookId)});` : ''}
-				if (typeof view.messageList?.clearMessages === 'function') view.messageList.clearMessages();
+				// 不要清空消息列表，保留历史消息
 				// 设置输入并发送
 				const textarea = view.chatInput?.textarea;
 				if (!textarea) throw new Error('chat input 不存在');
