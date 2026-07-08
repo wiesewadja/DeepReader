@@ -84,7 +84,11 @@ export const MarkdownView = class MarkdownView {};
 export const WorkspaceLeaf = class WorkspaceLeaf {};
 export const normalizePath = (path: string) => path.replace(/\\/g, '/');
 export const Platform = {
-  isMobile: false
+  isMobile: false,
+  isDesktop: true,
+  isMacOS: process.platform === 'darwin',
+  isWindows: process.platform === 'win32',
+  isLinux: process.platform === 'linux',
 };
 
 // Mock Component and related classes for Markdown rendering
@@ -123,4 +127,32 @@ export class HoverPopover {
   unload() {
     this.hide();
   }
+}
+
+// Mock moment
+export const moment = {
+  format: (format: string) => format,
+};
+
+// Mock requestUrl
+export const requestUrl = async (url: string) => {
+  const response = await fetch(url);
+  const text = await response.text();
+  return {
+    status: response.status,
+    text: async () => text,
+    json: async () => JSON.parse(text),
+  };
+};
+
+// Mock Menu & MenuItem
+export interface MenuItem {
+  id: string;
+  icon?: string;
+  title?: string;
+  callback: () => void;
+}
+
+export interface Menu {
+  addItem(item: MenuItem | ((item: MenuItem) => void)): void;
 }
