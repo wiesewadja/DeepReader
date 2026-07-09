@@ -69,13 +69,9 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			expect(result.detectedIntents).toContain('检视阅读');
 			expect(result.detectedIntents).toContain('动作输出');
 
-			// 验证工具允许
-			expect(result.allowedTools).toContain('get_document_outline');
-			expect(result.allowedTools).toContain('excalidraw');
-
-			// 验证 systemNote 包含路由信息
-			expect(result.systemNote).toContain('Router 强制路由');
-			expect(result.systemNote).toContain('检视阅读');
+			// 诚实化后：工具门禁移至节点白名单，router 不再声明 tools
+			expect(result.allowedTools).toEqual([]);
+			expect(result.systemNote).toBe('');
 		});
 
 		it('路由结果应能通过 ContextBuilder.buildMessages 注入到用户消息', () => {
@@ -97,9 +93,9 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			expect(messages[0].role).toBe('system');
 			expect(messages[0].content).toBe(systemPrompt);
 
-			// 验证用户消息包含路由指令
+			// 验证用户消息结构（诚实化后 systemNote 为空，不再注入路由指令）
 			expect(messages[1].role).toBe('user');
-			expect(messages[1].content).toContain('Router 强制路由');
+			expect(messages[1].content).not.toContain('Router 强制路由');
 			expect(messages[1].content).toContain(userInput);
 		});
 
@@ -110,7 +106,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			// 1. 意图路由
 			const intentResult = router.analyze(userInput);
 			expect(intentResult.detectedIntents).toContain('检视阅读');
-			expect(intentResult.allowedTools).toContain('get_document_outline');
+			expect(intentResult.allowedTools).toEqual([]);
 
 			// 2. 构建系统提示
 			const systemPrompt = await contextBuilder.buildSystemPrompt(metadata);
@@ -131,7 +127,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			expect(messages[0].content).toContain('测试书籍'); // 包含文档信息
 
 			expect(messages[1].role).toBe('user');
-			expect(messages[1].content).toContain('Router 强制路由'); // 包含路由指令
+			expect(messages[1].content).not.toContain('Router 强制路由'); // 诚实化后不再注入
 			expect(messages[1].content).toContain(userInput); // 包含用户消息
 		});
 	});
@@ -190,7 +186,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			// 验证消息结构
 			expect(messages).toHaveLength(2);
 			expect(messages[0].content).toContain('全书摘要');
-			expect(messages[1].content).toContain('Router 强制路由');
+			expect(messages[1].content).not.toContain('Router 强制路由');
 		});
 	});
 
@@ -199,9 +195,9 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			const userInput = '第3章里提到的金字塔原理是什么？';
 			const result = router.analyze(userInput);
 
-			// 应检测到定位章节意图
+			// 应检测到定位章节意图（工具门禁已移至节点白名单）
 			expect(result.detectedIntents).toContain('分析阅读-定位');
-			expect(result.allowedTools).toContain('read_markdown_section');
+			expect(result.allowedTools).toEqual([]);
 		});
 
 		it('主题阅读场景', () => {
@@ -209,7 +205,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			const result = router.analyze(userInput);
 
 			expect(result.detectedIntents).toContain('主题阅读');
-			expect(result.allowedTools).toContain('search_read_books');
+			expect(result.allowedTools).toEqual([]);
 		});
 
 		it('兜底场景 - 无匹配意图', () => {
@@ -218,7 +214,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 
 			// "什么是" 模式会命中 concept_inquiry 规则
 			expect(result.detectedIntents).toContain('分析阅读-概念探究');
-			expect(result.allowedTools).toContain('search_markdown_text');
+			expect(result.allowedTools).toEqual([]);
 		});
 	});
 

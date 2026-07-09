@@ -69,18 +69,14 @@ interface ToolContext {
 
 ### 1.4 工具注册流程
 
-**统一入口**：`createLangChainTools(ctx)`（`tools/index.ts:44`）
+**统一入口**：`createLangChainTools(ctx)`（`tools/index.ts`）
 
 ```typescript
 export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[] {
   const tools: StructuredToolInterface[] = [
     createSearchBookTool(ctx),     // base
     createReadBookSectionTool(ctx),// base
-    createWriteNoteTool(ctx),      // base
-    createSaveMemoryTool(ctx),     // base
-    createSearchMemoryTool(ctx),   // base
-    createUpdateProfileTool(ctx),  // base
-    createSearchReadBooksTool(ctx),// base
+    createExcalidrawTool(ctx),     // base（direct-call-only，见下）
   ];
 
   // 条件注册
@@ -101,10 +97,20 @@ export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[
 }
 ```
 
-**基础 7 个工具** 无条件注册。**条件注册**：
-- `excalidraw`：无条件注册（VISUALIZER 节点直接调用 `excalidrawTool.execute`，S2 Analytical 通过 PlanExecute 工具循环调用）
+**基础 3 个工具** 无条件注册。**条件注册**：
 - `search_journal`：仅当 `ctx.visual?.journalDir` 存在
 - 5 个 WeRead 工具：仅当 `ctx.vault?.plugin?.settings?.wereadApiKey` 存在
+
+**excalidraw 是 direct-call-only**：虽在基础注册中，但不入 LLM 工具循环——由
+`graph/utils/diagram-helper.ts` 在 S1 Inspectional / S3 Syntopical 直接 `.execute()` 调用
+（`diagram-helper.ts:16` 直接 import v1 实现 `excalidrawTool`，不经 LangChain 包装）。
+各节点工具门禁（`NODE_TOOL_WHITELIST`）均不含 excalidraw，故 model 不会经 tool_calls 触发。
+
+**死工具与旁路写入**：历史上曾注册 `write_note`/`save_memory`/`search_memory`/
+`update_profile`/`search_read_books` 5 个工具，但无节点白名单暴露它们，模型调不到。
+对应功能由旁路提供：记忆/画像 → memory service + profileBuilder，笔记 → note writer，
+跨书检索 → `syntopicalSearch()`。这 5 个工具的注册已摘除（`definitions/*.ts` 定义文件
+保留可逆，待 P2-2 归并清理）。
 
 ### 1.5 工具实现模式
 
@@ -186,49 +192,44 @@ aicreate: 2026-06-05 10:41
 
 这是 DeepReader 的"安全标记"——用户可以在 Obsidian 中按 `aicreate` 字段过滤 AI 生成的笔记。
 
-### 1.10 S2 工具白名单
+### 1.10 节点工具白名单（集中管理）
 
-S2 Analytical 节点只用子集：
+各认知节点经 `NODE_TOOL_WHITELIST`（`src/agent/tools/tool-permissions.ts`）取作用域内工具，
+过滤结果经 config 传入 `runPlanExecute`，由 `plan-execute.ts` 的 `model.bindTools` 绑定：
 
 ```typescript
-const s2ToolNames = ['search_book', 'read_book_section'];
-const ctxTools = createLangChainTools(ctx);
-const tools = ctxTools.filter(t => s2ToolNames.includes(t.name));
+import { NODE_TOOL_WHITELIST } from '../../tools/tool-permissions.js';
+// S2 Analytical：
+const tools = allTools.filter(t => NODE_TOOL_WHITELIST.analytical.includes(t.name));
+// S-Advisor：
+const tools = allTools.filter(t => NODE_TOOL_WHITELIST.advisor.includes(t.name));
 ```
 
-**屏蔽了** memory / profile / write_note / weread 等 9+ 工具。
+| 节点 | 白名单 |
+|------|--------|
+| analytical | `search_book`, `read_book_section` |
+| advisor | `weread_*`×5 + `search_journal` |
+| inspectional / presearch / syntopical | 空（excalidraw 走 diagram-helper 直调；跨书走 `syntopicalSearch()` 旁路） |
 
 ---
 
 ## 2. 已知问题
 
-### 2.1 工具错误格式不统一
+### 2.1 工具错误格式不统一 ✅ 已解决（M2）
 
-**现象**：
-- `search_book` / `read_book_section` 返回 `{ status: 'ERROR_xxx', message }`
-- `memory` / `profile` 类返回 `Error: xxx` 字符串
-- `search_journal` 返回 `JSON.stringify({ status, message })`
+**历史现象**：weread-tools 返回 `搜索失败: xxx`、search_journal 返回
+`JSON.stringify({ status: 'ERROR', message })`、其它工具裸 throw——三种混用形态。
 
-**后果**：
-- LLM 看到三种格式，prompt 设计困难
-- 后续 verifyAndCleanContent 无法区分错误类型
-- Eval 跑分难以归类
+**现状**：统一走 `formatToolError(code, message)`（`tools/types.ts`），返回
+`[TOOL_ERROR:code] message` 前缀字符串。LangChain 工具契约是向模型返回 string，
+故不引入无消费方的结构化对象（节点层无 JSON 解析点）。
 
-**建议**：统一为 `JSON.stringify({ status: 'OK' | 'ERROR', code, message, data? })`。
+### 2.2 工具的"硬编码白名单" ✅ 已解决（M2）
 
-### 2.2 工具的"硬编码白名单"
+**历史现象**：S2 / Advisor 各自在节点文件里维护硬编码白名单数组，新增工具需多处同步。
 
-**现象**：
-- S2: `s2ToolNames = ['search_book', 'read_book_section']`
-- Advisor: `advisorToolNames = [...]`（写在 advisor.ts 里）
-- Syntopical: 内部跨书搜索
-
-**问题**：
-- 3 个节点各自维护白名单
-- 新增工具需要在 3 个地方同步
-- 没有"工具可用性"配置文件
-
-**建议**：`src/agent/config/tool-permissions.ts` 集中管理。
+**现状**：集中到 `NODE_TOOL_WHITELIST`（`src/agent/tools/tool-permissions.ts`），
+各节点 `allTools.filter(t => NODE_TOOL_WHITELIST.<node>.includes(t.name))` 取作用域内工具。
 
 ### 2.3 工具实现的两套形态
 

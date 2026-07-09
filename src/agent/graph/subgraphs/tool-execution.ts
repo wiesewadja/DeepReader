@@ -10,7 +10,7 @@ import type { BaseMessage } from '@langchain/core/messages';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { ChatOpenAI } from '@langchain/openai';
-import { MAX_TOOL_RESULT_LENGTH, MAX_FULL_TOOL_MESSAGES } from '../../config/agent-constants.js';
+import { MAX_TOOL_RESULT_LENGTH, MAX_FULL_TOOL_MESSAGES, TOOL_EXECUTION_TIMEOUT_MS } from '../../config/agent-constants.js';
 import type { ToolCallLike } from '../utils/tool-call-parser.js';
 import { parseToolCallArgs } from '../utils/tool-call-parser.js';
 
@@ -104,6 +104,25 @@ interface SingleToolResult {
   record: ToolResultRecord | null;
 }
 
+/**
+ * 工具执行超时包裹：在唯一执行落点 race，覆盖单工具（executeSingleToolCall）
+ * 与批量（executeToolBatch → Promise.all）两条路径。超时 reject 会被
+ * executeSingleToolCall 的 try/catch 捕捉，转成 ToolMessage 错误，不会拖垮整轮。
+ */
+function invokeWithTimeout(
+  tool: StructuredToolInterface,
+  args: Record<string, unknown>,
+  runnableConfig?: RunnableConfig,
+): Promise<unknown> {
+  const timer = new Promise<never>((_, reject) =>
+    setTimeout(
+      () => reject(new Error(`Tool "${tool.name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`)),
+      TOOL_EXECUTION_TIMEOUT_MS,
+    ),
+  );
+  return Promise.race([tool.invoke(args, runnableConfig), timer]);
+}
+
 export async function executeSingleToolCall(
   tc: ToolCallLike,
   tools: StructuredToolInterface[],
@@ -135,7 +154,7 @@ export async function executeSingleToolCall(
   }
 
   try {
-    const rawResult = await tool.invoke(args, runnableConfig);
+    const rawResult = await invokeWithTimeout(tool, args, runnableConfig);
     const resultStr = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
     const compressed = compressToolResult(resultStr);
     const extractedBlockIds = extractBlockIdsFromResult(resultStr);

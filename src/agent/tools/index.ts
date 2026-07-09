@@ -28,10 +28,6 @@ export {
   searchBookTool,
   readBookSectionTool
 } from './local/index.js';
-export { writeNoteTool } from './write-note.js';
-export { addMemoryTool, searchMemoryTool, saveMemoryTool, createSaveMemoryTool } from './memory.js';
-export { updateProfileTool } from './profile.js';
-export { searchReadBooksTool } from './search-read-books.js';
 
 /**
  * 创建 LangChain StructuredToolInterface[] 数组。
