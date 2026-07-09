@@ -1,12 +1,10 @@
 /**
  * 轻量 E2E: 阅读模式分页
  *
- * 对比: tests/e2e/specs/reading-mode-pagination.e2e.ts (622 行 WDIO)
- * 验证来源: test-vault/DeepReader/HISTORY.md (18 行, 唯一可用的 md)
+ * 验证: 打开章节文件 → 激活阅读模式 → paginator 初始化 → 翻页功能
  */
 
 import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
-import { countBySelector } from '../../smoke/lib/dom-query.mjs';
 import { createStepRecorder } from '../steps.mjs';
 
 export default {
@@ -15,12 +13,12 @@ export default {
 	feature: 'F-17',
 	timeout: 60_000,
 	requires: {
-		files: ['DeepReader/HISTORY.md'],
-		minLines: { 'DeepReader/HISTORY.md': 100 },
+		files: ['DeepReader/AI极简经济学/04 - 第1章 导言.md'],
 	},
 
 	async run({ log }) {
 		const { steps, pass, fail } = createStepRecorder();
+		const CHAPTER_FILE = 'DeepReader/AI极简经济学/04 - 第1章 导言.md';
 
 		// ===== Setup: plugin loaded =====
 		{
@@ -35,62 +33,103 @@ export default {
 			}
 		}
 
-		// ===== activate reading mode（显式锁定 paginated 风格）=====
+		// ===== 清理并打开文件 =====
+		{
+			const t0 = Date.now();
+			try {
+				await evalObsidian(`(async () => {
+					// 1. 关闭阅读模式
+					const svc = app.plugins.plugins["deepreader-dev"]?.readingModeService;
+					if (svc && svc.isActive) svc.deactivate();
+					
+					// 2. 关闭所有 markdown leaves
+					const oldLeaves = app.workspace.getLeavesOfType('markdown');
+					for (let i = 0; i < oldLeaves.length; i++) {
+						app.workspace.detachLeavesOfType('markdown');
+					}
+					await new Promise(r => setTimeout(r, 500));
+					
+					// 3. 打开章节文件到新 leaf
+					const file = app.vault.getAbstractFileByPath('${CHAPTER_FILE}');
+					if (!file) throw new Error('文件不存在');
+					const leaf = app.workspace.getLeaf(true);
+					await leaf.openFile(file);
+					await new Promise(r => setTimeout(r, 1000));
+				})()`);
+				pass('清理并打开文件', Date.now() - t0, CHAPTER_FILE);
+			} catch (e) {
+				fail('清理并打开文件', Date.now() - t0, e);
+				return { steps, live: true };
+			}
+		}
+
+		// ===== 检查 leaf 宽度 =====
+		{
+			const t0 = Date.now();
+			try {
+				const state = await evalObsidian(`(() => {
+					const leaves = app.workspace.getLeavesOfType('markdown');
+					const leaf = leaves[0];
+					return {
+						leafCount: leaves.length,
+						leafWidth: leaf?.view?.containerEl?.offsetWidth || 0,
+						filePath: leaf?.view?.file?.path || 'none'
+					};
+				})()`);
+				if (state.leafWidth === 0) throw new Error(`leaf 宽度为 0 (count=${state.leafCount})`);
+				pass('leaf 宽度正常', Date.now() - t0, `width=${state.leafWidth}`);
+			} catch (e) {
+				fail('leaf 宽度正常', Date.now() - t0, e);
+				return { steps, live: true };
+			}
+		}
+
+		// ===== activate reading mode =====
 		{
 			const t0 = Date.now();
 			try {
 				const result = await evalObsidian(`(() => {
+					const file = app.vault.getAbstractFileByPath('${CHAPTER_FILE}');
 					const svc = app.plugins.plugins["deepreader-dev"].readingModeService;
 					svc.setStyle("paginated");
-					svc.deactivate();
-					const leaf = app.workspace.getLeavesOfType("markdown")[0];
-					app.workspace.setActiveLeaf(leaf);
-					const file = leaf?.view?.file;
-					if (file) svc.activate(file);
-					return { isActive: svc.isActive, file: file?.path, style: svc.getStyle() };
+					svc.activate(file);
+					return { isActive: svc.isActive, style: svc.getStyle() };
 				})()`);
-				if (!result?.isActive) throw new Error(`reading mode not activated (result=${JSON.stringify(result)})`);
-				if (result?.style !== 'paginated') throw new Error(`reading mode 风格非 paginated (style=${result?.style})`);
-				pass('activate reading mode', Date.now() - t0, `file=${result.file} style=${result.style}`);
+				if (!result?.isActive) throw new Error('reading mode not activated');
+				pass('activate reading mode', Date.now() - t0, `style=${result.style}`);
 			} catch (e) {
 				fail('activate reading mode', Date.now() - t0, e);
 				return { steps, live: true };
 			}
 		}
 
-		// 等待阅读模式内容渲染（替换固定 1200ms 盲等；initPaginator 守卫依赖 .markdown-preview-content 出现）
-		{
-		let rendered = false;
-		log?.warn?.('  等待阅读模式内容渲染…');
-		for (let i = 0; i < 40; i++) {
-				rendered = await evalObsidian(`(() => {
-					const c = document.querySelector(".markdown-preview-content");
-					const sizer = document.querySelector(".markdown-preview-sizer");
-					const svc = app.plugins.plugins["deepreader-dev"].readingModeService;
-					return (!!(c && c.querySelector("p,li,h1,h2,h3,h4"))) || !!(sizer && sizer.children.length > 1) || !!svc.paginator;
-				})()`);
-				if (rendered) break;
-				if (i % 8 === 7) log?.warn?.(`    渲染等待中… (${(i + 1) * 0.5}s)`);
-				await new Promise(r => setTimeout(r, 500));
-			}
-			if (!rendered) {
-				log?.warn?.('内容未在 20s 内渲染（可能 e2e 激活路径未触发渲染，属环境/配置限制）');
-			}
-		}
-
-		// ===== paginator initialized =====
+		// ===== 等待 paginator 初始化 =====
 		{
 			const t0 = Date.now();
-			try {
-				const state = await evalObsidian(`JSON.stringify({
-					hasPaginator: !!app.plugins.plugins["deepreader-dev"].readingModeService.paginator,
-					style: app.plugins.plugins["deepreader-dev"].readingModeService.getStyle(),
-				})`);
-				const obj = JSON.parse(state);
-				if (!obj.hasPaginator) throw new Error('paginator not initialized');
-				pass('paginator initialized', Date.now() - t0, `style=${obj.style}`);
-			} catch (e) {
-				fail('paginator initialized', Date.now() - t0, e);
+			let ready = false;
+			log?.warn?.('  等待 paginator 初始化…');
+			for (let i = 0; i < 60; i++) {
+				const state = await evalObsidian(`(() => {
+					const svc = app.plugins.plugins["deepreader-dev"].readingModeService;
+					const paginator = svc.paginator;
+					const totalPages = paginator?.getTotalPages?.() ?? 0;
+					return { hasPaginator: !!paginator, totalPages };
+				})()`);
+				
+				if (state.hasPaginator && state.totalPages > 1) {
+					ready = true;
+					break;
+				}
+				
+				if (i % 10 === 9) log?.warn?.(`    等待中… (${(i + 1) * 0.5}s) totalPages=${state.totalPages}`);
+				await new Promise(r => setTimeout(r, 500));
+			}
+			if (ready) {
+				const totalPages = await evalObsidian('app.plugins.plugins["deepreader-dev"].readingModeService.paginator.getTotalPages()');
+				pass('paginator initialized', Date.now() - t0, `totalPages=${totalPages}`);
+			} else {
+				fail('paginator initialized', Date.now() - t0, new Error('paginator 未初始化或只有 1 页'));
+				return { steps, live: true };
 			}
 		}
 
@@ -98,8 +137,8 @@ export default {
 		{
 			const t0 = Date.now();
 			try {
-				const count = await countBySelector('.deeppdf-page-controls');
-				if (count === 0) throw new Error('.deeppdf-page-controls not found in DOM');
+				const count = await evalObsidian(`document.querySelectorAll('.deeppdf-page-controls').length`);
+				if (count === 0) throw new Error('.deeppdf-page-controls not found');
 				pass('.deeppdf-page-controls visible', Date.now() - t0, `count=${count}`);
 			} catch (e) {
 				fail('.deeppdf-page-controls visible', Date.now() - t0, e);
@@ -110,8 +149,8 @@ export default {
 		{
 			const t0 = Date.now();
 			try {
-				const left = await countBySelector('.deeppdf-page-btn.left');
-				const right = await countBySelector('.deeppdf-page-btn.right');
+				const left = await evalObsidian(`document.querySelectorAll('.deeppdf-page-btn.left').length`);
+				const right = await evalObsidian(`document.querySelectorAll('.deeppdf-page-btn.right').length`);
 				if (left === 0 || right === 0) throw new Error(`left=${left}, right=${right}`);
 				pass('pagination buttons (left/right)', Date.now() - t0, `left=${left}, right=${right}`);
 			} catch (e) {
@@ -124,7 +163,7 @@ export default {
 			const t0 = Date.now();
 			try {
 				const total = await evalObsidian('app.plugins.plugins["deepreader-dev"].readingModeService.paginator.getTotalPages()');
-				if (total < 2) throw new Error(`总页数 < 2 (total=${total})，无法验证翻页`);
+				if (total < 2) throw new Error(`总页数 < 2 (total=${total})`);
 				const before = await evalObsidian('app.plugins.plugins["deepreader-dev"].readingModeService.paginator.getCurrentPage()');
 				await evalObsidian('app.plugins.plugins["deepreader-dev"].readingModeService.paginator.setCurrentPage(2)');
 				await new Promise(r => setTimeout(r, 300));
