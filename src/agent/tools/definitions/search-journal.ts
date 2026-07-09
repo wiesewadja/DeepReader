@@ -37,6 +37,9 @@ export const createSearchJournalTool: ToolFactory = (ctx: ToolContext) => {
 				}
 				return JSON.stringify({ status: 'SUCCESS', results });
 			} catch (e: unknown) {
+				// 错误路径走跨工具统一的 formatToolError（[TOOL_ERROR:code] 前缀），
+				// 与 success 路径的结构化 JSON 故意不对称：success 需结构化检索结果供模型消费，
+				// error 需统一的可识别前缀供跨工具错误处理（见 L6 §1.6）。
 				return formatToolError('JournalSearch', e instanceof Error ? e.message.split('\n')[0] : 'Unknown error');
 			}
 		},

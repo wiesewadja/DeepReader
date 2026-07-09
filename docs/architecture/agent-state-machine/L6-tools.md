@@ -22,15 +22,14 @@ L6 是状态机与外部世界（Vault、文件、网络 API）的桥梁：
 
 ### 1.2 工具清单
 
+> 仅列**当前注册**的工具（基础 3 + 条件 journal/weread）。历史上还有 5 个死工具
+> （`write_note`/`save_memory`/`search_memory`/`update_profile`/`search_read_books`），
+> 无节点白名单暴露、模型调不到，已摘除（见 §1.4「死工具与旁路写入」）。
+
 | 工具名 | 类别 | 描述 | Schema 关键字段 | 实现位置 |
 |--------|------|------|------------------|----------|
 | `search_book` | search | 多查询并行 + RRF 融合检索书中段落（BM25+Vector+Proposition+标注 9 阶段） | `keywords: string[]`, `scope_node_ids?: string[]` | definition: `definitions/search-book.ts`；实现: `local/search-text.ts`（`searchBookTool`） |
 | `read_book_section` | read | 读章节内容（4 种定位：批量 `node_ids` / 单 `node_id` / `block_id` / `heading` 模糊） | `node_ids?: string[]`, `node_id?: string`, `block_id?: string`, `heading?: string` | definition: `definitions/read-section.ts`；实现: `local/read-section.ts`（`readBookSectionTool`） |
-| `write_note` | write | 写入/追加笔记到 Vault（带 `aicreate` frontmatter 安全标记） | `path: string`, `content: string`, `mode?: 'create'\|'overwrite'\|'append'` | definition: `definitions/write-note.ts`；实现: 顶层 `write-note.ts`（`writeNoteTool`） |
-| `save_memory` | memory | 保存信息到长期记忆（追加 HISTORY.md + 更新 MEMORY.md） | `history_entry: string`, `memory_update?: string` | definition: `definitions/memory.ts`；实现: 顶层 `memory.ts`（`saveMemoryTool`） |
-| `search_memory` | memory | 搜索 MEMORY.md + HISTORY.md | `query: string` | definition: `definitions/memory.ts`；实现: 顶层 `memory.ts`（`searchMemoryTool`） |
-| `update_profile` | profile | 更新 DeepReader.md 画像字段（按 section/field 定位） | `section: enum`, `field: string`, `value: string`, `mode?: 'append'\|'replace'` | definition: `definitions/profile.ts`；实现: 顶层 `profile.ts`（`updateProfileTool`） |
-| `search_read_books` | cross-book | 跨书搜索 BOOK_NOTES_DIR 已读书库的章节 | `query: string`, `top_k?: number` | definition: `definitions/search-read-books.ts`；实现: 顶层 `search-read-books.ts`（`searchReadBooksTool`） |
 | `search_journal` | journal | 搜索用户个人笔记（依赖 `visual.journalDir`） | `query: string`, `topK?: number` | 仅 definition: `definitions/search-journal.ts`（内联 `JournalSearchService.search`） |
 | `weread_search` | weread | 搜索微信读书书籍库 | `keyword: string`, `scope?: number`, `count?: number` | 仅 definition: `definitions/weread-tools.ts` |
 | `weread_recommend` | weread | 个性化推荐 | `count?: number` | 同上 |
@@ -143,8 +142,7 @@ type ToolFactory = (ctx: ToolContext) => StructuredToolInterface;
 | 处理方式 | 工具/位置 | 行为 |
 |----------|-----------|------|
 | 完全 try/catch，返回 JSON 错误对象 | `search_book`, `read_book_section` | `{ status: 'ERROR_xxx', message: '...' }` |
-| try/catch，返回字符串错误 | `save_memory`, `search_memory`, `update_profile`, `write_note`, `search_read_books` | `Error: xxx` |
-| try/catch，返回带 status JSON | `search_journal`, WeRead 5 工具 | `JSON.stringify({ status: 'ERROR', message })` |
+| **统一错误文案**（M2） | `search_journal`, WeRead 5 工具 | `formatToolError(code, msg)` → `[TOOL_ERROR:code] msg` 纯字符串 |
 | **子图层兜底** | `executeSingleToolCall` | 工具 throw 时转 `Error: <msg>` ToolMessage |
 | **未配置 API Key 早返回** | WeRead 工具 | 静默跳过 / 返回配置错误 |
 | **空操作** | `search_journal` 未配置 | `{ status: 'SKIP', message: '未配置笔记目录' }` |
@@ -420,11 +418,11 @@ export async function executeSingleToolCall(
 |------|------|
 | `src/agent/tools/index.ts` | `createLangChainTools()` 工厂 |
 | `src/agent/tools/types.ts` | ToolContext 接口 |
-| `src/agent/tools/definitions/*.ts` | 10 个工具的 v2 包装（含 excalidraw） |
+| `src/agent/tools/definitions/*.ts` | 当前工具的 v2 包装（excalidraw/search_book/read_book_section/search_journal/weread_*） |
 | `src/agent/tools/local/*.ts` | search_book / read_book_section 实现 |
 | `src/agent/tools/context/*.ts` | 子上下文（VaultContext / BookContext 等） |
-| `src/agent/tools/{memory,profile,write-note,search-read-books}.ts` | 顶层工具（v1 形态） |
-| `src/agent/graph/subgraphs/tool-execution.ts` | 工具执行共享层 |
+| `src/agent/tools/tool-permissions.ts` | `NODE_TOOL_WHITELIST` 节点工具门禁（M2） |
+| `src/agent/graph/subgraphs/tool-execution.ts` | 工具执行共享层（含超时包裹 invokeWithTimeout，M3） |
 
 ## 5. 关联文档
 
