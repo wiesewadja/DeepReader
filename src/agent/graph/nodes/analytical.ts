@@ -10,6 +10,7 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import { interrupt } from '@langchain/langgraph';
 import { agentLog as log } from '../../../utils/logger.js';
 import { createLangChainTools } from '../../tools/index.js';
+import { NODE_TOOL_WHITELIST } from '../../tools/tool-permissions.js';
 import type { AnalyticalInput } from '../node-io.js';
 import { buildFullAnalyticalContext } from '../../prompts/utils/index.js';
 import type { CognitiveEngineState } from '../state';
@@ -93,8 +94,7 @@ export async function analyticalNode(
   // Create scoped tools (with cached queryVector for reuse)
   const updatedToolContext = { ...toolContext, queryVector: state.queryVector };
   const allTools = createLangChainTools(updatedToolContext);
-  const s2ToolNames = ['search_book', 'read_book_section'];
-  const s2Tools = allTools.filter(t => s2ToolNames.includes(t.name));
+  const s2Tools = allTools.filter(t => NODE_TOOL_WHITELIST.analytical.includes(t.name));
 
   const loopMessages = [
     new SystemMessage(fullSystemPrompt),

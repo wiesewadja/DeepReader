@@ -4,6 +4,7 @@
 
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
+import { formatToolError } from '../types.js';
 import type { ToolContext } from '../types.js';
 import type { ToolFactory } from './types.js';
 
@@ -36,7 +37,7 @@ export const createSearchJournalTool: ToolFactory = (ctx: ToolContext) => {
 				}
 				return JSON.stringify({ status: 'SUCCESS', results });
 			} catch (e: unknown) {
-				return JSON.stringify({ status: 'ERROR', message: e instanceof Error ? e.message.split('\n')[0] : 'Unknown error' });
+				return formatToolError('JournalSearch', e instanceof Error ? e.message.split('\n')[0] : 'Unknown error');
 			}
 		},
 		{

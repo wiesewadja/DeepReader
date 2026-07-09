@@ -10,6 +10,7 @@ import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { agentLog as log } from '../../../utils/logger.js';
 import { createLangChainTools } from '../../tools/index.js';
+import { NODE_TOOL_WHITELIST } from '../../tools/tool-permissions.js';
 import type { AdvisorInput } from '../node-io.js';
 import type { CognitiveEngineState } from '../state';
 import { runPlanExecute } from '../subgraphs/plan-execute.js';
@@ -110,14 +111,8 @@ export async function advisorNode(
 
 	// Create tools: WeRead tools + search_journal (when available)
 	const allTools = createLangChainTools(toolContext);
-	const advisorToolNames = [
-		'weread_search', 'weread_recommend', 'weread_readdata',
-		'weread_notebooks', 'weread_book_info',
-	];
-	if (toolContext.visual?.journalDir) {
-		advisorToolNames.push('search_journal');
-	}
-	const advisorTools = allTools.filter(t => advisorToolNames.includes(t.name));
+	// 白名单单一来源：search_journal 常驻 map，未注册时 filter 自然排除（净行为不变）
+	const advisorTools = allTools.filter(t => NODE_TOOL_WHITELIST.advisor.includes(t.name));
 
 	const loopMessages = [
 		new SystemMessage(systemPrompt),
