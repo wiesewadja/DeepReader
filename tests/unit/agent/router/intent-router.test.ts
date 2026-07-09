@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { IntentRouter } from '@/agent/router/intent-router';
 
+/**
+ * P0-2 诚实化后：intent-rules.json 的 tools[]/tool_aliases 已移除，
+ * allowedTools 恒为 []、systemNote 恒为 ''（门禁改由各节点硬编码白名单控制，见 P1-1）。
+ * 以下测试保留「意图路由本身仍正确」（detectedIntents / maxIterations），并固化诚实化语义。
+ */
 describe('IntentRouter', () => {
   const router = new IntentRouter();
 
@@ -10,10 +15,6 @@ describe('IntentRouter', () => {
 
       expect(result.detectedIntents).toContain('检视阅读');
       expect(result.detectedIntents).toContain('动作输出');
-      expect(result.allowedTools).toContain('get_document_outline');
-      expect(result.allowedTools).toContain('excalidraw');
-      expect(result.allowedTools).not.toContain('search_markdown_text');
-      expect(result.systemNote).toContain('检视阅读');
       // 动态迭代：取两个规则中较大的值（action_output 的 3）
       expect(result.maxIterations).toBe(3);
     });
@@ -24,9 +25,6 @@ describe('IntentRouter', () => {
       const result = router.analyze('帮我总结一下第3章');
 
       expect(result.detectedIntents).toContain('分析阅读-定位');
-      expect(result.allowedTools).toContain('get_document_outline');
-      expect(result.allowedTools).toContain('read_markdown_section');
-      expect(result.allowedTools).toContain('analyze_chapter');
       // 定位章节：maxIterations = 3
       expect(result.maxIterations).toBe(3);
     });
@@ -37,9 +35,6 @@ describe('IntentRouter', () => {
       const result = router.analyze("什么是'第一天的答案'？");
 
       expect(result.detectedIntents).toContain('分析阅读-概念探究');
-      expect(result.allowedTools).toContain('search_markdown_text');
-      expect(result.allowedTools).toContain('get_document_outline');
-      expect(result.allowedTools).toContain('read_markdown_section');
       // 概念检索：maxIterations = 3
       expect(result.maxIterations).toBe(3);
     });
@@ -50,7 +45,6 @@ describe('IntentRouter', () => {
       const result = router.analyze('对比《金字塔原理》和这本书关于结构化思维的异同');
 
       expect(result.detectedIntents).toContain('主题阅读');
-      expect(result.allowedTools).toContain('search_read_books');
       // 主题阅读：maxIterations = 6
       expect(result.maxIterations).toBe(6);
     });
@@ -62,8 +56,6 @@ describe('IntentRouter', () => {
 
       expect(result.detectedIntents).toContain('检视阅读');
       expect(result.detectedIntents).toContain('分析阅读-定位');
-      expect(result.allowedTools).toContain('get_document_outline');
-      expect(result.allowedTools).toContain('read_markdown_section');
       // 取两个规则中较大的值（locate_chapter 的 3）
       expect(result.maxIterations).toBe(3);
     });
@@ -74,9 +66,6 @@ describe('IntentRouter', () => {
       const result = router.analyze('这本书的作者是谁');
 
       expect(result.detectedIntents).toContain('分析阅读-微观检索');
-      expect(result.allowedTools).toContain('search_markdown_text');
-      expect(result.allowedTools).toContain('read_markdown_section');
-      expect(result.allowedTools).not.toContain('get_document_outline');
       // 兜底：maxIterations = 4
       expect(result.maxIterations).toBe(4);
     });
@@ -87,8 +76,6 @@ describe('IntentRouter', () => {
       const result = router.analyze('如何理解金字塔原理的核心思想');
 
       expect(result.detectedIntents).toContain('分析阅读-概念探究');
-      expect(result.allowedTools).toContain('search_markdown_text');
-      expect(result.allowedTools).toContain('get_document_outline');
       // 概念检索：maxIterations = 3
       expect(result.maxIterations).toBe(3);
     });
@@ -99,7 +86,6 @@ describe('IntentRouter', () => {
       const result = router.analyze('给我一个全书大纲');
 
       expect(result.detectedIntents).toContain('检视阅读');
-      expect(result.allowedTools).toContain('get_document_outline');
       // 检视阅读：maxIterations = 2（最小）
       expect(result.maxIterations).toBe(2);
     });
@@ -110,10 +96,34 @@ describe('IntentRouter', () => {
       const result = router.analyze('请你针对共轭控制这个主题绘制信息图');
 
       expect(result.detectedIntents).toContain('动作输出');
-      expect(result.allowedTools).toContain('excalidraw');
-      expect(result.allowedTools).toContain('generate_infographic');
       // 动作输出：maxIterations = 3
       expect(result.maxIterations).toBe(3);
+    });
+  });
+
+  describe('诚实化语义（P0-2 回归守护）', () => {
+    it('allowedTools 始终为空数组（工具门禁已移至节点白名单，json 不再声明 tools）', () => {
+      const cases = [
+        '画一个全书的思维导图',
+        '帮我总结一下第3章',
+        '什么是第一天的答案？',
+        '对比这两本书的异同',
+        '这本书的作者是谁',
+      ];
+      for (const q of cases) {
+        expect(router.analyze(q).allowedTools).toEqual([]);
+      }
+    });
+
+    it('systemNote 始终为空串（工具集为空时不输出强约束文本，避免误导模型）', () => {
+      const cases = ['画一个全书的思维导图', '随便聊聊', '这本书的作者是谁'];
+      for (const q of cases) {
+        expect(router.analyze(q).systemNote).toBe('');
+      }
+    });
+
+    it('json 无 tools/tool_aliases 后 analyze 不抛 Cannot read property forEach of undefined', () => {
+      expect(() => router.analyze('test')).not.toThrow();
     });
   });
 });

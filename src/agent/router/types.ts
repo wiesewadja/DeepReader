@@ -9,7 +9,7 @@ export interface IntentRule {
   id: string;
   pattern: string;       // 正则表达式字符串
   intent: string;        // 意图名称
-  tools: string[];       // 允许的工具列表
+  tools?: string[];      // 可选：工具门禁已移至节点白名单（P1-1），本文件不再约束
   priority: number;      // 优先级（暂未使用，保留扩展）
   maxIterations?: number; // 该意图推荐的最大迭代次数（默认 4）
 }
@@ -33,8 +33,7 @@ export interface IntentRulesConfig {
   rules: IntentRule[];
   fallback: {
     intent: string;
-    tools: string[];
+    tools?: string[];          // 可选：工具门禁已移至节点白名单
     maxIterations?: number;    // 兜底时的最大迭代次数
   };
-  tool_aliases?: Record<string, string>;
 }

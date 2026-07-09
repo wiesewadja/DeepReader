@@ -5,12 +5,9 @@
 import type { StructuredToolInterface } from '@langchain/core/tools';
 // LangChain tool() 格式的工具定义
 import { createExcalidrawTool } from './definitions/excalidraw.js';
-import { createSaveMemoryTool, createSearchMemoryTool } from './definitions/memory.js';
-import { createUpdateProfileTool } from './definitions/profile.js';
 import { createReadBookSectionTool } from './definitions/read-section.js';
 import { createSearchBookTool } from './definitions/search-book.js';
 import { createSearchJournalTool } from './definitions/search-journal.js';
-import { createSearchReadBooksTool } from './definitions/search-read-books.js';
 import {
 	createWereadSearchTool,
 	createWereadRecommendTool,
@@ -18,7 +15,6 @@ import {
 	createWereadNotebooksTool,
 	createWereadBookInfoTool,
 } from './definitions/weread-tools.js';
-import { createWriteNoteTool } from './definitions/write-note.js';
 import type { ToolContext } from './types.js';
 
 // 导出日志函数供控制台使用
@@ -45,11 +41,6 @@ export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[
   const tools: StructuredToolInterface[] = [
     createSearchBookTool(ctx),
     createReadBookSectionTool(ctx),
-    createWriteNoteTool(ctx),
-    createSaveMemoryTool(ctx),
-    createSearchMemoryTool(ctx),
-    createUpdateProfileTool(ctx),
-    createSearchReadBooksTool(ctx),
     createExcalidrawTool(ctx),
   ];
 
