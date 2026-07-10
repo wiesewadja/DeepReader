@@ -139,7 +139,7 @@ export async function preSearchEngine(
     // bm25.json missing or corrupt — use fallback confidence
   }
 
-  const maxTheory = computeMaxTheoryBM25(keywords, bm25Index as any);
+  const maxTheory = computeMaxTheoryBM25(keywords, bm25Index as Record<string, unknown>);
   const confidence = top1.score / maxTheory;
   const coverage = computeKeywordCoverage(
     keywords,
@@ -173,9 +173,9 @@ export async function preSearchEngine(
 
   if (confidence >= 0.25) {
     log(`[PreSearchEngine] Medium confidence (${confidence.toFixed(2)}), upgrading to vector search`);
-    const embeddingRole = settings ? resolveRoleConfig('embedding', settings as any) : null;
-    const rerankerRole = settings ? resolveRoleConfig('reranker', settings as any) : null;
-    const rerankerWeight = (settings as any)?.rerankerWeight ?? 0.7;
+    const embeddingRole = settings ? resolveRoleConfig('embedding', settings as Record<string, unknown>) : null;
+    const rerankerRole = settings ? resolveRoleConfig('reranker', settings as Record<string, unknown>) : null;
+    const rerankerWeight = (settings as Record<string, unknown>)?.rerankerWeight ?? 0.7;
 
     if (embeddingRole) {
       try {

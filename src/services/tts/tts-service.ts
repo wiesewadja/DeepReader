@@ -1,5 +1,6 @@
 import { Notice, type App } from 'obsidian';
 import { nodeFs } from '../../utils/node-fs.js';
+import { nodePath } from '../../utils/node-compat.js';
 import { serviceLog } from '../../utils/logger.js';
 import { vaultRead, vaultReadBinary, vaultExists, vaultMkdir, vaultRemove, vaultWrite, vaultWriteBinary, joinPath } from '../../utils/mobile-fs.js';
 import { safeRequest } from '../../utils/safe-request.js';
@@ -165,7 +166,7 @@ export class TTSService {
             const rel = `.obsidian/plugins/${pluginId}/tts-cache`;
             this.diskCacheDir = config.app
                 ? rel
-                : require('path').join(config.vaultPath!, rel);
+                : nodePath().join(config.vaultPath!, rel);
         }
     }
 
@@ -910,7 +911,7 @@ export class TTSService {
         try {
             const manifestPath = this.app
                 ? joinPath(this.diskCacheDir, 'manifest.json')
-                : require('path').join(this.diskCacheDir, 'manifest.json');
+                : nodePath().join(this.diskCacheDir, 'manifest.json');
             const data = this.app
                 ? await vaultRead(this.app, manifestPath)
                 : await nodeFs().readFile(manifestPath, 'utf-8');
@@ -925,7 +926,7 @@ export class TTSService {
         await this.ensureDiskCacheDir();
         const manifestPath = this.app
             ? joinPath(this.diskCacheDir, 'manifest.json')
-            : require('path').join(this.diskCacheDir, 'manifest.json');
+            : nodePath().join(this.diskCacheDir, 'manifest.json');
         const content = JSON.stringify({ entries }, null, 2);
         if (this.app) {
             await vaultWrite(this.app, manifestPath, content);
@@ -944,7 +945,7 @@ export class TTSService {
                 const wavFile = `${textHash}_${voice}.wav`;
                 const wavPath = this.app
                     ? joinPath(this.diskCacheDir, wavFile)
-                    : require('path').join(this.diskCacheDir, wavFile);
+                    : nodePath().join(this.diskCacheDir, wavFile);
                 if (this.app) {
                     await vaultWriteBinary(this.app, wavPath, audioBuffer);
                 } else {
@@ -961,7 +962,7 @@ export class TTSService {
                     try {
                         const removePath = this.app
                             ? joinPath(this.diskCacheDir, r.wavFile)
-                            : require('path').join(this.diskCacheDir, r.wavFile);
+                            : nodePath().join(this.diskCacheDir, r.wavFile);
                         if (this.app) {
                             await vaultRemove(this.app, removePath);
                         } else {
@@ -999,7 +1000,7 @@ export class TTSService {
             const wavFile = `${textHash}_${voice}.wav`;
             const wavPath = this.app
                 ? joinPath(this.diskCacheDir, wavFile)
-                : require('path').join(this.diskCacheDir, wavFile);
+                : nodePath().join(this.diskCacheDir, wavFile);
             let audioBuffer: ArrayBuffer;
             if (this.app) {
                 audioBuffer = await vaultReadBinary(this.app, wavPath);

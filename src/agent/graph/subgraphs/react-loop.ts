@@ -132,7 +132,7 @@ function createEnhancedToolNode(toolInterceptor?: SubgraphConfig['toolIntercepto
       if ('_parseError' in parsedArgs) {
         newMessages.push(
           new ToolMessage({
-            content: `Error: Failed to parse tool arguments: ${parsedArgs._raw}`,
+            content: 'Error: Failed to parse tool arguments',
             tool_call_id: tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`,
           }),
         );

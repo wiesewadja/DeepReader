@@ -56,11 +56,17 @@ export interface EarlyStopDeciderResult {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
+/** Normalized block type that handles both snake_case and camelCase variants */
+interface NormalizedBlock {
+  block_id: string;
+  content: string;
+}
+
 function normalizeHits(hits: EarlyStopHit[]): ScoredHit[] {
   return hits.flatMap(h => {
     const blocks = h.matched_blocks || h.matchedBlocks || [];
-    return blocks.map((b: any) => ({
-      block_id: b.block_id || b.blockId || '',
+    return blocks.map((b: NormalizedBlock) => ({
+      block_id: b.block_id || (b as any).blockId || '',
       content: b.content || '',
     }));
   });
@@ -113,8 +119,8 @@ export async function earlyStopDecider(
 
   const blockLines = hits.flatMap(h => {
     const blocks = h.matched_blocks || h.matchedBlocks || [];
-    return blocks.map((b: any) => {
-      const blockId = (b.block_id || b.blockId || '').replace(/^\^/, '');
+    return blocks.map((b: NormalizedBlock) => {
+      const blockId = (b.block_id || (b as any).blockId || '').replace(/^\^/, '');
       const content = b.content || '';
       const nodeId = h.node_id || h.nodeId || '';
       return `【${nodeId}#^${blockId}】\n${content}`;
@@ -123,8 +129,8 @@ export async function earlyStopDecider(
 
   const preSearchRecords = hits.flatMap(h => {
     const blocks = h.matched_blocks || h.matchedBlocks || [];
-    return blocks.map((b: any) => {
-      const blockId = (b.block_id || b.blockId || '').replace(/^\^/, '');
+    return blocks.map((b: NormalizedBlock) => {
+      const blockId = (b.block_id || (b as any).blockId || '').replace(/^\^/, '');
       return {
         toolName: 'pre_search' as const,
         args: { query: 'auto', node_id: h.node_id || h.nodeId || '' },

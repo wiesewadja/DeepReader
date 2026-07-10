@@ -17,21 +17,28 @@ export const createSearchJournalTool: ToolFactory = (ctx: ToolContext) => {
 	const journalDir = ctx.visual?.journalDir;
 	const settings = ctx.vault?.plugin?.settings;
 	
-	let searchService: any = null;
-	if (journalDir && settings) {
-		const { JournalSearchService, getJournalIndexDir } = require('../../../services/journal-search.js');
-		searchService = new JournalSearchService(ctx.vault.app!, settings, getJournalIndexDir(journalDir));
-	}
+	// Lazy-loaded search service (imported on first use to avoid ESM/CJS issues)
+	let searchServicePromise: Promise<any> | null = null;
+	const getSearchService = () => {
+		if (!searchServicePromise && journalDir && settings) {
+			searchServicePromise = import('../../../services/journal-search.js').then(
+				({ JournalSearchService, getJournalIndexDir }) =>
+					new JournalSearchService(ctx.vault.app!, settings, getJournalIndexDir(journalDir))
+			);
+		}
+		return searchServicePromise;
+	};
 
 	return tool(
 		async (args) => {
 			const { query, topK = 3 } = args;
-			if (!searchService) {
+			const service = await getSearchService();
+			if (!service) {
 				return JSON.stringify({ status: 'SKIP', message: '未配置笔记目录' });
 			}
 
 			try {
-				const results = await searchService.search(query, topK);
+				const results = await service.search(query, topK);
 				if (results.length === 0) {
 					return JSON.stringify({ status: 'SUCCESS', message: '未找到相关笔记', results: [] });
 				}
