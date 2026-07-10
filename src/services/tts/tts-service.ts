@@ -12,6 +12,13 @@ import { TTSCacheManager, type CachedAudio } from './tts-cache.js';
 import { mergeAudioChunks } from './tts-audio-merger.js';
 import { splitFirstSentence, splitTextIntoSegments, stripWikiLinksForTTS } from './tts-text-splitter.js';
 
+interface WakeLockSentinel {
+    released: boolean;
+    type: string;
+    onrelease: (() => void) | null;
+    release(): Promise<void>;
+}
+
 export type TTSPlayState = 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 'paused';
 
 export interface TTSServiceConfig {
@@ -64,6 +71,8 @@ export class TTSService {
     private isVoiceDesign: boolean;
     /** 正在进行的预加载任务集合，防止并发重复请求 */
     private activePreloads = new Set<string>();
+    private wakeLockSentinel: WakeLockSentinel | null = null;
+    private wakeLockVisibilityHandler: (() => void) | null = null;
 
     constructor(config: TTSServiceConfig) {
         this.client = new TTSClient({
@@ -112,6 +121,16 @@ export class TTSService {
             vaultPath: config.vaultPath,
             pluginId: config.pluginId,
         });
+
+        // Setup visibility change listener for wake lock
+        this.wakeLockVisibilityHandler = () => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'visible' && this.state === 'playing') {
+                this.acquireWakeLock();
+            }
+        };
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', this.wakeLockVisibilityHandler);
+        }
     }
 
     getState(): TTSPlayState {
@@ -888,6 +907,11 @@ export class TTSService {
             this.playbackReject(new Error('STOPPED'));
             this.playbackReject = null;
         }
+        if (typeof document !== 'undefined' && this.wakeLockVisibilityHandler) {
+            document.removeEventListener('visibilitychange', this.wakeLockVisibilityHandler);
+            this.wakeLockVisibilityHandler = null;
+        }
+        this.releaseWakeLock();
         this.cacheManager.clearAll();
         this.rewrittenCache.clear();
         this.pendingRewrites.clear();
@@ -1223,5 +1247,39 @@ export class TTSService {
     private setState(newState: TTSPlayState): void {
         this.state = newState;
         this.onStateChange?.(this.currentMessageId, newState);
+        if (newState === 'playing') {
+            this.acquireWakeLock();
+        } else {
+            this.releaseWakeLock();
+        }
+    }
+
+    private async acquireWakeLock(): Promise<void> {
+        if (typeof navigator === 'undefined' || !navigator.wakeLock) return;
+        if (this.wakeLockSentinel) return;
+        try {
+            const sentinel = await (navigator as any).wakeLock.request('screen');
+            this.wakeLockSentinel = sentinel;
+            serviceLog.info('[TTS] Screen Wake Lock acquired.');
+            sentinel.onrelease = () => {
+                serviceLog.info('[TTS] Screen Wake Lock released.');
+                if (this.wakeLockSentinel === sentinel) {
+                    this.wakeLockSentinel = null;
+                }
+            };
+        } catch (err) {
+            serviceLog.warn('[TTS] Failed to acquire Screen Wake Lock:', err);
+        }
+    }
+
+    private async releaseWakeLock(): Promise<void> {
+        if (this.wakeLockSentinel) {
+            try {
+                await this.wakeLockSentinel.release();
+            } catch (err) {
+                serviceLog.warn('[TTS] Error releasing Screen Wake Lock:', err);
+            }
+            this.wakeLockSentinel = null;
+        }
     }
 }
