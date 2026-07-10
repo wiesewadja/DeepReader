@@ -6,8 +6,8 @@
  * and compares against the old "center-to-center" behavior.
  */
 import { describe, it, expect } from 'vitest';
-import { buildExcalidrawJSON } from '@/agent/tools/excalidraw';
-import type { ElementDef } from '@/agent/tools/excalidraw';
+import { buildExcalidrawJSON } from '@/agent/tools/excalidraw/excalidraw';
+import type { ElementDef } from '@/agent/tools/excalidraw/excalidraw';
 
 function makeElement(overrides: Partial<ElementDef> & { id: string }): ElementDef {
   return { type: 'rectangle', x: 0, y: 0, width: 100, height: 50, ...overrides };

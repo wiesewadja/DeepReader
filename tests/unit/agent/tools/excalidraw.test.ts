@@ -8,10 +8,10 @@ import {
   edgeIntersection,
   calculateViewport,
   resolveOverlaps,
-} from '@/agent/tools/excalidraw';
-import { excalidrawTool } from '@/agent/tools/excalidraw';
-import { writeExcalidrawJson } from '@/agent/tools/excalidraw';
-import type { ElementDef } from '@/agent/tools/excalidraw';
+} from '@/agent/tools/excalidraw/excalidraw';
+import { excalidrawTool } from '@/agent/tools/excalidraw/excalidraw';
+import { writeExcalidrawJson } from '@/agent/tools/excalidraw/excalidraw';
+import type { ElementDef } from '@/agent/tools/excalidraw/excalidraw';
 import type { ToolContext } from '@/agent/tools/types';
 
 function makeMockCtx(): ToolContext {
@@ -336,7 +336,7 @@ describe('excalidrawTool.execute', () => {
   });
 
   it('returns warnings when overlaps detected', async () => {
-    const geom = await import('@/agent/tools/excalidraw-geometry');
+    const geom = await import('@/agent/tools/excalidraw/excalidraw-geometry');
     const spy = vi.spyOn(geom, 'resolveOverlaps').mockImplementation((els) => els as any);
 
     const result = await excalidrawTool.execute(

@@ -17,17 +17,8 @@ import {
 } from './definitions/weread-tools.js';
 import type { ToolContext } from './types.js';
 
-// 导出日志函数供控制台使用
-export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../../utils/logger.js';
-
 // 导出类型
 export type { ToolExecutor, ToolContext } from './types.js';
-
-// 本地 Markdown 工具
-export {
-  searchBookTool,
-  readBookSectionTool
-} from './local/index.js';
 
 /**
  * 创建 LangChain StructuredToolInterface[] 数组。

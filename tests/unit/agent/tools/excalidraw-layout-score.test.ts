@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { scoreLayout } from '@/agent/tools/excalidraw-layout-score';
-import type { ElementDef } from '@/agent/tools/excalidraw-types';
+import { scoreLayout } from '@/agent/tools/excalidraw/excalidraw-layout-score';
+import type { ElementDef } from '@/agent/tools/excalidraw/excalidraw-types';
 
 function makeElement(overrides: Partial<ElementDef> & { id: string }): ElementDef {
   return {

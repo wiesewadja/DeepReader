@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { arrangeWithFallback } from '@/agent/tools/excalidraw-layout';
-import { LAYOUT_REGISTRY } from '@/agent/tools/excalidraw-layouts/index';
-import type { ElementDef, LayoutEngine } from '@/agent/tools/excalidraw-types';
+import { arrangeWithFallback } from '@/agent/tools/excalidraw/excalidraw-layout';
+import { LAYOUT_REGISTRY } from '@/agent/tools/excalidraw/layouts/index';
+import type { ElementDef, LayoutEngine } from '@/agent/tools/excalidraw/excalidraw-types';
 
 function makeElement(overrides: Partial<ElementDef> & { id: string }): ElementDef {
   return {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { applyDiagramStyle } from '@/agent/tools/excalidraw-style-processor';
-import { generateConnectorPoints } from '@/agent/tools/excalidraw-organic-geometry';
-import type { ElementDef } from '@/agent/tools/excalidraw-types';
+import { applyDiagramStyle } from '@/agent/tools/excalidraw/excalidraw-style-processor';
+import { generateConnectorPoints } from '@/agent/tools/excalidraw/excalidraw-organic-geometry';
+import type { ElementDef } from '@/agent/tools/excalidraw/excalidraw-types';
 
 function makeElement(overrides: Partial<ElementDef> & { id: string }): ElementDef {
   return {

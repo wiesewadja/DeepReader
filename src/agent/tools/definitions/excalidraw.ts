@@ -6,10 +6,10 @@
 
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { excalidrawTool } from '../excalidraw.js';
+import { excalidrawTool } from '../excalidraw/excalidraw.js';
 import type { ToolContext } from '../types.js';
 import type { ToolFactory } from './types.js';
-import { SHARED_DIAGRAM_PROMPT } from '../excalidraw-prompts.js';
+import { SHARED_DIAGRAM_PROMPT } from '../excalidraw/excalidraw-prompts.js';
 
 export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
   tool(
