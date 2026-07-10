@@ -3,6 +3,7 @@
  *
  * 验证 sanitizeHumanizedHtml 函数存在且能正确过滤 XSS 向量
  * 锚定: 2026-06-08 五轴审查修复 (9b4d19d5)
+ * 更新: 2026-07-10 write_note 工具已删除，移除路径穿越检查
  */
 
 import { evalObsidian } from '../../lib/obsidian-cli.mjs';
@@ -31,19 +32,11 @@ export default {
 				const stripsScriptTag = !sanitized.includes('<script>');
 				const stripsEventHandlers = !sanitized.includes('onclick=');
 
-				// 文件级检查：write_note 路径穿越保护
-				const adapter = app.vault.adapter;
-				const mainJs = await adapter.read('.obsidian/plugins/deepreader-dev/main.js');
-				const hasPathTraversal = mainJs.includes('Path traversal detected');
-				const hasObsidianGuard = mainJs.includes('.obsidian/');
-
 				return {
 					ok: stripsScriptTag && stripsEventHandlers,
 					sanitizer: true,
 					stripsScriptTag: stripsScriptTag,
 					stripsEventHandlers: stripsEventHandlers,
-					pathTraversal: hasPathTraversal,
-					obsidianGuard: hasObsidianGuard,
 				};
 			})()
 		`);
@@ -58,14 +51,8 @@ export default {
 		if (!result.sanitizer) {
 			throw new Error('sanitizeHumanizedHtml 未找到');
 		}
-		if (!result.pathTraversal) {
-			throw new Error('write_note 路径穿越检查未找到');
-		}
-		if (!result.obsidianGuard) {
-			throw new Error('write_note .obsidian/ 保护未找到');
-		}
 
-		log?.info?.(`sanitizer=运行时验证通过, pathCheck=${result.pathTraversal}, obsidianGuard=${result.obsidianGuard}`);
+		log?.info?.('sanitizer=运行时验证通过');
 		return { ok: true };
 	},
 };

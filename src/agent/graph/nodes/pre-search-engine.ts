@@ -173,9 +173,12 @@ export async function preSearchEngine(
 
   if (confidence >= 0.25) {
     log(`[PreSearchEngine] Medium confidence (${confidence.toFixed(2)}), upgrading to vector search`);
-    const embeddingRole = settings ? resolveRoleConfig('embedding', settings as Record<string, unknown>) : null;
-    const rerankerRole = settings ? resolveRoleConfig('reranker', settings as Record<string, unknown>) : null;
-    const rerankerWeight = (settings as Record<string, unknown>)?.rerankerWeight ?? 0.7;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const embeddingRole = settings ? resolveRoleConfig('embedding', settings as any) : null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rerankerRole = settings ? resolveRoleConfig('reranker', settings as any) : null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rerankerWeight = (settings as any)?.rerankerWeight ?? 0.7;
 
     if (embeddingRole) {
       try {
@@ -190,7 +193,7 @@ export async function preSearchEngine(
     const hybridOpts: BookSearchOptionsV2 = {
       ...searchOpts,
       embedding: embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined,
-      reranker: rerankerRole ? toRerankerOptions(rerankerRole, rerankerWeight) : undefined,
+      reranker: rerankerRole ? toRerankerOptions(rerankerRole, Number(rerankerWeight)) : undefined,
     };
     if (queryVector) {
       hybridOpts.precomputedEmbedding = queryVector;
