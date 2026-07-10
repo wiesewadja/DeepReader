@@ -7,8 +7,8 @@
  * - 短文本不超过容器（不溢出）
  */
 import { describe, it, expect } from 'vitest';
-import { computeOptimalFontSize, buildExcalidrawJSON } from '@/agent/tools/excalidraw';
-import type { ElementDef } from '@/agent/tools/excalidraw';
+import { computeOptimalFontSize, buildExcalidrawJSON } from '@/agent/tools/excalidraw/excalidraw';
+import type { ElementDef } from '@/agent/tools/excalidraw/excalidraw';
 
 /** 字号四档（与 excalidraw.ts FONT_SIZE_TIERS 一致） */
 const TIERS = [16, 20, 28, 36];

@@ -6,9 +6,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import { decompressFromBase64 } from 'lz-string';
-import { buildExcalidrawMd } from '@/agent/tools/excalidraw-md';
-import { buildExcalidrawJSON } from '@/agent/tools/excalidraw';
-import type { ElementDef } from '@/agent/tools/excalidraw';
+import { buildExcalidrawMd } from '@/agent/tools/excalidraw/excalidraw-md';
+import { buildExcalidrawJSON } from '@/agent/tools/excalidraw/excalidraw';
+import type { ElementDef } from '@/agent/tools/excalidraw/excalidraw';
 
 /** 从 .excalidraw.md 内容里解压出原始 JSON */
 function decompressMd(md: string): any {

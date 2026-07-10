@@ -5,9 +5,9 @@
  * 包含碰撞检测和语义验证，返回警告供 LLM 修正。
  */
 
-import { log } from '../../utils/logger.js';
+import { log } from '../../../utils/logger.js';
 import { calculateViewport, edgeIntersection } from './excalidraw-geometry.js';
-import type { ToolExecutor, ToolContext } from './types.js';
+import type { ToolExecutor, ToolContext } from '../types.js';
 import { type ElementDef, type DiagramLayoutType, FREE_TEXT_BG_SUFFIX } from './excalidraw-types.js';
 
 import { arrangeWithFallback } from './excalidraw-layout.js';

@@ -1,7 +1,7 @@
-import { log } from '../../utils/logger.js';
+import { log } from '../../../utils/logger.js';
 import { resolveOverlaps } from './excalidraw-geometry.js';
 import { scoreLayout } from './excalidraw-layout-score.js';
-import { LAYOUT_REGISTRY } from './excalidraw-layouts/index.js';
+import { LAYOUT_REGISTRY } from './layouts/index.js';
 import type { ElementDef, DiagramLayoutType } from './excalidraw-types.js';
 
 /**

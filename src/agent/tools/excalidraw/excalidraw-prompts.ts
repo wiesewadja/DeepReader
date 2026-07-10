@@ -6,6 +6,6 @@
  * (tool definitions, diagram-helper) that import the raw string directly.
  */
 
-import { diagramPrompt } from '../prompts/auxiliary/diagram.js';
+import { diagramPrompt } from '../../prompts/auxiliary/diagram.js';
 
 export const SHARED_DIAGRAM_PROMPT = diagramPrompt.locales.zh.systemPrompt;
