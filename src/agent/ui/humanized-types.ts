@@ -17,7 +17,6 @@ export const TOOL_TO_READING_LEVEL: Record<string, ReadingLevel> = {
 	get_document_outline: 'inspectional',
 	search_markdown_text: 'inspectional',
 	read_markdown_section: 'analytical',
-	search_read_books: 'syntopical',
 	// 分析阅读工具（合并：术语+论点分析）
 	analyze_chapter: 'analytical',
 	// 辅助工具
@@ -90,13 +89,6 @@ export const TOOL_TO_ACTION: Record<string, (args: Record<string, unknown>, cont
 		if (type === 'propositions') return '💡 提取作者的核心论点';
 		return '🧐 分析章节内容';
 	},
-	search_read_books: (args) => {
-		const query = String(args.query || '相关内容').slice(0, 15);
-		return `📚 跨书查找「${query}」`;
-	},
-	add_memory: () => '📝 记下这个要点',
-	search_memory: () => '💭 回忆之前的内容',
-	write_note: (args) => `✍️ 整理笔记「${String(args.path || '')}」`,
 	Skill: (args) => `🎓 加载技能「${String(args.skill || '专业知识')}」`,
 	skill: (args) => `🎓 加载技能「${String(args.skill || '专业知识')}」`, // 兼容小写
 };

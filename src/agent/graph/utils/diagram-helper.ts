@@ -4,10 +4,11 @@
  * Used by S1 Inspectional and S3 Syntopical to generate excalidraw diagrams
  * when diagram intent is detected in the user query.
  *
- * Design note: this helper calls excalidrawTool.execute directly because
- * S1/S3 run outside the ReAct/PlanExecute tool loop. The LangChain wrapper
- * (createExcalidrawTool) is still registered in createLangChainTools so that
- * S2 Analytical can invoke excalidraw via standard tool_calls when needed.
+ * Design note: excalidraw 是 direct-call-only 工具——仅由本 helper 在 S1/S3
+ * 直接 .execute() 调用，不入 LLM 工具循环。各节点工具门禁见
+ * src/agent/tools/tool-permissions.ts（analytical/advisor 白名单均不含 excalidraw，
+ * 故即便 createExcalidrawTool 在 createLangChainTools 注册了，model 也不会经
+ * tool_calls 触发它）。此处直接 import v1 实现 excalidrawTool，不经 LangChain 包装。
  */
 
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';

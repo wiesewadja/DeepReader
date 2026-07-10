@@ -10,7 +10,7 @@ import type { BaseMessage } from '@langchain/core/messages';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { ChatOpenAI } from '@langchain/openai';
-import { MAX_TOOL_RESULT_LENGTH, MAX_FULL_TOOL_MESSAGES } from '../../config/agent-constants.js';
+import { MAX_TOOL_RESULT_LENGTH, MAX_FULL_TOOL_MESSAGES, TOOL_EXECUTION_TIMEOUT_MS } from '../../config/agent-constants.js';
 import type { ToolCallLike } from '../utils/tool-call-parser.js';
 import { parseToolCallArgs } from '../utils/tool-call-parser.js';
 
@@ -99,9 +99,61 @@ export function compressMessagesForLLM(messages: BaseMessage[]): BaseMessage[] {
 
 // ============ Tool Execution ============
 
+/**
+ * Sanitize error message to avoid leaking sensitive information (file paths, API keys, etc.)
+ * to the LLM. Only returns generic error categories with tool name for context.
+ */
+function sanitizeErrorMessage(err: unknown, toolName?: string): string {
+  if (err instanceof ToolTimeoutError) {
+    return `Tool "${err.toolName}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`;
+  }
+  if (!(err instanceof Error)) return 'Unknown error';
+  const msg = err.message;
+  // Map common error patterns to generic messages (tool name is safe to include)
+  if (msg.includes('timeout') || msg.includes('timed out')) return `Tool "${toolName}" timed out`;
+  if (msg.includes('EACCES') || msg.includes('permission denied')) return 'Permission denied';
+  if (msg.includes('ENOENT') || msg.includes('no such file')) return 'File not found';
+  if (msg.includes('fetch') || msg.includes('network') || msg.includes('ECONNREFUSED')) return 'Network error';
+  // For other errors, return a generic message without the original content
+  return 'Tool execution failed';
+}
+
+/**
+ * Custom error type for tool timeout to distinguish from other errors.
+ */
+class ToolTimeoutError extends Error {
+  toolName: string;
+  constructor(toolName: string, timeoutMs: number) {
+    super(`Tool "${toolName}" timed out after ${timeoutMs}ms`);
+    this.name = 'ToolTimeoutError';
+    this.toolName = toolName;
+  }
+}
+
 interface SingleToolResult {
   msg: ToolMessage;
   record: ToolResultRecord | null;
+}
+
+/**
+ * 工具执行超时包裹：在唯一执行落点 race，覆盖单工具（executeSingleToolCall）
+ * 与批量（executeToolBatch → Promise.all）两条路径。超时 reject 会被
+ * executeSingleToolCall 的 try/catch 捕捉，转成 ToolMessage 错误，不会拖垮整轮。
+ *
+ * Uses Promise.race for timeout with a custom error type for proper identification.
+ */
+function invokeWithTimeout(
+  tool: StructuredToolInterface,
+  args: Record<string, unknown>,
+  runnableConfig?: RunnableConfig,
+): Promise<unknown> {
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new ToolTimeoutError(tool.name, TOOL_EXECUTION_TIMEOUT_MS));
+    }, TOOL_EXECUTION_TIMEOUT_MS);
+  });
+
+  return Promise.race([tool.invoke(args, runnableConfig), timeoutPromise]);
 }
 
 export async function executeSingleToolCall(
@@ -115,7 +167,7 @@ export async function executeSingleToolCall(
 
   if ('_parseError' in parsedArgs) {
     return {
-      msg: new ToolMessage({ content: `Error: Failed to parse tool arguments: ${parsedArgs._raw}`, tool_call_id: tcId }),
+      msg: new ToolMessage({ content: 'Error: Failed to parse tool arguments', tool_call_id: tcId }),
       record: null,
     };
   }
@@ -135,7 +187,7 @@ export async function executeSingleToolCall(
   }
 
   try {
-    const rawResult = await tool.invoke(args, runnableConfig);
+    const rawResult = await invokeWithTimeout(tool, args, runnableConfig);
     const resultStr = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
     const compressed = compressToolResult(resultStr);
     const extractedBlockIds = extractBlockIdsFromResult(resultStr);
@@ -144,7 +196,7 @@ export async function executeSingleToolCall(
       record: { toolName, args, result: compressed, originalResultLength: resultStr.length, extractedBlockIds } as ToolResultRecord,
     };
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
+    const errorMsg = sanitizeErrorMessage(err, toolName);
     return {
       msg: new ToolMessage({ content: `Error: ${errorMsg}`, tool_call_id: tcId }),
       record: null,

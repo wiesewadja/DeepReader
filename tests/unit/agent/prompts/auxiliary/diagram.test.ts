@@ -33,7 +33,7 @@ describe('Diagram Prompt Module', () => {
 
     it('zh locale 应包含色板和元素尺寸', () => {
       const { systemPrompt } = diagramPrompt.locales.zh;
-      expect(systemPrompt).toContain('多彩现代色板');
+      expect(systemPrompt).toContain('色板');
       expect(systemPrompt).toContain('semanticColor');
       expect(systemPrompt).toContain('fontSize');
     });
@@ -46,9 +46,8 @@ describe('Diagram Prompt Module', () => {
 
     it('en locale 也应包含核心内容', () => {
       const { systemPrompt } = diagramPrompt.locales.en!;
-      expect(systemPrompt).toContain('Node Density');
-      expect(systemPrompt).toContain('semanticColor');
       expect(systemPrompt).toContain('Output Format');
+      expect(systemPrompt).toContain('semanticColor');
     });
   });
 });

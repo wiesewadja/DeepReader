@@ -358,7 +358,15 @@ function grepSrc(pattern: string): string {
 }
 
 describe('D7: 静态反例（重构后清理验证）', () => {
-  it('D7.1 src/ 无 link-validator 模块引用（应已被删除）', () => {
+  it('D7.1 agent-chat-controller.ts 已不再 import link-validator', () => {
+    const controllerPath = path.join(SRC, 'views/sidebar/agent-chat-controller.ts');
+    if (fs.existsSync(controllerPath)) {
+      const content = fs.readFileSync(controllerPath, 'utf-8');
+      expect(content).not.toMatch(/link-validator|validateAndCorrectLinks/);
+    }
+  });
+
+  it('D7.2 src/ 无 link-validator 模块引用（应已被删除）', () => {
     // 链接验证器已删（Phase 4.2），src/ 应无残留引用
     const result = grepSrc('link-validator|validateAndCorrectLinks');
     const matches = result.trim().split('\n').filter(Boolean);

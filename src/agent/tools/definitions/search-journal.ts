@@ -4,6 +4,7 @@
 
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
+import { formatToolError } from '../types.js';
 import type { ToolContext } from '../types.js';
 import type { ToolFactory } from './types.js';
 
@@ -16,27 +17,37 @@ export const createSearchJournalTool: ToolFactory = (ctx: ToolContext) => {
 	const journalDir = ctx.visual?.journalDir;
 	const settings = ctx.vault?.plugin?.settings;
 	
-	let searchService: any = null;
-	if (journalDir && settings) {
-		const { JournalSearchService, getJournalIndexDir } = require('../../../services/journal-search.js');
-		searchService = new JournalSearchService(ctx.vault.app!, settings, getJournalIndexDir(journalDir));
-	}
+	// Lazy-loaded search service (imported on first use to avoid ESM/CJS issues)
+	let searchServicePromise: Promise<any> | null = null;
+	const getSearchService = () => {
+		if (!searchServicePromise && journalDir && settings) {
+			searchServicePromise = import('../../../services/journal-search.js').then(
+				({ JournalSearchService, getJournalIndexDir }) =>
+					new JournalSearchService(ctx.vault.app!, settings, getJournalIndexDir(journalDir))
+			);
+		}
+		return searchServicePromise;
+	};
 
 	return tool(
 		async (args) => {
 			const { query, topK = 3 } = args;
-			if (!searchService) {
+			const service = await getSearchService();
+			if (!service) {
 				return JSON.stringify({ status: 'SKIP', message: '未配置笔记目录' });
 			}
 
 			try {
-				const results = await searchService.search(query, topK);
+				const results = await service.search(query, topK);
 				if (results.length === 0) {
 					return JSON.stringify({ status: 'SUCCESS', message: '未找到相关笔记', results: [] });
 				}
 				return JSON.stringify({ status: 'SUCCESS', results });
 			} catch (e: unknown) {
-				return JSON.stringify({ status: 'ERROR', message: e instanceof Error ? e.message.split('\n')[0] : 'Unknown error' });
+				// 错误路径走跨工具统一的 formatToolError（[TOOL_ERROR:code] 前缀），
+				// 与 success 路径的结构化 JSON 故意不对称：success 需结构化检索结果供模型消费，
+				// error 需统一的可识别前缀供跨工具错误处理（见 L6 §1.6）。
+				return formatToolError('JournalSearch', e instanceof Error ? e.message.split('\n')[0] : 'Unknown error');
 			}
 		},
 		{

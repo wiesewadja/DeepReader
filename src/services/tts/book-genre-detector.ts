@@ -2,6 +2,7 @@ import type { App } from 'obsidian';
 import { PAGEINDEX_DIR, getPageindexDir } from '../../pageindex/paths.js';
 import { vaultRead, vaultWrite, vaultMkdir, vaultExists, joinPath } from '../../utils/mobile-fs.js';
 import { nodeFs } from '../../utils/node-fs.js';
+import { nodePath } from '../../utils/node-compat.js';
 
 
 export interface BookGenre {
@@ -49,7 +50,7 @@ export class BookGenreDetector {
     llmClient: LLMClient;
     app?: App;
   }) {
-    this.cacheDir = options.app ? PAGEINDEX_DIR : require('path').join(options.vaultPath!, getPageindexDir());
+    this.cacheDir = options.app ? PAGEINDEX_DIR : nodePath().join(options.vaultPath!, getPageindexDir());
     this.llmClient = options.llmClient;
     this.app = options.app;
   }
@@ -90,7 +91,7 @@ export class BookGenreDetector {
   private async loadTree(bookId: string): Promise<BookTree | null> {
     const treePath = this.app
       ? joinPath(this.cacheDir, bookId, 'tree.json')
-      : require('path').join(this.cacheDir, bookId, 'tree.json');
+      : nodePath().join(this.cacheDir, bookId, 'tree.json');
     try {
       const data = this.app
         ? await vaultRead(this.app, treePath)
@@ -217,7 +218,7 @@ ${treeText}
   private async loadCachedGenre(bookId: string): Promise<BookGenre | null> {
     const cachePath = this.app
       ? joinPath(this.cacheDir, bookId, 'genre.json')
-      : require('path').join(this.cacheDir, bookId, 'genre.json');
+      : nodePath().join(this.cacheDir, bookId, 'genre.json');
     try {
       const data = this.app
         ? await vaultRead(this.app, cachePath)
@@ -231,7 +232,7 @@ ${treeText}
   private async cacheGenre(bookId: string, genre: BookGenre): Promise<void> {
     const cachePath = this.app
       ? joinPath(this.cacheDir, bookId, 'genre.json')
-      : require('path').join(this.cacheDir, bookId, 'genre.json');
+      : nodePath().join(this.cacheDir, bookId, 'genre.json');
     if (this.app) {
       const dirPath = joinPath(this.cacheDir, bookId);
       if (!(await vaultExists(this.app, dirPath))) {
@@ -239,7 +240,7 @@ ${treeText}
       }
       await vaultWrite(this.app, cachePath, JSON.stringify(genre, null, 2));
     } else {
-      await nodeFs().mkdir(require('path').dirname(cachePath), { recursive: true });
+      await nodeFs().mkdir(nodePath().dirname(cachePath), { recursive: true });
       await nodeFs().writeFile(cachePath, JSON.stringify(genre, null, 2));
     }
   }

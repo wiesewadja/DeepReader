@@ -12,6 +12,7 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { WereadApiClient } from '../../../weread/api/client.js';
+import { formatToolError } from '../types.js';
 import type { ToolContext } from '../types.js';
 import type { ToolFactory } from './types.js';
 
@@ -49,7 +50,7 @@ export const createWereadSearchTool: ToolFactory = (ctx: ToolContext) =>
 				}
 				return lines.join('\n') || '未找到相关书籍。';
 			} catch (e: unknown) {
-				return `搜索失败: ${(e instanceof Error ? e.message : String(e))}`;
+				return formatToolError('WereadSearch', `搜索失败: ${(e instanceof Error ? e.message : String(e))}`);
 			}
 		},
 		{
@@ -80,7 +81,7 @@ export const createWereadRecommendTool: ToolFactory = (ctx: ToolContext) =>
 				}
 				return lines.join('\n');
 			} catch (e: unknown) {
-				return `获取推荐失败: ${(e instanceof Error ? e.message : String(e))}`;
+				return formatToolError('WereadRecommend', `获取推荐失败: ${(e instanceof Error ? e.message : String(e))}`);
 			}
 		},
 		{
@@ -126,7 +127,7 @@ export const createWereadReadDataTool: ToolFactory = (ctx: ToolContext) =>
 				}
 				return lines.join('\n') || '暂无阅读统计数据。';
 			} catch (e: unknown) {
-				return `获取阅读统计失败: ${(e instanceof Error ? e.message : String(e))}`;
+				return formatToolError('WereadReadData', `获取阅读统计失败: ${(e instanceof Error ? e.message : String(e))}`);
 			}
 		},
 		{
@@ -156,7 +157,7 @@ export const createWereadNotebooksTool: ToolFactory = (ctx: ToolContext) =>
 				}
 				return lines.join('\n');
 			} catch (e: unknown) {
-				return `获取笔记数据失败: ${(e instanceof Error ? e.message : String(e))}`;
+				return formatToolError('WereadNotebooks', `获取笔记数据失败: ${(e instanceof Error ? e.message : String(e))}`);
 			}
 		},
 		{
@@ -188,7 +189,7 @@ export const createWereadBookInfoTool: ToolFactory = (ctx: ToolContext) =>
 				if (resp.intro) lines.push(`简介: ${resp.intro}`);
 				return lines.join('\n');
 			} catch (e: unknown) {
-				return `获取书籍详情失败: ${(e instanceof Error ? e.message : String(e))}`;
+				return formatToolError('WereadBookInfo', `获取书籍详情失败: ${(e instanceof Error ? e.message : String(e))}`);
 			}
 		},
 		{
