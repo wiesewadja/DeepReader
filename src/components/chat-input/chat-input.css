@@ -51,6 +51,9 @@
 	overflow: hidden;
 
 	margin: 1px 10px 3px 4px;
+
+	/* 必须有定位上下文，使子 overlay 的 position:absolute 相对于此容器定位 */
+	position: relative;
 }
 
 /* 聚焦状态：仅改变边框颜色 */
@@ -476,8 +479,10 @@
 
 /* ==================== 语音输入活跃态 ==================== */
 
+/* 语音模式下，实时识别文本保持可见，提高不透明度至 0.70 确保清晰可读 */
 .deeppdf-voice-active .deeppdf-chat-input-textarea {
-	color: transparent;
+	color: var(--text-normal);
+	opacity: 0.70;
 	caret-color: transparent;
 }
 
@@ -485,96 +490,114 @@
 	color: transparent !important;
 }
 
-/* 语音 overlay（覆盖在 textarea 上方） */
+/* ==================== 语音覆层（仅覆盖输入框区域，不遮挡左右按钮） ==================== */
+
+/* 半透明背景，让底层 textarea 实时识别的文字可以透过来看到 */
 .deeppdf-voice-overlay {
 	position: absolute;
-	left: 40px;
-	top: 50%;
-	transform: translateY(-50%);
-	display: inline-flex;
+	left: 36px;  /* 避开左侧加载文档按钮（28px + 边距） */
+	right: 36px; /* 避开右侧发送按钮（28px + 边距） */
+	top: 0;
+	bottom: 0;
+	display: flex;
 	align-items: center;
-	gap: 8px;
+	justify-content: center;
+	gap: 10px;
 	pointer-events: none;
 	z-index: 10;
+	/* 降低覆层本身的背景浓度（由 85% 降为 75%），增加文字透光度 */
+	background: color-mix(in srgb, var(--background-primary) 75%, transparent);
+	animation: deeppdf-overlay-in 0.15s ease;
 }
 
-/* 递增识别时的录音指示器（右上角红点 + 文字） */
-.deeppdf-voice-recording-indicator {
-	position: absolute;
-	top: 4px;
-	right: 8px;
-	display: inline-flex;
-	align-items: center;
-	gap: 4px;
-	pointer-events: none;
-	z-index: 10;
-	font-size: 11px;
-	color: var(--text-muted);
+@keyframes deeppdf-overlay-in {
+	from { opacity: 0; }
+	to   { opacity: 1; }
 }
 
-.deeppdf-voice-recording-dot {
-	display: block;
-	width: 6px;
-	height: 6px;
-	border-radius: 50%;
-	background: var(--text-error);
-	animation: deeppdf-recording-blink 1s ease-in-out infinite;
-}
+/* ==================== 波形条动画（recording 状态） ==================== */
 
-@keyframes deeppdf-recording-blink {
-	0%, 100% { opacity: 1; }
-	50% { opacity: 0.3; }
-}
-
-/* 波形条动画 */
 .deeppdf-voice-wave {
 	display: inline-flex;
-	align-items: center;
-	gap: 3px;
-	height: 20px;
+	align-items: center; /* 垂直居中对齐，让波形向上下双向拉伸波动 */
+	justify-content: center; /* 水平居中 */
+	gap: 2px;
+	height: 16px;
+	flex-shrink: 0;
 }
 
 .deeppdf-voice-wave span {
 	display: block;
-	width: 3px;
-	border-radius: 2px;
-	background: var(--interactive-accent);
-	animation: deeppdf-wave-bar 1.2s ease-in-out infinite;
+	width: 2px; /* 更纤细的极简宽度 */
+	border-radius: 1px;
+	background: var(--interactive-accent); /* 录音中用主题色 */
+	animation: deeppdf-wave-bar 0.9s ease-in-out infinite;
+	min-height: 2px;
 }
 
-.deeppdf-voice-wave span:nth-child(1) { animation-delay: 0s; }
-.deeppdf-voice-wave span:nth-child(2) { animation-delay: 0.2s; }
-.deeppdf-voice-wave span:nth-child(3) { animation-delay: 0.4s; }
-.deeppdf-voice-wave span:nth-child(4) { animation-delay: 0.1s; }
-.deeppdf-voice-wave span:nth-child(5) { animation-delay: 0.3s; }
+.deeppdf-voice-wave span:nth-child(1) { animation-delay: 0s;     height: 3px; }
+.deeppdf-voice-wave span:nth-child(2) { animation-delay: 0.12s;  height: 5px; }
+.deeppdf-voice-wave span:nth-child(3) { animation-delay: 0.24s;  height: 9px; }
+.deeppdf-voice-wave span:nth-child(4) { animation-delay: 0.36s;  height: 7px; }
+.deeppdf-voice-wave span:nth-child(5) { animation-delay: 0.48s;  height: 4px; }
+.deeppdf-voice-wave span:nth-child(6) { animation-delay: 0.08s;  height: 8px; }
+.deeppdf-voice-wave span:nth-child(7) { animation-delay: 0.2s;   height: 5px; }
+.deeppdf-voice-wave span:nth-child(8) { animation-delay: 0.32s;  height: 9px; }
+.deeppdf-voice-wave span:nth-child(9) { animation-delay: 0.44s;  height: 7px; }
+.deeppdf-voice-wave span:nth-child(10) { animation-delay: 0.16s; height: 4px; }
+.deeppdf-voice-wave span:nth-child(11) { animation-delay: 0.28s; height: 8px; }
+.deeppdf-voice-wave span:nth-child(12) { animation-delay: 0.4s;  height: 3px; }
 
+/* 纯高度变化，配合 align-items: center 达成垂直居中双向扩张（控制最大高度在 12px 内，极简精致） */
 @keyframes deeppdf-wave-bar {
-	0%, 100% { height: 4px; }
-	50% { height: 18px; }
+	0%,  100% { height: 2px;  opacity: 0.35; }
+	50%       { height: 12px; opacity: 1;    }
 }
 
-/* 语音状态文字 */
+/* ==================== recognizing 状态：spinner 圆环 ==================== */
+
+.deeppdf-voice-spinner {
+	width: 16px;
+	height: 16px;
+	border: 2px solid color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+	border-top-color: var(--interactive-accent);
+	border-radius: 50%;
+	animation: deeppdf-voice-spin 0.7s linear infinite;
+	flex-shrink: 0;
+}
+
+@keyframes deeppdf-voice-spin {
+	to { transform: rotate(360deg); }
+}
+
+/* ==================== 覆层状态文字 ==================== */
+
 .deeppdf-voice-label {
 	font-size: var(--font-ui-small);
 	color: var(--text-muted);
 	pointer-events: none;
 	white-space: nowrap;
+	flex-shrink: 0;
+}
+
+.deeppdf-voice-label.recording {
+	display: none;
+}
+
+.deeppdf-voice-label.recognizing {
+	color: var(--interactive-accent);
 }
 
 /* ==================== 减少动画偏好 ==================== */
 
 @media (prefers-reduced-motion: reduce) {
-	.deeppdf-voice-btn.recording {
-		animation: none;
-		color: var(--text-error);
-	}
-	.deeppdf-voice-btn.recognizing {
-		animation: none;
-		color: var(--interactive-accent);
-		opacity: 0.7;
-	}
 	.deeppdf-voice-wave span {
 		animation: none;
 		height: 8px;
+		opacity: 0.8;
+	}
+	.deeppdf-voice-spinner {
+		animation: none;
+		opacity: 0.7;
 	}
 }

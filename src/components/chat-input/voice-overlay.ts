@@ -1,44 +1,52 @@
 /**
  * VoiceOverlay — 极简内联语音浮层
  *
- * 在输入框内部叠加一个绝对定位的动画层（点状波形），
- * 不再替换整个输入容器，实现无缝平滑切换。
+ * 在输入框内部叠加绝对定位的动画层，两种状态有不同视觉：
+ * - recording：红色波形条（5 根跳动的条）+ "录音中" 文字
+ * - recognizing：蓝色 spinner 圆环 + "识别中" 文字
  */
-
-export interface VoiceOverlayCallbacks {
-  onCancel: () => void;
-  onSend: () => void;
-}
 
 export class VoiceOverlay {
   private container: HTMLElement;
   private current: HTMLElement | null = null;
-  private callbacks: VoiceOverlayCallbacks;
 
-  constructor(container: HTMLElement, callbacks: VoiceOverlayCallbacks) {
+  constructor(container: HTMLElement) {
     this.container = container;
-    this.callbacks = callbacks;
   }
 
   /**
-   * 显示录制界面
+   * 显示录音态（红色波形条）
    */
   showRecording(): void {
     this.remove();
+    this.current = this.container.createDiv({ cls: 'deeppdf-voice-overlay' });
 
-    // 在 container 内部创建一个绝对定位覆盖层
-    this.current = this.container.createDiv({
-      cls: 'deeppdf-voice-ripple',
-    });
-
-    // 3 个跳动的小圆点
-    for (let i = 0; i < 3; i++) {
-      this.current.createDiv({ cls: 'deeppdf-voice-dot' });
+    // 红色波形条（12 根）
+    const wave = this.current.createDiv({ cls: 'deeppdf-voice-wave' });
+    for (let i = 0; i < 12; i++) {
+      wave.createEl('span');
     }
   }
 
   /**
-   * 移除录制界面
+   * 显示识别态（蓝色 spinner）
+   */
+  showRecognizing(): void {
+    this.remove();
+    this.current = this.container.createDiv({ cls: 'deeppdf-voice-overlay' });
+
+    // 蓝色旋转圆环
+    this.current.createDiv({ cls: 'deeppdf-voice-spinner' });
+
+    // 状态文字
+    this.current.createEl('span', {
+      cls: 'deeppdf-voice-label recognizing',
+      text: '识别中',
+    });
+  }
+
+  /**
+   * 移除覆层
    */
   remove(): void {
     if (this.current) {

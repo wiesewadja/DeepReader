@@ -135,6 +135,7 @@ export class ChatInput {
 	private longPressTriggered = false;
 	private loadDocClickHandler: (() => void) | null = null;
 	private containerClickHandler: ((event: MouseEvent) => void) | null = null;
+	private viewportResizeHandler: (() => void) | null = null;
 
 	constructor(options: ChatInputOptions) {
 		this.options = {
@@ -192,19 +193,22 @@ export class ChatInput {
 
 		this.removeVoiceOverlay();
 
-		if (state === 'recording') {
-			this.textarea.disabled = true;
+		if (state === 'recording' || state === 'recognizing') {
+			this.textarea.readOnly = true;
+			this.textarea.setAttribute('inputmode', 'none');
+			this.textarea.blur(); // 强行让输入框失去焦点，以双重保险防误唤起键盘
 			this.textarea.value = '';
 			this.textarea.setAttribute('placeholder', '');
 			this.inputContainer?.addClass('deeppdf-voice-active');
-			this.showVoiceOverlay();
-		} else if (state === 'recognizing') {
-			this.textarea.disabled = true;
-			this.textarea.value = '';
-			this.textarea.setAttribute('placeholder', '');
-			this.inputContainer?.addClass('deeppdf-voice-active');
-			this.showVoiceOverlay();
+			
+			if (state === 'recording') {
+				this.showVoiceRecording();
+			} else {
+				this.showVoiceRecognizing();
+			}
 		} else {
+			this.textarea.readOnly = false;
+			this.textarea.removeAttribute('inputmode');
 			this.textarea.disabled = this.options.disabled || false;
 			this.textarea.setAttribute('placeholder', this.savedPlaceholder);
 			this.inputContainer?.removeClass('deeppdf-voice-active');
@@ -214,17 +218,22 @@ export class ChatInput {
 		this.notifyHeightChange();
 	}
 
-	private showVoiceOverlay(): void {
+	/** 展示录音态覆层（红色波形条） */
+	private showVoiceRecording(): void {
 		if (!this.inputContainer) return;
-
-		// 首次使用时懒创建 VoiceOverlay
 		if (!this.voiceOverlay) {
-			this.voiceOverlay = new VoiceOverlay(this.inputContainer, {
-				onCancel: () => this.options.onVoiceCancel?.(),
-				onSend: () => this.options.onVoiceStop?.()
-			});
+			this.voiceOverlay = new VoiceOverlay(this.inputContainer);
 		}
 		this.voiceOverlay.showRecording();
+	}
+
+	/** 展示识别态覆层（蓝色 spinner） */
+	private showVoiceRecognizing(): void {
+		if (!this.inputContainer) return;
+		if (!this.voiceOverlay) {
+			this.voiceOverlay = new VoiceOverlay(this.inputContainer);
+		}
+		this.voiceOverlay.showRecognizing();
 	}
 
 	private removeVoiceOverlay(): void {
@@ -450,8 +459,27 @@ export class ChatInput {
 			setTimeout(() => this.notifyHeightChange(), 300);
 		});
 
-		// 点击其他地方时隐藏文件建议
-		document.addEventListener('click', this.handleDocumentClick);
+		// 移动端：监听 visualViewport 自动上抬输入框，防止输入法键盘遮挡
+		if (Platform.isMobile && window.visualViewport) {
+			const viewport = window.visualViewport;
+			this.viewportResizeHandler = () => {
+				// 获取可能存在的输入框祖先容器，上移其 translateY 从而避开遮挡
+				const section = this.el?.closest('.deeppdf-chat-input-section') as HTMLElement || this.el;
+				if (!section) return;
+				
+				const keyboardHeight = window.innerHeight - viewport.height;
+				if (keyboardHeight > 100) {
+					// 键盘升起，动态上抬对应高度。注意加上 3px 边距使微调体验更好。
+					section.style.transform = `translateY(-${keyboardHeight - 3}px)`;
+					section.style.transition = 'transform 0.1s ease-out';
+				} else {
+					// 键盘收起，复位
+					section.style.transform = '';
+					section.style.transition = '';
+				}
+			};
+			viewport.addEventListener('resize', this.viewportResizeHandler);
+		}
 
 		// 移动端长按事件（触发语音输入）
 		if (this.options.onVoiceStart) {
@@ -974,6 +1002,12 @@ export class ChatInput {
 
 		// 移除文档点击事件监听器
 		document.removeEventListener('click', this.handleDocumentClick);
+
+		// 清理 visualViewport 移动端高度监听器
+		if (window.visualViewport && this.viewportResizeHandler) {
+			window.visualViewport.removeEventListener('resize', this.viewportResizeHandler);
+			this.viewportResizeHandler = null;
+		}
 
 		// 销毁文件建议组件
 		if (this.fileSuggest) {

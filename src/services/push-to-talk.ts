@@ -112,10 +112,9 @@ export class PushToTalkController {
 				return;
 			}
 
-			// 直接使用 ASR 识别结果，跳过 LLM 重写
 			this.callbacks.onTextReady?.(recognizedText);
 			this.chatInput.setValue(recognizedText);
-			// 调用 completeVoiceInput 让 ChatInput 处理发送逻辑，然后重置 state 回 idle
+			// 直接使用 ASR 识别结果完成输入
 			this.chatInput.completeVoiceInput();
 			this.reset();
 		} catch (error) {
@@ -187,7 +186,7 @@ export class PushToTalkController {
 			} catch {
 				// 递增识别失败不中断录音
 			}
-		}, 3000);
+		}, 1000);
 	}
 
 	private stopIncrementalRecognition(): void {
