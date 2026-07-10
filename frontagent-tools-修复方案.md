@@ -9,17 +9,17 @@
 
 | # | 问题 | 证据 |
 |---|------|------|
-| 1 | 注册 14 工具，仅 6 个真正能被 LLM 调用 | `tools/index.ts:44-73` 注册；`analytical.ts:96` 只 bind `search_book`+`read_book_section`；`advisor.ts:113` 只 bind `weread_*`×5 + `search_journal` |
+| 1 | 注册 14 工具，仅 8 个真正能被 LLM 工具循环调用（另 1 个 excalidraw 走直调，不计入） | `tools/index.ts:44-73` 注册；`analytical.ts:96` / `advisor.ts:113` 以硬编码 name 数组 `filter` 出工具（analytical 放行 `search_book`+`read_book_section` 2 个；advisor 放行 `weread_*`×5 + `search_journal` 6 个，合计 8）；过滤结果经 config 在 `plan-execute.ts:104` 统一 `bindTools` |
 | 2 | 5 个「死工具」注册了但从未 `bindTools` | `save_memory`/`search_memory`(`definitions/memory.ts`)、`update_profile`(`definitions/profile.ts`)、`write_note`(`definitions/write-note.ts`)、`search_read_books`(`definitions/search-read-books.ts`)——注册于 `index.ts:48-52`，全仓无节点引用 |
 | 3 | `excalidraw` 不走 LLM 循环 | 被 `graph/utils/diagram-helper.ts` 在 S1/S3 直接 `.execute()`（合理设计） |
-| 4 | `intent-rules.json` 用 v1 旧名且**惰性** | 旧名 `get_document_outline`/`read_markdown_section`/`search_markdown_text`/`analyze_chapter`/`generate_infographic`/`canvas`；`IntentRouter.allowedTools` 仅进 state，`bindTools` 用节点硬编码白名单（不读 state）；`systemNote` 文本从未注入模型（`index.ts:222 buildMessages` 的 systemNote 参数未被 router 结果填充） |
-| 5 | v1/v2 工具形态并存 | `tools/memory.ts`、`tools/profile.ts`、`tools/search-read-books.ts`、`tools/write-note.ts` 是旧版 markdown 形态（`createSaveMemoryTool()` 无 ctx），仍被 `index.ts:35-38` re-export，与 `definitions/` 下 v2 并存 |
+| 4 | `intent-rules.json` 用 v1 旧名且**惰性** | 旧名 `get_document_outline`/`read_markdown_section`/`search_markdown_text`/`analyze_chapter`/`generate_infographic`/`canvas`；`IntentRouter.allowedTools` 仅进 state，真实 `bindTools`（`plan-execute.ts:104`）用节点硬编码白名单（不读 state）；`systemNote` 在图路径惰性——图节点自行用 `SystemMessage/HumanMessage` 构造消息、从不读 `state.systemNote`，且 `buildMessages`（`index.ts:222`，疑似 legacy）全仓无活跃调用方，router 结果从未注入模型 |
+| 5 | v1 实现层与 v2 包装器并存 | `tools/memory.ts`、`tools/profile.ts`、`tools/search-read-books.ts`、`tools/write-note.ts` 是 v1 实现层（导出 `addMemoryTool` 等），被 `definitions/*.ts` 的 v2 包装器经 `.execute()` 复用；同时仍由 `index.ts:35-38` re-export（供控制台/前端），与 `definitions/` 下 v2 工厂并存 |
 | 6 | `TOOL_EXECUTION_TIMEOUT_MS` 声明未用 | `agent-constants.ts:72`=60000，但无 `Promise.race` 包裹 |
 | 7 | 错误返回结构不统一 | 各 `definitions/*.ts` 三套形态 |
-| 8 | 白名单硬编码 3 处 | `advisor.ts:113`、`analytical.ts:96`、router advisory |
+| 8 | 工具白名单硬编码 3 处 | `advisor.ts:113` 与 `analytical.ts:96` 各自 `filter` 工具数组（最终在 `plan-execute.ts:104` `bindTools`）；router advisory 的 `allowedTools` 为惰性提示 |
 | 9 | L6 文档与代码矛盾 | `L6-tools.md` §1.4 称「excalidraw 由 S2 调用」，实为 S1/S3 经 diagram-helper 直调 |
 
-**已实测确认的关键事实**：`intent-rules.json` 的 `allowedTools` 与 `systemNote` 对模型行为**零影响**（纯死配置）。因此改动它的风险极低，不是「活跃 bug」，而是「误导性死代码」。
+**已实测确认的关键事实**：`intent-rules.json` 的 `allowedTools` 与 `systemNote` 对模型行为**零影响**（纯死配置）。`bindTools` 全仓唯一位于 `plan-execute.ts:104`，工具取自各节点的硬编码 filter 白名单、从不读 `state.allowedTools`；且 `buildMessages`（`router` 的 `systemNote` 注入入口，`index.ts:222`/`builder.ts:274`）经 grep 确认**全仓无活跃调用方**——图节点（analytical/inspectional 等）自行用 `SystemMessage/HumanMessage` 构造消息、从不消费 `state.systemNote`。因此改动它风险极低，不是「活跃 bug」，而是「误导性死代码」。
 
 ---
 
@@ -62,7 +62,8 @@
     - `:23` `this.fallbackTools = cfg.fallback.tools || [];`
     - `:60` `rule.tools?.forEach(t => allowedTools.add(t));`（可选链）
     - `buildSystemNote`（`:110`）：当 `allowedTools` 为空时，不再输出「仅允许使用 []」的强约束文本，改为中性说明。
-- **风险**：低。已确认 `allowedTools`/`systemNote` 对模型惰性。
+- **风险**：低。已确认 `allowedTools`/`systemNote` 对模型惰性（见下方「执行前已完成的核验」）。
+- **⚠️ 必改项**：`intent-router.ts:60` 的 `rule.tools.forEach` **必须**改为可选链 `rule.tools?.forEach`，否则删除 `tools[]` 后该处会抛 `Cannot read property 'forEach' of undefined` 导致 router 直接崩溃（方案 P0-2 改法已含此条，执行时务必保留）。
 - **可逆**：是。
 
 ### P1 — 可维护性（强烈建议）
@@ -83,11 +84,14 @@
 #### P2-1 · 接入 `TOOL_EXECUTION_TIMEOUT_MS`
 - **改**：`tools/index.ts` 的 execute 包装用 `Promise.race([impl, timeout(60000)])`；补一个超时单测。避免单工具挂死拖垮整轮。
 
-#### P2-2 · 清理 v1 工具残留
-- **改**：确认 `tools/memory.ts`、`tools/profile.ts`、`tools/search-read-books.ts`、`tools/write-note.ts`（v1 markdown 形态）无调用方后删除，或统一并入 v2 工厂。同步清理 `index.ts:35-38` 的 v1 re-export。
+#### P2-2 · 归并 v1 实现层到 definitions/
+- **前置检查（必做）**：先确认 `index.ts:35-38` 的 v1 re-export（`writeNoteTool` / `addMemoryTool` / `searchMemoryTool` / `saveMemoryTool` / `createSaveMemoryTool` / `updateProfileTool` / `searchReadBooksTool`）在 `src` 外部（控制台/前端）有无消费者；若有，需保留导出别名或迁移调用方后再删。
+- **改**：这些 v1 文件（`tools/memory.ts`、`tools/profile.ts`、`tools/search-read-books.ts`、`tools/write-note.ts`）**不是死代码**，而是 `definitions/*.ts` 的 v2 包装器复用的实现层（如 `definitions/memory.ts` 经 `.execute()` 调 `addMemoryTool`）。应将 v1 实现并入对应 `definitions/*.ts`，再删除 v1 文件与 `index.ts:35-38` 的 re-export；保证合并后 v2 包装器行为不变。
 
-#### P2-3 · 对齐 L6 文档
-- **改**：`docs/architecture/agent-state-machine/L6-tools.md` §1.4 改为「excalidraw 由 S1/S3 经 diagram-helper 直调」；补充「死工具/旁路写入」说明。
+#### P2-3 · 对齐 L6 文档与代码注释
+- **改**：
+  - `docs/architecture/agent-state-machine/L6-tools.md` §1.4 改为「excalidraw 由 S1/S3 经 diagram-helper 直调（`diagram-helper.ts:16` 直接 import v1 实现 `excalidrawTool`）」；补充「死工具/旁路写入」说明。
+  - 同步修正 `graph/utils/diagram-helper.ts:9-10` 注释——现注释称「`createExcalidrawTool` 仍注册以便 S2 Analytical 经 tool_calls 调用 excalidraw」，但 analytical 白名单为 `['search_book','read_book_section']`（不含 excalidraw），描述与代码矛盾。改为如实说明：excalidraw 仅由本 helper 在 S1/S3 直调；`createExcalidrawTool` 的注册对 analytical 无实际效用（可在 P1 一并清理，见 P1-1/tool-permissions）。
 
 ---
 
@@ -102,6 +106,8 @@
 | 合并前 | 全量 | `npm run test:run`（仅跨模块/合并前执行） |
 
 回归关注点：P0-1 后 `createLangChainTools` 注册数应为 9（含条件 journal/weread）；P0-2 后 `IntentRouter.analyze()` 仍能正确返回 `detectedIntents` 与 `maxIterations`，且不再引用不存在的工具名。
+
+**执行前已完成的核验（支撑 P0-2 理由）**：已 grep 全仓确认 `bindTools` 唯一位于 `plan-execute.ts:104`；`buildMessages`（`index.ts:222`/`builder.ts:274`）与 `buildSystemNote` 注入入口在全图路径中**无活跃调用方**——图节点用 `SystemMessage/HumanMessage` 自构消息、从不读 `state.systemNote`。故 `intent-rules.json` 的旧名 `allowedTools`/`systemNote` 确属惰性死配置，P0-2 改动不会引入行为回归。
 
 ---
 
