@@ -432,7 +432,7 @@ ${currentMemory}
     const recentHistorySummaries = summarizeRecentHistory(cleanHistory, 3);
     const initialPrevSearchedBlockIds = extractPrevBlockIds(cleanHistory);
 
-    // SharedContext：业务上下文单一来源（见 ADR-0001）。
+    // SharedContext：业务上下文单一来源（见 ADR-010）。
     // mainModel/fastModel/callbacks 等运行时依赖留 configurable 顶层，不进 ctx。
     const ctx: SharedContext = {
       rawUserQuery: rawUserQuery || '',

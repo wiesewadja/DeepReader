@@ -263,6 +263,9 @@ UI 阅读视图
 | [ADR-007](../decisions/ADR-007-memory-and-session-architecture.md) | MEMORY.md + JSONL 长期记忆与会话 | 想知道记忆与会话如何存储 |
 | [ADR-008](../decisions/ADR-008-proactive-engine-design.md) | 主动引擎（Proactive Engine）设计 | 想知道为什么 Agent 会主动说话 |
 | [ADR-009](../decisions/ADR-009-s2-multi-layer-early-stop.md) | S2 多层早停 | 想知道为什么 S2 会在多层级判断停止 |
+| [ADR-010](../decisions/ADR-010-shared-context-convergence.md) | SharedContext 收敛 | 想知道 Context/State 如何划界、双轨制如何消除 |
+| [ADR-011](../decisions/ADR-011-sidebar-view-domain-split.md) | SidebarView 域拆分 | 想知道 1500+ 行上帝视图如何拆分为 Domain + Presenter |
+| [ADR-012](../decisions/ADR-012-security-boundary-mechanism.md) | 安全边界机制 | 想知道如何防止系统提示词泄露 |
 
 ---
 

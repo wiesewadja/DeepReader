@@ -9,7 +9,7 @@
 | 整体架构鸟瞰 | [architecture/system-overview.md](./architecture/system-overview.md) |
 | Agent 状态机（30 分钟读懂） | [architecture/agent-overview.md](./architecture/agent-overview.md) |
 | Agent 状态机深度剖析 | [architecture/agent-state-machine/](./architecture/agent-state-machine/) |
-| 为什么这样设计 | [decisions/](./decisions/)（ADR-001 ~ ADR-009） |
+| 为什么这样设计 | [decisions/](./decisions/)（ADR-001 ~ ADR-012） |
 | 如何测试 | [testing/](./testing/) |
 | 开发规范 | [development/](./development/) |
 
@@ -60,6 +60,9 @@
 | [ADR-007](./decisions/ADR-007-memory-and-session-architecture.md) | 记忆与会话架构 |
 | [ADR-008](./decisions/ADR-008-proactive-engine-design.md) | 主动引擎设计 |
 | [ADR-009](./decisions/ADR-009-s2-multi-layer-early-stop.md) | S2 多层早停 |
+| [ADR-010](./decisions/ADR-010-shared-context-convergence.md) | SharedContext 收敛 |
+| [ADR-011](./decisions/ADR-011-sidebar-view-domain-split.md) | SidebarView 域拆分 |
+| [ADR-012](./decisions/ADR-012-security-boundary-mechanism.md) | 安全边界机制 |
 
 ## 测试
 

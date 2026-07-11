@@ -1,7 +1,7 @@
 /**
  * SharedContext — immutable request context for LangGraph nodes.
  *
- * 边界（见 ADR-0001）：SharedContext 只放"本次请求的不可变输入/依赖"。
+ * 边界（见 ADR-010）：SharedContext 只放"本次请求的不可变输入/依赖"。
  * 节点执行中产生、需向下游流转的可变数据归 LangGraph State，不进此处。
  * 判定规则：输入 = Context，产出 = State。
  */
