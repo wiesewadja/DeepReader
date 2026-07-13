@@ -273,30 +273,28 @@ export async function searchBookV2(
     scopeFallback: scopeFallback ? 1 : 0,
   });
 
-  // ── Stage 5: Score fusion + level weighting + proposition ─────────────
+  // ── Stage 5: Score fusion (RRF) + level weighting + proposition ─────
   tracer.startStage("fusion");
+  const RRF_K = 60;
   const hasPropositions = propositionMatches.size > 0;
+  const activeSignals = (hasVectors ? 1 : 0) + (bm25Results.length > 0 ? 1 : 0) + (hasPropositions ? 1 : 0);
 
-  // Adjust weights based on available signals
-  const w_v = hasVectors ? (hasPropositions ? 0.5 : 0.7) : 0;
-  const w_b = hasVectors ? (hasPropositions ? 0.25 : 0.3) : 1.0;
-  const w_p = hasPropositions ? (hasVectors ? 0.25 : 0) : 0;
+  piLog(`[book-search-v2] RRF fusion: k=${RRF_K}, activeSignals=${activeSignals}`);
 
-  piLog(`[book-search-v2] Fusion weights: v=${w_v}, b=${w_b}, p=${w_p}`);
+  // Build rank maps (1-indexed, descending by score)
+  function buildRankMap(scores: Map<string, number>): Map<string, number> {
+    const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);
+    const rankMap = new Map<string, number>();
+    for (let i = 0; i < sorted.length; i++) {
+      rankMap.set(sorted[i][0], i + 1); // 1-indexed
+    }
+    return rankMap;
+  }
 
-  // Normalize BM25 scores
-  const bm25Values = Array.from(bm25Scores.values());
-  const bm25Max = Math.max(...bm25Values, 0);
-  const bm25Min = Math.min(...bm25Values, 0);
-  const bm25Range = bm25Max - bm25Min;
+  const vecRankMap = buildRankMap(vectorScores);
+  const bm25RankMap = buildRankMap(bm25Scores);
 
-  // Normalize vector scores (cosine similarity can be negative and has different scale)
-  const vecValues = Array.from(vectorScores.values());
-  const vecMax = Math.max(...vecValues, 0);
-  const vecMin = Math.min(...vecValues, 0);
-  const vecRange = vecMax - vecMin;
-
-  // Compute proposition scores per nodeId
+  // Compute proposition scores per nodeId, then build rank map
   const propositionScores = new Map<string, number>();
   for (const [nodeId, cards] of propositionMatches) {
     if (cards.length > 0) {
@@ -304,12 +302,11 @@ export async function searchBookV2(
       propositionScores.set(nodeId, maxScore);
     }
   }
+  const propRankMap = buildRankMap(propositionScores);
 
-  // Normalize proposition scores
-  const propValues = Array.from(propositionScores.values());
-  const propMax = Math.max(...propValues, 0);
-  const propMin = Math.min(...propValues, 0);
-  const propRange = propMax - propMin;
+  // Preserve original scores for display
+  const bm25Values = Array.from(bm25Scores.values());
+  const vecValues = Array.from(vectorScores.values());
 
   type ScoredResult = {
     nodeId: string;
@@ -330,16 +327,20 @@ export async function searchBookV2(
     const bs = bm25Scores.get(nodeId) || 0;
     const ps = propositionScores.get(nodeId) || 0;
 
-    const normalizedBM25 = bm25Range > 0 ? (bs - bm25Min) / bm25Range : 0;
-    const normalizedVec = vecRange > 0 ? (vs - vecMin) / vecRange : (vs > 0 ? 1 : 0);
-    const normalizedProp = propRange > 0 ? (ps - propMin) / propRange : ps;
+    // RRF: sum 1/(k + rank) for each signal where the node appears
+    let rrfScore = 0;
+    const vecRank = vecRankMap.get(nodeId);
+    if (vecRank !== undefined) rrfScore += 1 / (RRF_K + vecRank);
+    const bm25Rank = bm25RankMap.get(nodeId);
+    if (bm25Rank !== undefined) rrfScore += 1 / (RRF_K + bm25Rank);
+    const propRank = propRankMap.get(nodeId);
+    if (propRank !== undefined) rrfScore += 1 / (RRF_K + propRank);
 
-    const fusedScore = w_v * normalizedVec + w_b * normalizedBM25 + w_p * normalizedProp;
     const levelWeight = computeLevelWeightFast(nodeId, treeIndex);
 
     scoredResults.push({
       nodeId,
-      fusedScore: fusedScore * levelWeight,
+      fusedScore: rrfScore * levelWeight,
       vectorScore: vs,
       bm25Score: bs,
       propositionScore: ps,
@@ -361,8 +362,8 @@ export async function searchBookV2(
   tracer.recordScoreStats("bm25", bm25Values);
   tracer.recordScoreStats("vector", vecValues);
   tracer.recordScoreStats("fused", scoredResults.map((r) => r.fusedScore));
-  tracer.recordWeights({ vector: w_v, bm25: w_b, proposition: w_p });
-  tracer.endStage("success");
+  tracer.recordWeights({ vector: 0, bm25: 0, proposition: 0 });
+  tracer.endStage("success", { algorithm: "rrf", k: RRF_K, activeSignals });
 
   // ── Stage 6: LLM tree search (optional) ────────────────────────────────
   // TODO: implement when llmClient is available
@@ -395,7 +396,7 @@ export async function searchBookV2(
 
       tracer.recordScoreStats("reranked", Array.from(rerankScores.values()));
       tracer.recordSignals({ reranked: rerankScores.size });
-      tracer.recordWeights({ vector: w_v, bm25: w_b, proposition: w_p, rerank: rerankWeight });
+      tracer.recordWeights({ vector: 0, bm25: 0, proposition: 0, rerank: rerankWeight });
       tracer.endStage("success", { reranked: rerankScores.size, rerankWeight });
 
       piLog(`[book-search-v2] Reranked ${rerankScores.size} results`);
