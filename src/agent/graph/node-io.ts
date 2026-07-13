@@ -9,7 +9,7 @@
  */
 
 import type { BaseMessage } from '@langchain/core/messages';
-import type { ToolResultSnapshot, ReadingDepth, EngineMode } from './state';
+import type { ToolResultSnapshot, ReadingDepth } from './state';
 
 // ============ S0: Router (historical) ============
 // These interfaces are kept for reference but no longer correspond to
@@ -117,8 +117,6 @@ export interface FormatterInput {
   structuralAnalysis: string;
   rewrittenQuery: string;
   pdfName: string;
-  proactiveTrigger: string;
-  mode: EngineMode;
   depth: ReadingDepth;
   tocSummary: string;
   betterQuestion: string;

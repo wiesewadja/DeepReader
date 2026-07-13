@@ -25,14 +25,6 @@ export enum ReadingDepth {
   SYNTOPICAL = 3,
 }
 
-/**
- * Engine mode.
- * 'normal'    — standard query-answer flow
- * 'proactive' — ask guiding questions instead of answering
- * 'socratic'  — dialogue mode with follow-up questions
- */
-export type EngineMode = 'normal';
-
 /** Tool result snapshot for S2 → S4 self-verification */
 export interface ToolResultSnapshot {
   toolName: string;
@@ -47,7 +39,6 @@ export interface ToolResultSnapshot {
 export interface NodeError {
   message: string;
   recoverable: boolean;
-  fallbackAction: 'global_search' | 'skip_to_formatter' | 'abort';
 }
 
 /** Friendly user hints keyed by node name */
@@ -79,14 +70,14 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   // inspectional node (which merges S0 Router functionality).
   // See src/agent/graph/nodes/inspectional.ts — "Unified Router & Inspectional"
   depth: Annotation<ReadingDepth>(),
-  rewrittenQuery: Annotation<string>(),
+  rewrittenQuery: Annotation<string>(overwriteWithDefault('')),
   allowedTools: Annotation<string[]>(overwriteWithDefault([])),
 
   // === S1: Inspectional output ===
-  tocSummary: Annotation<string>(),
+  tocSummary: Annotation<string>(overwriteWithDefault('')),
   scopeNodeIds: Annotation<string[]>(overwriteWithDefault([])),
-  betterQuestion: Annotation<string>(),
-  structuralAnalysis: Annotation<string>(),
+  betterQuestion: Annotation<string>(overwriteWithDefault('')),
+  structuralAnalysis: Annotation<string>(overwriteWithDefault('')),
   suggestedKeywords: Annotation<string[]>(overwriteWithDefault([])),
 
   // === S2: Analytical output ===
@@ -95,23 +86,23 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   // 输出（非 ReAct 工具循环），可能比 S2 ReAct 的结论更不严谨。L5（见下方
   // verifiedFullBookHits + utils/claim-verifier.ts）会在下一轮自动复核这种
   // 来自 S2-Pre 早停路径的"未出现"声明并触发状态机重启。
-  analysisResult: Annotation<string>(),
+  analysisResult: Annotation<string>(overwriteWithDefault('')),
   toolResultsSnapshot: Annotation<ToolResultSnapshot[]>(overwriteWithDefault([])),
 
   // === S2-pre: Pre-search intermediate ===
-  preSearchBlock: Annotation<string>(),
-  earlyStopContent: Annotation<string>(),
+  preSearchBlock: Annotation<string>(overwriteWithDefault('')),
+  earlyStopContent: Annotation<string>(overwriteWithDefault('')),
   validatedScopeNodeIds: Annotation<string[]>(overwriteWithDefault([])),
   nodeFileMap: Annotation<Record<string, string>>(overwriteWithDefault({})),
   prevSearchedBlockIds: Annotation<string[]>(overwriteWithDefault([])),
   queryVector: Annotation<number[] | null>(overwriteWithDefault(null as number[] | null)),
 
   // === S4: Formatter output ===
-  formattedOutput: Annotation<string>(),
+  formattedOutput: Annotation<string>(overwriteWithDefault('')),
 
   // === Runtime ===
-  bookId: Annotation<string>(),
-  pdfName: Annotation<string>(),
+  bookId: Annotation<string>(overwriteWithDefault('')),
+  pdfName: Annotation<string>(overwriteWithDefault('')),
 
   // === Correction / hard-override signals ===
   // Set by Router when the user's message looks like a pushback
@@ -138,11 +129,7 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   verifiedFullBookHits: Annotation<BookSearchResultV2[]>(overwriteWithDefault([])),
 
   // === Proactive guidance ===
-  proactiveTrigger: Annotation<string>(),
   highlightContext: Annotation<string[]>(overwriteWithDefault([])),
-
-  // === Unified mode ===
-  mode: Annotation<EngineMode>(overwriteWithDefault('normal' as EngineMode)),
 
   // === Reading advisor mode ===
   wereadAvailable: Annotation<boolean>(overwriteWithDefault(false)),

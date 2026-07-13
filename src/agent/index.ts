@@ -38,8 +38,9 @@ import { ContextLoader } from './context/index.js';
 import { cognitiveEngine } from './graph/index.js';
 import type { EngineCallbacks, SharedContext } from './graph/shared-context.js';
 import { ReadingDepth } from './graph/state.js';
-import type { EngineMode } from './graph/state.js';
 import { processGraphStream as processStream, type StreamProcessorResult } from './graph/stream-processor.js';
+import type { GraphConfigurable } from './graph/configurable.js';
+import { LangChainTracer } from '@langchain/core/tracers/tracer_langchain';
 import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
 import { type LLMClient, type LLMClientManager, createLLMClientManager, type ModelConfig } from './llm-client.js';
 import { MemoryStore } from './memory/store.js';
@@ -256,13 +257,12 @@ ${currentMemory}
     const threadId = `thread-${context.book.indexId || 'unknown'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.activeThreadId = threadId;
 
-    let configurable: Record<string, unknown>;
-    let tracer: unknown;
+    let configurable: GraphConfigurable;
+    let tracer: LangChainTracer | null;
     try {
       const result = await this.buildGraphConfigurable(context, callbacks, threadId, userMessage, chatHistory);
-      tracer = result._langsmithTracer;
-      const { _langsmithTracer: _, ...rest } = result;
-      configurable = rest;
+      tracer = result._langsmithTracer ?? null;
+      configurable = result;
     } catch (cfgErr) {
       const cfgMsg = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
       log('[FrontendAgent] buildGraphConfigurable failed:', cfgMsg);
@@ -277,7 +277,6 @@ ${currentMemory}
         bookId: context.book.indexId || '',
         pdfName: context.book.pdfName || '',
         depth: undefined,
-        mode: 'normal' as EngineMode,
         highlightContext: context.highlightContext ?? [],
         wereadAvailable: !!context.vault.plugin?.settings?.wereadApiKey,
         crossBookMode: !!context.crossBook?.booklistBookIds?.length,
@@ -314,11 +313,12 @@ ${currentMemory}
       return { messages: [{ role: 'assistant', content: '没有活跃的图会话可恢复' }] };
     }
 
-    let tracer: unknown;
-    let configurable: Record<string, unknown>;
+    let tracer: LangChainTracer | null;
+    let configurable: GraphConfigurable;
     try {
       const cfg = await this.buildGraphConfigurable(context, callbacks, this.activeThreadId, undefined, chatHistory);
-      ({ _langsmithTracer: tracer, ...configurable } = cfg);
+      tracer = cfg._langsmithTracer ?? null;
+      configurable = cfg;
     } catch (cfgErr) {
       const msg = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
       log('[FrontendAgent] 恢复执行配置构建失败:', msg);
@@ -342,8 +342,8 @@ ${currentMemory}
   private async executeWithStream(
     streamInput: Parameters<ReturnType<typeof this.getCompiledEngine>['stream']>[0],
     callbacks: AgentLoopOptions,
-    configurable: Record<string, unknown>,
-    tracer: unknown,
+    configurable: GraphConfigurable,
+    tracer: LangChainTracer | null,
     errorPrefix: string = 'LangGraph 引擎错误',
   ): Promise<StreamProcessorResult> {
     try {
@@ -396,7 +396,7 @@ ${currentMemory}
     threadId: string,
     rawUserQuery?: string,
     chatHistory?: ChatMessage[],
-  ) {
+  ): Promise<GraphConfigurable> {
     if (!this.cachedModels) {
       this.cachedModels = createChatModels(
         { apiKey: this.options.apiKey, baseUrl: this.options.baseUrl || '', model: this.options.model || '', disableThinking: this.options.disableThinking },
@@ -475,7 +475,7 @@ ${currentMemory}
       sharedContext: ctx,
       callbacks: engineCallbacks,
       enableHumanReview: this.options.enableHumanReview ?? false,
-      _langsmithTracer: langsmithTracer,
+      _langsmithTracer: langsmithTracer ?? undefined,
     };
   }
 

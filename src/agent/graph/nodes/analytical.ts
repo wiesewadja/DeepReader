@@ -16,6 +16,7 @@ import { buildFullAnalyticalContext } from '../../prompts/utils/index.js';
 import type { CognitiveEngineState } from '../state';
 import { runPlanExecute } from '../subgraphs/plan-execute.js';
 import { resolveCurrentChapterName } from '../utils/engine-helpers.js';
+import { getGraphConfigurable } from '../configurable.js';
 
 /**
  * Build the scope interceptor that injects scope_node_ids into search_book calls.
@@ -49,13 +50,11 @@ export async function analyticalNode(
     nodeFileMap: stateNodeFileMap,
     prevSearchedBlockIds: statePrevBlockIds,
   }: AnalyticalInput = state;
-  const ctx = config.configurable?.sharedContext;
-  const mainModel = config.configurable?.mainModel;
-  const toolContext = ctx?.toolContext;
-  const callbacks = config.configurable?.callbacks as {
-    onContent?: (content: string) => void;
-    onProgress?: (msg: string) => void;
-  } | undefined;
+  const cfg = getGraphConfigurable(config);
+  const ctx = cfg.sharedContext;
+  const mainModel = cfg.mainModel;
+  const callbacks = cfg.callbacks;
+  const toolContext = ctx.toolContext;
 
   if (!mainModel || !toolContext) {
     return { analysisResult: '', toolResultsSnapshot: [] };
@@ -77,13 +76,13 @@ export async function analyticalNode(
     tocSummary,
     currentNodeId,
     currentChapterName,
-    userProfileSummary: ctx?.userProfileSummary,
+    userProfileSummary: ctx.userProfileSummary,
     markdownFiles,
     nodeFileMap,
-    standaloneQuery: stateQuery || ctx?.rawUserQuery || '',
+    standaloneQuery: stateQuery || ctx.rawUserQuery || '',
     betterQuestion: stateBetterQuestion,
-    recentHistorySummaries: ctx?.recentHistorySummaries,
-    prevSearchedBlockIds: statePrevBlockIds.length > 0 ? statePrevBlockIds : ctx?.initialPrevSearchedBlockIds,
+    recentHistorySummaries: ctx.recentHistorySummaries,
+    prevSearchedBlockIds: statePrevBlockIds.length > 0 ? statePrevBlockIds : ctx.initialPrevSearchedBlockIds,
   });
 
   // Inject pre-search results from S2-Pre node
@@ -106,7 +105,7 @@ export async function analyticalNode(
     maxIterations: 6,
     maxToolCalls: 3,
     forcedConclusionContext: {
-      pdfName: statePdfName || ctx?.toolContext?.book.pdfName,
+      pdfName: statePdfName || ctx.toolContext?.book.pdfName,
       scopeNodeIds,
     },
     toolInterceptor: createScopeInterceptor(scopeNodeIds),
@@ -128,7 +127,7 @@ export async function analyticalNode(
   };
 
   // HITL interrupt
-  const enableHumanReview = config.configurable?.enableHumanReview as boolean | undefined;
+  const enableHumanReview = cfg.enableHumanReview;
   if (enableHumanReview) {
     const resumeValue = interrupt({
       nodeId: 'analytical',
@@ -149,7 +148,7 @@ export async function analyticalNode(
           maxIterations: 4,
           maxToolCalls: 3,
           forcedConclusionContext: {
-            pdfName: statePdfName || ctx?.toolContext?.book.pdfName,
+            pdfName: statePdfName || ctx.toolContext?.book.pdfName,
             scopeNodeIds,
           },
           toolInterceptor: createScopeInterceptor(scopeNodeIds),

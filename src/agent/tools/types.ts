@@ -3,7 +3,6 @@
  */
 
 import type { QuoteItem } from '../../components/chat-input/chat-input.js';
-import type { EngineMode } from '../graph/state.js';
 import type { VaultContext, BookContext, CrossBookContext, WereadContext, VisualContext } from './context/index.js';
 
 export type { QuoteItem } from '../../components/chat-input/chat-input.js';
@@ -18,8 +17,6 @@ export interface ToolContext {
 
   // 图节点专用（向后兼容，后续 PR 可逐步移入图节点专属上下文）
   useLLMTreeSearch?: boolean;
-  mode?: EngineMode;
-  proactiveTrigger?: string;
   highlightContext?: string[];
   queryVector?: number[] | null;
 }

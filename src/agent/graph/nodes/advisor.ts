@@ -14,6 +14,7 @@ import { NODE_TOOL_WHITELIST } from '../../tools/tool-permissions.js';
 import type { AdvisorInput } from '../node-io.js';
 import type { CognitiveEngineState } from '../state';
 import { runPlanExecute } from '../subgraphs/plan-execute.js';
+import { getGraphConfigurable } from '../configurable.js';
 
 const ADVISOR_SYSTEM_PROMPT = `你是奚童，用户的专属 AI 伴读。当前处于阅读顾问模式——用户没有选中具体书籍，但你可以通过微信读书 API 工具获取真实数据。
 
@@ -77,13 +78,11 @@ export async function advisorNode(
 ): Promise<Partial<CognitiveEngineState>> {
 	const { rewrittenQuery: stateQuery }: AdvisorInput = state;
 
-	const ctx = config.configurable?.sharedContext;
-	const mainModel = config.configurable?.mainModel;
-	const toolContext = ctx?.toolContext;
-	const callbacks = config.configurable?.callbacks as {
-		onContent?: (content: string) => void;
-		onProgress?: (msg: string) => void;
-	} | undefined;
+	const cfg = getGraphConfigurable(config);
+	const ctx = cfg.sharedContext;
+	const mainModel = cfg.mainModel;
+	const callbacks = cfg.callbacks;
+	const toolContext = ctx.toolContext;
 
 	if (!mainModel || !toolContext) {
 		return { analysisResult: '', toolResultsSnapshot: [] };
@@ -92,21 +91,21 @@ export async function advisorNode(
 	callbacks?.onProgress?.('正在查找阅读数据...');
 
 	// Build user context sections for system prompt
-	const rawProfile = ctx?.userProfileSummary || '';
+	const rawProfile = ctx.userProfileSummary || '';
 	const profileSection = rawProfile
 		? `\n\n<user_profile>\n${rawProfile.slice(0, 1500)}\n</user_profile>`
 		: '';
-	const rawMemory = ctx?.memoryContext || '';
+	const rawMemory = ctx.memoryContext || '';
 	const memorySection = rawMemory
 		? `\n\n<memory>\n${rawMemory.slice(0, 1500)}\n</memory>`
 		: '';
-	const rawShelf = ctx?.toolContext?.crossBook?.bookshelfSummary || '';
+	const rawShelf = ctx.toolContext?.crossBook?.bookshelfSummary || '';
 	const bookshelfSection = rawShelf
 		? `\n\n<bookshelf>\n${rawShelf.slice(0, 2000)}\n</bookshelf>`
 		: '';
 	const systemPrompt = ADVISOR_SYSTEM_PROMPT + profileSection + memorySection;
 
-	const query = stateQuery || ctx?.rawUserQuery || '';
+	const query = stateQuery || ctx.rawUserQuery || '';
 	const userMessage = `<query>${query}</query>${bookshelfSection}`;
 
 	// Create tools: WeRead tools + search_journal (when available)

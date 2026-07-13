@@ -16,6 +16,7 @@ import type { InspectionalInput } from '../node-io.js';
 import { formatTreeStructure, buildInspectionalSystemPrompt, buildInspectionalUserMessage } from '../../prompts/utils/index.js';
 import type { CognitiveEngineState } from '../state';
 import { ReadingDepth } from '../state';
+import { getGraphConfigurable } from '../configurable.js';
 import { extractCitedNodeIds } from '../utils/chapter-reference-parser.js';
 import { extractHumanMessageContents } from '../utils/engine-helpers.js';
 import { extractJSON } from '../utils/parse.js';
@@ -51,8 +52,9 @@ export async function inspectionalNode(
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
   const { messages, allowedTools: prevTools = [], pdfName, bookId, crossBookMode } = state;
-  const fastModel = config.configurable?.fastModel;
-  const ctx = config.configurable?.sharedContext;
+  const cfg = getGraphConfigurable(config);
+  const fastModel = cfg.fastModel;
+  const ctx = cfg.sharedContext;
   const toolContext = ctx?.toolContext;
   const chatHistory = ctx?.chatHistory ?? [];
 

@@ -7,7 +7,7 @@ import { NODE_NAMES, EDGE_KEYS } from './node-names';
 import type { CognitiveEngineState } from './state';
 import { ReadingDepth } from './state';
 import { hasDiagramIntent } from './utils/diagram-helper.js';
-import { extractHumanMessageContents, resolveMode } from './utils/engine-helpers';
+import { extractHumanMessageContents } from './utils/engine-helpers';
 
 function userHasDiagramIntent(state: CognitiveEngineState): boolean {
   // 三路触发 visualizer：
@@ -44,8 +44,6 @@ export function routeFromStart(state: CognitiveEngineState): string {
  * - depth=2 → S2 (analytical)
  */
 export function routeAfterInspectional(state: CognitiveEngineState): string {
-  const mode = resolveMode(state);
-
   if (state.depth === ReadingDepth.CASUAL) {
     return EDGE_KEYS.DONE;
   }
