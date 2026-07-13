@@ -18,6 +18,7 @@ import type {
   TreeSearchOptions,
 } from "./types";
 import { generateEmbeddings, cosineSearchJsonl, generateEmbedding } from "./vectors";
+import { callRerankApi } from "../reranker.js";
 
 export async function searchVault(
   query: string,
@@ -290,13 +291,9 @@ async function generateRerankScores(
   options: RerankerOptions
 ): Promise<number[]> {
   if (options.provider === "lmstudio") {
-    const baseUrl = options.baseUrl || "http://localhost:1234/v1";
-    const model = options.model || "BAAI/bge-reranker-v2-m3";
-    const apiKey = options.apiKey || "lm-studio";
-
     // Try dedicated /rerank endpoint first
     try {
-      const scores = await rerankViaApi(query, documents, { baseUrl, model, apiKey });
+      const scores = await callRerankApi(query, documents, options);
       if (scores.some((s) => s !== 0.5)) return scores;
     } catch {
       // Fall through
@@ -304,6 +301,9 @@ async function generateRerankScores(
 
     // Fallback: use embeddings endpoint with query-doc concatenation
     try {
+      const baseUrl = options.baseUrl || "http://localhost:1234/v1";
+      const model = options.model || "BAAI/bge-reranker-v2-m3";
+      const apiKey = options.apiKey || "lm-studio";
       return rerankViaEmbeddings(query, documents, { baseUrl, model, apiKey });
     } catch {
       // Final fallback
@@ -312,54 +312,18 @@ async function generateRerankScores(
   }
 
   if (options.provider === "ollama") {
-    const baseUrl = options.baseUrl || "http://localhost:11434";
-    const model = options.model || "bge-reranker-v2-m3";
-    
     // Ollama uses /api/embeddings for reranking
     try {
+      const baseUrl = options.baseUrl || "http://localhost:11434";
+      const model = options.model || "bge-reranker-v2-m3";
       return rerankViaOllama(query, documents, { baseUrl, model });
     } catch {
       return documents.map(() => 0.5);
     }
   }
 
-  if (options.provider === "openai") {
-    return rerankViaApi(query, documents, {
-      baseUrl: options.baseUrl || "https://api.openai.com/v1",
-      model: options.model || "text-embedding-3-small",
-      apiKey: options.apiKey || process.env.OPENAI_API_KEY,
-    });
-  }
-
-  throw new Error(`Unsupported reranker provider: ${options.provider}`);
-}
-
-async function rerankViaApi(
-  query: string,
-  documents: string[],
-  config: { baseUrl: string; model: string; apiKey?: string }
-): Promise<number[]> {
-  const response = await safeRequest({
-    url: `${config.baseUrl}/rerank`,
-    method: "POST",
-    contentType: "application/json",
-    headers: { Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({ model: config.model, query, documents }),
-  });
-
-  if (response.status >= 400) throw new Error(`Rerank API error: ${response.status} - ${response.text}`);
-
-  const data = response.json as { results: Array<{ index: number; relevance_score: number }> };
-
-  if (data.results && data.results.length > 0) {
-    const scores = new Array(documents.length).fill(0.5);
-    for (const result of data.results) {
-      scores[result.index] = result.relevance_score;
-    }
-    return scores;
-  }
-
-  return documents.map(() => 0.5);
+  // openai / siliconflow / deepseek — all use standard /rerank endpoint
+  return callRerankApi(query, documents, options);
 }
 
 async function rerankViaEmbeddings(

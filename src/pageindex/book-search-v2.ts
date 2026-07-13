@@ -16,7 +16,6 @@ import { nodeFs } from "../utils/node-fs.js";
 import { nodePath } from "../utils/node-compat.js";
 import type { App } from "obsidian";
 import { vaultRead, vaultExists, vaultList, joinPath } from "../utils/mobile-fs.js";
-import { safeRequest } from "../utils/safe-request.js";
 import { searchBM25, tokenize } from "./bm25.js";
 import { generateBookId } from "./book-indexer.js";
 import type {
@@ -42,6 +41,7 @@ import {
   cosineSearchJsonl,
   clearVectorCache,
 } from "./vault/vectors.js";
+import { callRerankApi } from "./reranker.js";
 import { createSearchTracer, type SearchTracerType } from "./search-tracer.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -820,39 +820,15 @@ async function crossEncoderRerank(
 
   if (texts.length === 0) return rerankScores;
 
-  const provider = reranker.provider || "lmstudio";
-  const baseUrl = reranker.baseUrl || (provider === "lmstudio" ? "http://localhost:1234/v1" : provider === "ollama" ? "http://localhost:11434" : "https://api.openai.com/v1");
-  const model = reranker.model || "BAAI/bge-reranker-v2-m3";
-  const apiKey = reranker.apiKey || (provider === "lmstudio" ? "lm-studio" : "");
-
   try {
-    const response = await safeRequest({
-      url: `${baseUrl}/rerank`,
-      method: "POST",
-      contentType: "application/json",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        query,
-        documents: texts,
-        top_n: texts.length,
-      }),
-    });
+    const scores = await callRerankApi(query, texts, reranker);
 
-    if (response.status >= 400) {
-      throw new Error(`Rerank API error: ${response.status} - ${response.text}`);
-    }
-
-    const data = response.json as { results: Array<{ index: number; relevance_score: number }> };
-    
-    for (const r of data.results) {
-      if (r.index >= 0 && r.index < nodeIds.length) {
-        rerankScores.set(nodeIds[r.index], r.relevance_score);
-      }
+    for (let i = 0; i < nodeIds.length; i++) {
+      rerankScores.set(nodeIds[i], scores[i]);
     }
   } catch (error) {
     piLog(`[book-search-v2] Reranker unavailable: ${error}`);
-    
+
     for (let i = 0; i < nodeIds.length; i++) {
       rerankScores.set(nodeIds[i], results.find(r => r.nodeId === nodeIds[i])?.fusedScore || 0);
     }
