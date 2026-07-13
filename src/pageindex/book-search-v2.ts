@@ -42,6 +42,7 @@ import {
   cosineSearchJsonl,
   clearVectorCache,
 } from "./vault/vectors.js";
+import { createSearchTracer, type SearchTracerType } from "./search-tracer.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -127,7 +128,22 @@ export async function searchBookV2(
   const vaultPath = options.vaultPath || nodePath().dirname(options.filePath);
   const topK = options.topK || 5;
 
-  // indexDir: vault-relative when app provided, absolute path otherwise
+  const tracer: SearchTracerType = createSearchTracer(
+    options.query,
+    bookId,
+    {
+      recallK: 0,
+      topK,
+      hasEmbedding: !!(options.embedding && options.embedding.provider !== "local"),
+      hasReranker: !!options.reranker,
+      hasScope: !!(options.scopeNodeIds && options.scopeNodeIds.length > 0),
+    },
+    options.vaultPath,
+    app
+  );
+
+  try {
+    // indexDir: vault-relative when app provided, absolute path otherwise
   const indexDir = app
     ? joinPath(PAGEINDEX_DIR, bookId)
     : nodePath().join(vaultPath, getPageindexDir(), bookId);
@@ -171,24 +187,34 @@ export async function searchBookV2(
   });
 
   // ── Stage 1: Dynamic recall K ──────────────────────────────────────────
+  tracer.startStage("recall_config");
   const recallK = computeDynamicRecallK(options.query);
   const expandedK = options.scopeNodeIds && options.scopeNodeIds.length > 0
     ? recallK * 5
     : recallK;
+  tracer.updateConfig({ recallK });
+  tracer.endStage("success", { recallK, expandedK, hasScope: !!options.scopeNodeIds?.length });
 
   // ── Pre-compute query embedding (避免重复调用) ──────────────────────
+  tracer.startStage("query_embedding");
   let precomputedEmbedding: number[] | null = null;
   if (options.precomputedEmbedding) {
     precomputedEmbedding = options.precomputedEmbedding;
+    tracer.endStage("success", { hasEmbedding: true, source: "precomputed" });
   } else if (options.embedding && options.embedding.provider !== 'local') {
     try {
       precomputedEmbedding = await getOrGenerateEmbedding(options.query, options.embedding);
+      tracer.endStage("success", { hasEmbedding: true, source: "generated" });
     } catch (error) {
+      tracer.endStage("failure", { error: String(error) });
       piLog(`[book-search-v2] Query embedding failed: ${error}`);
     }
+  } else {
+    tracer.endStage("skipped", { reason: "no embedding provider" });
   }
 
   // ── Stage 2-3.5: Multi-path parallel recall ───────────────────────────
+  tracer.startStage("parallel_recall");
   const [bm25Results, vectorSearchResult, propSearchResult] = await Promise.all([
     searchBM25(options.query, bm25Index, expandedK),
     precomputedEmbedding
@@ -213,13 +239,21 @@ export async function searchBookV2(
   // Proposition matches already in map
   const propositionMatches = propSearchResult;
 
+  tracer.endStage("success", {
+    bm25: bm25Results.length,
+    vector: vectorScores.size,
+    proposition: propositionMatches.size,
+  });
+
   piLog(`[book-search-v2] Parallel recall: BM25=${bm25Results.length}, Vector=${vectorScores.size}, Proposition=${propositionMatches.size} nodes`);
 
   // ── Stage 4: Scope filter ──────────────────────────────────────────────
+  tracer.startStage("scope_filter");
   const hasVectors = vectorScores.size > 0;
   const allNodeIds = new Set([...vectorScores.keys(), ...bm25Scores.keys()]);
 
   let candidateNodeIds = allNodeIds;
+  let scopeFallback = false;
   if (options.scopeNodeIds && options.scopeNodeIds.length > 0) {
     const scopeSet = new Set(options.scopeNodeIds);
     const scopedCandidates = new Set([...allNodeIds].filter(id => scopeSet.has(id)));
@@ -228,11 +262,19 @@ export async function searchBookV2(
     if (scopedCandidates.size > 0) {
       candidateNodeIds = scopedCandidates;
     } else {
+      scopeFallback = true;
       piLog(`[book-search-v2] Scope filter produced 0 results from ${allNodeIds.size} candidates, using unscoped fallback`);
     }
   }
 
+  tracer.endStage("success", {
+    scopeTotal: allNodeIds.size,
+    scopeFiltered: candidateNodeIds.size,
+    scopeFallback: scopeFallback ? 1 : 0,
+  });
+
   // ── Stage 5: Score fusion + level weighting + proposition ─────────────
+  tracer.startStage("fusion");
   const hasPropositions = propositionMatches.size > 0;
 
   // Adjust weights based on available signals
@@ -306,12 +348,28 @@ export async function searchBookV2(
   }
 
   scoredResults.sort((a, b) => b.fusedScore - a.fusedScore);
-  
+
+  tracer.recordSignals({
+    bm25Recalled: bm25Results.length,
+    vectorRecalled: vectorScores.size,
+    propositionRecalled: propositionMatches.size,
+    scopeFiltered: candidateNodeIds.size,
+    scopeTotal: allNodeIds.size,
+    scopeFallback: scopeFallback ? 1 : 0,
+    reranked: 0,
+  });
+  tracer.recordScoreStats("bm25", bm25Values);
+  tracer.recordScoreStats("vector", vecValues);
+  tracer.recordScoreStats("fused", scoredResults.map((r) => r.fusedScore));
+  tracer.recordWeights({ vector: w_v, bm25: w_b, proposition: w_p });
+  tracer.endStage("success");
+
   // ── Stage 6: LLM tree search (optional) ────────────────────────────────
   // TODO: implement when llmClient is available
 
   // ── Stage 7: Cross-encoder rerank (optional) ───────────────────────────
   if (options.reranker && scoredResults.length > 0) {
+    tracer.startStage("rerank");
     try {
       const rerankCandidates = scoredResults.slice(0, Math.min(scoredResults.length, options.reranker.maxCandidates || 20));
       const rerankScores = await crossEncoderRerank(
@@ -334,16 +392,35 @@ export async function searchBookV2(
       }
 
       scoredResults.sort((a, b) => b.fusedScore - a.fusedScore);
-      
+
+      tracer.recordScoreStats("reranked", Array.from(rerankScores.values()));
+      tracer.recordSignals({ reranked: rerankScores.size });
+      tracer.recordWeights({ vector: w_v, bm25: w_b, proposition: w_p, rerank: rerankWeight });
+      tracer.endStage("success", { reranked: rerankScores.size, rerankWeight });
+
       piLog(`[book-search-v2] Reranked ${rerankScores.size} results`);
     } catch (error) {
+      tracer.endStage("failure", { error: String(error) });
       piLog(`[book-search-v2] Rerank failed: ${error}`);
     }
   }
 
   const topResults = scoredResults.slice(0, topK);
 
+  tracer.recordTopResults(
+    topResults.map((r) => ({
+      nodeId: r.nodeId,
+      title: findNodeTitle(r.nodeId, treeData.structure) || r.nodeId,
+      fusedScore: r.fusedScore,
+      bm25Score: r.bm25Score,
+      vectorScore: r.vectorScore,
+      propositionScore: r.propositionScore,
+      levelWeight: r.levelWeight,
+    }))
+  );
+
   // ── Stage 8: Matched block location ────────────────────────────────────
+  tracer.startStage("result_assembly");
   const results: BookSearchResultV2[] = [];
 
   // Load chunk texts for matchedBlocks content
@@ -407,8 +484,14 @@ export async function searchBookV2(
       vectorScore: r.vectorScore,
     });
   }
+  tracer.endStage("success", { resultCount: results.length });
 
+  tracer.finalize(true);
   return results;
+} catch (error) {
+  tracer.finalize(false, error instanceof Error ? error.message : String(error));
+  throw error;
+}
 }
 
 // ─── Load tree.json ─────────────────────────────────────────────────────────
