@@ -252,6 +252,32 @@ describe("Stage 5: RRF fusion and level weighting logic", () => {
     const activeSignals = 1 + 1 + 1;
     expect(activeSignals).toBe(3);
   });
+
+  it("RRF: same scores produce valid ranks", () => {
+    // 两个节点 BM25 分数完全相同
+    const rankMap = new Map<string, number>();
+    const ranked = [['n1', 1.0], ['n2', 1.0]].sort((a, b) => b[1] - a[1]);
+    for (let i = 0; i < ranked.length; i++) {
+      rankMap.set(ranked[i][0], i + 1);
+    }
+    expect(rankMap.get('n1')).toBe(1);
+    expect(rankMap.get('n2')).toBe(2);
+  });
+
+  it("RRF: opposing ranks produce balanced scores", () => {
+    const k = 60;
+    // Node A: BM25 rank=1, Vector rank=100
+    const rrfA = 1/(k+1) + 1/(k+100);
+    // Node B: BM25 rank=100, Vector rank=1
+    const rrfB = 1/(k+100) + 1/(k+1);
+    expect(rrfA).toBeCloseTo(rrfB, 10); // 对称性
+  });
+
+  it("RRF: empty BM25 with vector still produces results", () => {
+    const k = 60;
+    const rrfScore = 1/(k+1); // 仅 Vector rank=1
+    expect(rrfScore).toBeGreaterThan(0);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════

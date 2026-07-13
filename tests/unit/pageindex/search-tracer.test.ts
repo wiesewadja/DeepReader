@@ -132,6 +132,53 @@ describe("SearchTracer", () => {
     expect(trace.bookId).toBe("book123");
     expect(trace.success).toBe(true);
   });
+
+  it("ignores duplicate finalize", () => {
+    const tracer = new SearchTracer('q', 'b', defaultConfig, TEST_DIR);
+    tracer.finalize(true);
+    tracer.finalize(true); // 第二次应被忽略
+    expect(tracer.getTrace().success).toBe(true);
+  });
+
+  it("silently ignores endStage without startStage", () => {
+    const tracer = new SearchTracer('q', 'b', defaultConfig, TEST_DIR);
+    tracer.endStage('success'); // 不应抛异常
+    tracer.finalize(true);
+    expect(tracer.getTrace().stages).toHaveLength(0);
+  });
+
+  it("returns partial trace before finalize", () => {
+    const tracer = new SearchTracer('q', 'b', defaultConfig, TEST_DIR);
+    const trace = tracer.getTrace();
+    expect(trace.success).toBe(false);
+    expect(trace.completedAt).toBeUndefined();
+  });
+
+  it("auto-closes open stage on finalize", () => {
+    const tracer = new SearchTracer('q', 'b', defaultConfig, TEST_DIR);
+    tracer.startStage('s1');
+    tracer.finalize(true);
+    const trace = tracer.getTrace();
+    expect(trace.stages).toHaveLength(1);
+    expect(trace.stages[0].status).toBe('failure');
+    expect(trace.stages[0].details).toEqual({ reason: 'interrupted' });
+  });
+
+  it("does not set bm25 entry for empty arrays", () => {
+    const tracer = new SearchTracer('q', 'b', defaultConfig, TEST_DIR);
+    tracer.recordScoreStats('bm25', []);
+    tracer.finalize(true);
+    expect(tracer.getTrace().scoreStats?.bm25).toBeUndefined();
+  });
+
+  it("computes stats for single element", () => {
+    const tracer = new SearchTracer('q', 'b', defaultConfig, TEST_DIR);
+    tracer.recordScoreStats('bm25', [0.5]);
+    tracer.finalize(true);
+    expect(tracer.getTrace().scoreStats?.bm25).toEqual({
+      min: 0.5, max: 0.5, mean: 0.5, count: 1
+    });
+  });
 });
 
 describe("NoopSearchTracer", () => {
