@@ -15,7 +15,7 @@ import * as path from 'path';
 
 // 测试配置
 const VAULT_PATH = path.resolve(__dirname, '../../test-vault');
-const REAL_VAULT_PATH = '/Users/lizhao/workspace/deepreadertest';
+const REAL_VAULT_PATH = '/Users/lizhao/workspace/DeepReader/test-vault';
 const PLUGIN_ID = 'deepreader-dev';
 const TIMEOUT_SHORT = 30_000;
 const TIMEOUT_MEDIUM = 60_000;

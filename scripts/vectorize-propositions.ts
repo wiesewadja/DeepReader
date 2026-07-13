@@ -8,7 +8,7 @@ import { open } from "node:fs/promises";
 import * as path from "path";
 import type { PropositionCard } from "../src/pageindex/book-types.js";
 
-const vaultPath = "/Users/lizhao/workspace/deepreadertest";
+const vaultPath = "/Users/lizhao/workspace/DeepReader/test-vault";
 const bookId = "1553db0b";
 const indexDir = path.join(vaultPath, ".pageindex", bookId);
 

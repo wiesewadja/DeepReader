@@ -5,7 +5,7 @@
 import { readFileSync } from "fs";
 
 async function main() {
-  const pdfPath = "/Users/lizhao/workspace/deepreadertest/纳瓦尔宝典：财富与幸福指南 (埃里克．乔根森 (Eric Jorgenson)) (Z-Library).pdf";
+  const pdfPath = "/Users/lizhao/workspace/DeepReader/test-vault/纳瓦尔宝典：财富与幸福指南 (埃里克．乔根森 (Eric Jorgenson)) (Z-Library).pdf";
 
   // Method 1: Simple text extraction (current pdf-parse approach)
   const pdfParse = (await import("pdf-parse")).default;

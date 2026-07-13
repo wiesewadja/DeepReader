@@ -32,7 +32,7 @@ interface TraceAnalysis {
   errors: string[];
 }
 
-const REAL_VAULT_PATH = '/Users/lizhao/workspace/deepreadertest';
+const REAL_VAULT_PATH = '/Users/lizhao/workspace/DeepReader/test-vault';
 
 export class LangSmithHelper {
   private apiKey: string;

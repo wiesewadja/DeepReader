@@ -5,7 +5,7 @@
 import { readFileSync } from "fs";
 
 async function main() {
-  const pdfPath = "/Users/lizhao/workspace/deepreadertest/纳瓦尔宝典：财富与幸福指南 (埃里克．乔根森 (Eric Jorgenson)) (Z-Library).pdf";
+  const pdfPath = "/Users/lizhao/workspace/DeepReader/test-vault/纳瓦尔宝典：财富与幸福指南 (埃里克．乔根森 (Eric Jorgenson)) (Z-Library).pdf";
   const pdfParse = (await import("pdf-parse")).default;
   const data = readFileSync(pdfPath);
 
@@ -137,7 +137,7 @@ async function main() {
   // Step 5: Check the actual tree.json for comparison
   console.log(`\n=== Actual tree.json data ===\n`);
   try {
-    const treeData = JSON.parse(readFileSync("/Users/lizhao/workspace/deepreadertest/.pageindex/74dca606/tree.json", "utf-8"));
+    const treeData = JSON.parse(readFileSync("/Users/lizhao/workspace/DeepReader/test-vault/.pageindex/74dca606/tree.json", "utf-8"));
     function findNodes(nodes, titles) {
       const found = [];
       for (const node of nodes) {
