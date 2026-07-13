@@ -38,7 +38,7 @@ export async function visualizerNode(
     return { analysisResult: state.analysisResult || '' };
   }
   const toolContext = ctx.toolContext;
-  const callbacks = cfg.callbacks as Partial<EngineCallbacks>;
+  const callbacks: Partial<EngineCallbacks> = cfg.callbacks;
   const abortSignal = ctx.abortSignal;
 
   if (!fastModel || !toolContext) {
