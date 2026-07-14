@@ -263,7 +263,7 @@ async function rerankResults(
 
   const rerankScores = await generateRerankScores(query, pairs.map((p) => p.text), options);
 
-  const rerankWeight = options.weight ?? 0.7;
+  const rerankWeight = options.weight ?? 0.5;
   const recallWeight = 1 - rerankWeight;
 
   const reranked = pairs.map((p, i) => {

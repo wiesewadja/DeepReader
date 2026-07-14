@@ -16,6 +16,7 @@
     "test:ui": "vitest --ui",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
+    "build-eval": "node scripts/build-eval-entry.mjs",
     "arch-guard": "node scripts/arch-guard.mjs",
     "arch-guard:strict": "node scripts/arch-guard.mjs --strict",
     "e2e-cdp": "node tests/e2e-cdp/run.mjs",

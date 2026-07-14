@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * 搜索质量评估脚本
+ * 搜索质量评估脚本（使用 searchBookV2 生产管线）
  *
- * 读取 tests/golden-queries.json，对每个查询执行 BM25 搜索，
+ * 读取 tests/golden-queries.json，对每个查询执行 searchBookV2（8 阶段管线），
  * 计算 MRR、Hit@5、Hit@10、NDCG@5 等指标。
  *
  * 用法:
@@ -10,79 +10,41 @@
  *
  * 示例:
  *   node scripts/eval-search-quality.mjs test-vault deepreader-dev
+ *
+ * 前置条件:
+ *   - 先运行 npm run build-eval（构建 search-bundle.cjs）
+ *   - 或手动: node scripts/build-eval-entry.mjs
  */
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { createRequire } from "node:module";
 
+const require = createRequire(import.meta.url);
 const args = process.argv.slice(2);
-const vaultPath = args[0] || "test-vault";
-const pluginId = args[1] || "deepreader-dev";
+const bm25Only = args.includes("--bm25-only");
+const filteredArgs = args.filter(a => a !== "--bm25-only");
+const vaultPath = filteredArgs[0] || "test-vault";
+const pluginId = filteredArgs[1] || "deepreader-dev";
 
 const GOLDEN_QUERIES_PATH = path.resolve("tests/golden-queries.json");
 const PAGEINDEX_DIR = path.join(vaultPath, ".obsidian", "plugins", pluginId, "pageindex");
+const DATA_JSON_PATH = path.join(vaultPath, ".obsidian", "plugins", pluginId, "data.json");
 
-// ── BM25 Tokenizer (replicate src/pageindex/bm25.ts logic) ────────────────
+// ── Load searchBookV2 from eval bundle ──────────────────────────────────────
 
-const CJK_STOPWORDS = new Set([
-  "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一",
-  "一个", "上", "也", "很", "到", "说", "要", "去", "你", "会", "着",
-  "没有", "看", "好", "自己", "这",
-]);
+const BUNDLE_PATH = path.resolve("scripts/eval/search-bundle.cjs");
 
-function tokenize(text) {
-  const tokens = [];
-  const cjkParts = text.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+/g) || [];
-  for (const cjk of cjkParts) {
-    if (cjk.length >= 2) tokens.push(cjk);
-    for (let i = 0; i < cjk.length; i++) tokens.push(cjk[i]);
-    for (let i = 0; i < cjk.length - 1; i++) tokens.push(cjk.slice(i, i + 2));
-  }
-  const nonCJK = text.replace(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g, " ");
-  const parts = nonCJK.toLowerCase().replace(/[^\w]/g, " ").split(/\s+/).filter(t => t.length > 0);
-  tokens.push(...parts);
-  return tokens;
+let searchBookV2, setActivePluginId;
+try {
+  ({ searchBookV2, setActivePluginId } = require(BUNDLE_PATH));
+} catch (e) {
+  console.error(`无法加载 search-bundle.cjs: ${e.message}`);
+  console.error("请先运行: node scripts/build-eval-entry.mjs");
+  process.exit(1);
 }
 
-function filterQueryTokens(tokens) {
-  const seen = new Set();
-  return tokens.filter(t => {
-    if (seen.has(t) || CJK_STOPWORDS.has(t)) return false;
-    seen.add(t);
-    return true;
-  });
-}
-
-// ── BM25 Search ───────────────────────────────────────────────────────────
-
-function searchBM25(query, index, topK) {
-  const queryTokens = filterQueryTokens(tokenize(query));
-  const scores = Object.create(null);
-  const { totalDocs, avgDocLength, df } = index.stats;
-  const { k1, b } = index.params;
-
-  for (const token of queryTokens) {
-    const postings = index.invertedIndex[token];
-    if (!postings) continue;
-    const docFreq = df[token] || 0;
-    const idf = Math.log(1 + (totalDocs - docFreq + 0.5) / (docFreq + 0.5));
-    for (const { nodeId, tf } of postings) {
-      const docLength = index.nodes[nodeId]?.length || 0;
-      const numerator = tf * (k1 + 1);
-      const denominator = avgDocLength > 0
-        ? tf + k1 * (1 - b + b * (docLength / avgDocLength))
-        : tf + k1 * (1 - b);
-      scores[nodeId] = (scores[nodeId] || 0) + idf * (numerator / denominator);
-    }
-  }
-
-  return Object.entries(scores)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, topK)
-    .map(([nodeId, score]) => ({ nodeId, score }));
-}
-
-// ── Metrics ───────────────────────────────────────────────────────────────
+// ── Metrics ─────────────────────────────────────────────────────────────────
 
 /**
  * Mean Reciprocal Rank: 1/rank of first relevant result
@@ -113,13 +75,11 @@ function hitAtK(results, relevantNodeIds, k) {
  */
 function ndcgAtK(results, relevantNodeIds, k) {
   const relevantSet = new Set(relevantNodeIds);
-  // DCG: relevance is 1 for relevant docs, 0 otherwise
   let dcg = 0;
   for (let i = 0; i < Math.min(k, results.length); i++) {
     const rel = relevantSet.has(results[i].nodeId) ? 1 : 0;
-    dcg += rel / Math.log2(i + 2); // i+2 because log2(1) = 0
+    dcg += rel / Math.log2(i + 2);
   }
-  // Ideal DCG: all relevant docs at top
   const idealCount = Math.min(relevantNodeIds.length, k);
   let idcg = 0;
   for (let i = 0; i < idealCount; i++) {
@@ -128,9 +88,12 @@ function ndcgAtK(results, relevantNodeIds, k) {
   return idcg > 0 ? dcg / idcg : 0;
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────
+// ── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
+  // Set plugin ID for path resolution
+  setActivePluginId(pluginId);
+
   // Load golden queries
   let goldenData;
   try {
@@ -143,7 +106,8 @@ async function main() {
   }
 
   const queries = goldenData.queries;
-  console.log(`\n=== 搜索质量评估 ===`);
+  const modeLabel = bm25Only ? "BM25-only" : "searchBookV2 管线";
+  console.log(`\n=== 搜索质量评估（${modeLabel}）===`);
   console.log(`Golden queries: ${queries.length}`);
   console.log(`Vault: ${vaultPath}`);
   console.log(`Plugin: ${pluginId}\n`);
@@ -158,18 +122,83 @@ async function main() {
     process.exit(1);
   }
 
-  // Cache loaded BM25 indexes
-  const bm25Cache = new Map();
+  // Built-in provider base URLs (mirrors src/config/providers.ts PROVIDER_CONFIGS)
+  const PROVIDER_BASE_URLS = {
+    siliconflow: 'https://api.siliconflow.cn/v1',
+    openai: 'https://api.openai.com/v1',
+    deepseek: 'https://api.deepseek.com',
+    minimax: 'https://api.minimaxi.com/v1',
+    kimi: 'https://api.moonshot.cn/v1',
+    xiaomi: 'https://token-plan-cn.xiaomimimo.com/v1',
+    sensenova: 'https://token.sensenova.cn/v1',
+  };
 
-  async function loadBM25(bookId) {
-    if (bm25Cache.has(bookId)) return bm25Cache.get(bookId);
-    const bm25Path = path.join(PAGEINDEX_DIR, bookId, "bm25.json");
+  /** Resolve baseUrl: provider account override → built-in default */
+  function resolveBaseUrl(providerName, providerCfg) {
+    return providerCfg?.baseUrl || PROVIDER_BASE_URLS[providerName] || '';
+  }
+
+  // Load data.json for embedding/reranker config
+  let embeddingConfig = undefined;
+  let rerankerConfig = undefined;
+
+  if (bm25Only) {
+    console.log("BM25-only 模式: 跳过 embedding/reranker 配置\n");
+  } else {
+  try {
+    const dataRaw = await fs.readFile(DATA_JSON_PATH, "utf-8");
+    const data = JSON.parse(dataRaw);
+
+    // Build embedding config from roles.embedding + providers
+    if (data.roles?.embedding && data.providers) {
+      const providerName = data.roles.embedding.provider;
+      const providerCfg = data.providers[providerName];
+      if (providerCfg?.apiKey) {
+        embeddingConfig = {
+          provider: providerName,
+          model: data.roles.embedding.model,
+          apiKey: providerCfg.apiKey,
+          baseUrl: resolveBaseUrl(providerName, providerCfg),
+        };
+        console.log(`Embedding: ${embeddingConfig.provider} / ${embeddingConfig.model} @ ${embeddingConfig.baseUrl}`);
+      }
+    }
+
+    // Build reranker config from roles.reranker + providers
+    if (data.roles?.reranker && data.providers) {
+      const providerName = data.roles.reranker.provider;
+      const providerCfg = data.providers[providerName];
+      if (providerCfg?.apiKey) {
+        rerankerConfig = {
+          provider: providerName,
+          model: data.roles.reranker.model,
+          apiKey: providerCfg.apiKey,
+          baseUrl: resolveBaseUrl(providerName, providerCfg),
+          weight: data.rerankerWeight || 0.7,
+        };
+        console.log(`Reranker: ${rerankerConfig.provider} / ${rerankerConfig.model} @ ${rerankerConfig.baseUrl}`);
+      }
+    }
+  } catch (e) {
+    console.log(`未找到 data.json，降级为 BM25-only 模式: ${e.message}`);
+  }
+  }
+
+  if (!embeddingConfig) console.log("Embedding: 未配置（BM25-only 模式）");
+  if (!rerankerConfig) console.log("Reranker: 未配置");
+
+  // Cache loaded book-meta (filePath lookup)
+  const bookMetaCache = new Map();
+
+  async function loadBookMeta(bookId) {
+    if (bookMetaCache.has(bookId)) return bookMetaCache.get(bookId);
+    const metaPath = path.join(PAGEINDEX_DIR, bookId, "book-meta.json");
     try {
-      const raw = await fs.readFile(bm25Path, "utf-8");
+      const raw = await fs.readFile(metaPath, "utf-8");
       const data = JSON.parse(raw);
-      bm25Cache.set(bookId, data);
+      bookMetaCache.set(bookId, data);
       return data;
-    } catch (e) {
+    } catch {
       return null;
     }
   }
@@ -186,15 +215,32 @@ async function main() {
       continue;
     }
 
-    const bm25Index = await loadBM25(q.bookId);
-    if (!bm25Index) {
-      console.log(`  SKIP ${q.id}: bm25.json not found for ${q.bookId}`);
+    const bookMeta = await loadBookMeta(q.bookId);
+    if (!bookMeta?.filePath) {
+      console.log(`  SKIP ${q.id}: book-meta.json not found for ${q.bookId}`);
       skipped++;
       continue;
     }
 
     // Search with topK=20 to have enough results for evaluation
-    const searchResults = searchBM25(q.query, bm25Index, 20);
+    let searchResults;
+    try {
+      const v2Results = await searchBookV2({
+        filePath: bookMeta.filePath,
+        bookId: q.bookId,
+        query: q.query,
+        topK: 20,
+        embedding: embeddingConfig,
+        reranker: rerankerConfig,
+        vaultPath: vaultPath,
+      });
+      // Convert BookSearchResultV2[] to format compatible with metrics
+      searchResults = v2Results.map(r => ({ nodeId: r.nodeId, score: r.score }));
+    } catch (e) {
+      console.log(`  SKIP ${q.id}: search failed: ${e.message}`);
+      skipped++;
+      continue;
+    }
 
     const mrrScore = mrr(searchResults, q.relevantNodeIds);
     const hit5 = hitAtK(searchResults, q.relevantNodeIds, 5);

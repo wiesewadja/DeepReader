@@ -139,8 +139,8 @@
       "id": "q20",
       "query": "社会兴趣",
       "bookId": "9f77964d",
-      "relevantNodeIds": ["0050"],
-      "description": "自卑与超越 - 社会兴趣与社会情感"
+      "relevantNodeIds": ["0062", "0063"],
+      "description": "自卑与超越中关于社会兴趣的专题章节"
     },
     {
       "id": "q21",

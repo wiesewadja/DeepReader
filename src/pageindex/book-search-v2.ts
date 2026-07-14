@@ -382,7 +382,7 @@ export async function searchBookV2(
         app
       );
 
-      const rerankWeight = options.reranker.weight || 0.7;
+      const rerankWeight = options.reranker.weight || 0.5;
       const rerankedNodeIds = new Set(rerankScores.keys());
       
       for (const r of scoredResults) {
