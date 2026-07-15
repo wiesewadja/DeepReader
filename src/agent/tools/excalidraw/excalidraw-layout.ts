@@ -2,7 +2,7 @@ import { log } from '../../../utils/logger.js';
 import { resolveOverlaps } from './excalidraw-geometry.js';
 import { scoreLayout } from './excalidraw-layout-score.js';
 import { LAYOUT_REGISTRY } from './layouts/index.js';
-import type { ElementDef, DiagramLayoutType } from './excalidraw-types.js';
+import type { ElementDef, DiagramLayoutType, LayoutOptions } from './excalidraw-types.js';
 
 /**
  * Executes the chosen layout algorithm on elements, scores the result,
@@ -12,6 +12,7 @@ import type { ElementDef, DiagramLayoutType } from './excalidraw-types.js';
 export function arrangeWithFallback(
   elements: ElementDef[],
   layout?: DiagramLayoutType,
+  options?: LayoutOptions,
 ): ElementDef[] {
   if (!layout || !LAYOUT_REGISTRY[layout]) {
     if (layout) {
@@ -24,7 +25,7 @@ export function arrangeWithFallback(
     log('info', `Applying semantic layout algorithm: "${layout}"`);
     
     // Arrange elements using the layout engine and resolve any remaining overlaps
-    const arrangedRaw = LAYOUT_REGISTRY[layout].arrange(elements);
+    const arrangedRaw = LAYOUT_REGISTRY[layout].arrange(elements, options);
     const arranged = resolveOverlaps(arrangedRaw);
 
     const arrangedScore = scoreLayout(arranged);

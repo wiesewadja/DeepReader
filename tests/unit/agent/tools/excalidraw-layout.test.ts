@@ -134,6 +134,71 @@ describe('Layout Algorithms', () => {
   });
 });
 
+describe('mind-map growthMode', () => {
+  const center = makeElement({ id: 'root', x: 0, y: 0, width: 120, height: 60 });
+  const child1 = makeElement({ id: 'c1', x: 0, y: 0, width: 100, height: 50 });
+  const child2 = makeElement({ id: 'c2', x: 0, y: 0, width: 100, height: 50 });
+  const child3 = makeElement({ id: 'c3', x: 0, y: 0, width: 100, height: 50 });
+  const child4 = makeElement({ id: 'c4', x: 0, y: 0, width: 100, height: 50 });
+  const arrows = [
+    makeElement({ id: 'a1', type: 'arrow', startBinding: { elementId: 'root', gap: 2, focus: 0 }, endBinding: { elementId: 'c1', gap: 2, focus: 0 } }),
+    makeElement({ id: 'a2', type: 'arrow', startBinding: { elementId: 'root', gap: 2, focus: 0 }, endBinding: { elementId: 'c2', gap: 2, focus: 0 } }),
+    makeElement({ id: 'a3', type: 'arrow', startBinding: { elementId: 'root', gap: 2, focus: 0 }, endBinding: { elementId: 'c3', gap: 2, focus: 0 } }),
+    makeElement({ id: 'a4', type: 'arrow', startBinding: { elementId: 'root', gap: 2, focus: 0 }, endBinding: { elementId: 'c4', gap: 2, focus: 0 } }),
+  ];
+  const elements = [center, child1, child2, child3, child4, ...arrows];
+
+  it('Right-Left: alternates children left and right (default)', () => {
+    const arranged = LAYOUT_REGISTRY['mind-map'].arrange(elements);
+    const r = arranged.find(e => e.id === 'root')!;
+    const c1 = arranged.find(e => e.id === 'c1')!;
+    const c2 = arranged.find(e => e.id === 'c2')!;
+
+    // Root centered at (500, 300)
+    expect(r.x).toBe(500 - r.width / 2);
+    // c1 (even index) goes right, c2 (odd index) goes left
+    expect(c1.x).toBeGreaterThan(r.x + r.width / 2);
+    expect(c2.x).toBeLessThan(r.x);
+  });
+
+  it('Right-facing: all children go right', () => {
+    const arranged = LAYOUT_REGISTRY['mind-map'].arrange(elements, { growthMode: 'Right-facing' });
+    const r = arranged.find(e => e.id === 'root')!;
+    const c1 = arranged.find(e => e.id === 'c1')!;
+    const c2 = arranged.find(e => e.id === 'c2')!;
+    const c3 = arranged.find(e => e.id === 'c3')!;
+
+    // All children should be to the right of root
+    expect(c1.x).toBeGreaterThan(r.x + r.width / 2);
+    expect(c2.x).toBeGreaterThan(r.x + r.width / 2);
+    expect(c3.x).toBeGreaterThan(r.x + r.width / 2);
+  });
+
+  it('Left-facing: all children go left', () => {
+    const arranged = LAYOUT_REGISTRY['mind-map'].arrange(elements, { growthMode: 'Left-facing' });
+    const r = arranged.find(e => e.id === 'root')!;
+    const c1 = arranged.find(e => e.id === 'c1')!;
+    const c2 = arranged.find(e => e.id === 'c2')!;
+
+    // All children should be to the left of root
+    expect(c1.x).toBeLessThan(r.x);
+    expect(c2.x).toBeLessThan(r.x);
+  });
+
+  it('defaults to Right-Left when no growthMode specified', () => {
+    const arrangedDefault = LAYOUT_REGISTRY['mind-map'].arrange(elements);
+    const arrangedExplicit = LAYOUT_REGISTRY['mind-map'].arrange(elements, { growthMode: 'Right-Left' });
+
+    // Both should produce same layout
+    for (const id of ['root', 'c1', 'c2', 'c3', 'c4']) {
+      const d = arrangedDefault.find(e => e.id === id)!;
+      const e = arrangedExplicit.find(e => e.id === id)!;
+      expect(d.x).toBe(e.x);
+      expect(d.y).toBe(e.y);
+    }
+  });
+});
+
 describe('arrangeWithFallback', () => {
   it('should accept good layouts', () => {
     const elements = [

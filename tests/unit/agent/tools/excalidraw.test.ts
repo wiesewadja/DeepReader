@@ -55,7 +55,7 @@ describe('buildExcalidrawJSON', () => {
     expect(result.version).toBe(2);
     expect(result.source).toBe('https://excalidraw.com');
     expect(result.elements).toHaveLength(2);
-    expect(result.appState.viewBackgroundColor).toBe('#f8fafc'); // new background
+    expect(result.appState.viewBackgroundColor).toBe('#FDF6E3'); // hand-drawn style background
     expect(result.files).toEqual({});
   });
 
@@ -788,5 +788,108 @@ describe('detectConnectorNodeOverlaps', () => {
 
     const warnings = detectConnectorNodeOverlaps(elements);
     expect(warnings).toHaveLength(0);
+  });
+});
+
+describe('customData injection', () => {
+  it('injects isBranch on branch arrows', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child2', type: 'rectangle', x: 200, y: 100, width: 100, height: 50 }),
+      makeElement({ id: 'arrow1', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child1', gap: 2, focus: 0 },
+      }),
+      makeElement({ id: 'arrow2', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child2', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const arrow1 = result.elements.find(e => e.id === 'arrow1')!;
+    const arrow2 = result.elements.find(e => e.id === 'arrow2')!;
+
+    expect(arrow1.customData?.isBranch).toBe(true);
+    expect(arrow2.customData?.isBranch).toBe(true);
+  });
+
+  it('injects depth on all nodes via BFS', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'grandchild1', type: 'rectangle', x: 400, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'arrow1', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child1', gap: 2, focus: 0 },
+      }),
+      makeElement({ id: 'arrow2', type: 'arrow',
+        startBinding: { elementId: 'child1', gap: 2, focus: 0 },
+        endBinding: { elementId: 'grandchild1', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const root = result.elements.find(e => e.id === 'root')!;
+    const child1 = result.elements.find(e => e.id === 'child1')!;
+    const grandchild1 = result.elements.find(e => e.id === 'grandchild1')!;
+
+    expect(root.customData?.depth).toBe(0);
+    expect(child1.customData?.depth).toBe(1);
+    expect(grandchild1.customData?.depth).toBe(2);
+  });
+
+  it('marks root nodes with isAdditionalRoot', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root1', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'root2', type: 'rectangle', x: 0, y: 100, width: 100, height: 50 }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'arrow1', type: 'arrow',
+        startBinding: { elementId: 'root1', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child1', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const root1 = result.elements.find(e => e.id === 'root1')!;
+    const root2 = result.elements.find(e => e.id === 'root2')!;
+    const child1 = result.elements.find(e => e.id === 'child1')!;
+
+    // root1 has no parent, so it IS an additional root (MindMapBuilder 标记)
+    expect(root1.customData?.isAdditionalRoot).toBe(true);
+    // root2 has no parent, so it IS an additional root
+    expect(root2.customData?.isAdditionalRoot).toBe(true);
+    // child1 has a parent, so it's NOT an additional root
+    expect(child1.customData?.isAdditionalRoot).toBeUndefined();
+  });
+
+  it('does not inject customData on text elements', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'text1', type: 'text', text: 'label', x: 0, y: 0, width: 100, height: 50 }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const text1 = result.elements.find(e => e.id === 'text1')!;
+    // text elements should not get depth/isAdditionalRoot
+    expect(text1.customData?.depth).toBeUndefined();
+    expect(text1.customData?.isAdditionalRoot).toBeUndefined();
+  });
+
+  it('preserves existing customData when injecting', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50, customData: { foo: 'bar' } }),
+      makeElement({ id: 'child', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'arrow', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const root = result.elements.find(e => e.id === 'root')!;
+
+    expect(root.customData?.foo).toBe('bar');
+    expect(root.customData?.depth).toBe(0);
   });
 });

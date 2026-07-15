@@ -14,6 +14,7 @@ import { arrangeWithFallback } from './excalidraw-layout.js';
 import { applyDiagramStyle } from './excalidraw-style-processor.js';
 import { PALETTE, TEXT_COLORS } from './excalidraw-organic-palette.js';
 import { buildExcalidrawMd } from './excalidraw-md.js';
+import { processIcons, type ProcessedIcon } from './excalidraw-icon-processor.js';
 
 /** 完整的 .excalidraw JSON 结构 */
 interface ExcalidrawFile {
@@ -72,6 +73,10 @@ interface ExcalidrawElement {
   pressures?: number[];
   simulatePressure?: boolean;
   customData?: Record<string, any> | null;
+  // image specific
+  fileId?: string;
+  scale?: [number, number];
+  status?: string;
 }
 
 /**
@@ -158,7 +163,7 @@ function resolveObsidianTheme(context?: ToolContext): 'light' | 'dark' {
  */
 function getZOrder(el: ExcalidrawElement): number {
   if (el.type === 'rectangle' || el.type === 'ellipse' || el.type === 'diamond') return 0;
-  if (el.type === 'line' || el.type === 'arrow' || el.type === 'freedraw') return 1;
+  if (el.type === 'line' || el.type === 'arrow' || el.type === 'freedraw' || el.type === 'image') return 1;
   if (el.type === 'text') return 2;
   return 0;
 }
@@ -465,6 +470,80 @@ function preprocessElementSizes(elements: ElementDef[]): ElementDef[] {
 }
 
 /**
+ * 注入 MindMapBuilder 兼容的 customData 标记：
+ * - 分支箭头：`{ isBranch: true }`
+ * - 节点深度：`{ depth: N }`（BFS 从根节点计算）
+ * - 根节点（无入边）：`{ isAdditionalRoot: true }`
+ *
+ * 在布局完成后、序列化前调用，不改变坐标。
+ */
+function injectCustomData(elements: ElementDef[]): ElementDef[] {
+  // 收集所有节点 ID（排除 arrow/line/freedraw/text-with-container）
+  const nodeIds = new Set<string>();
+  for (const el of elements) {
+    if (['rectangle', 'ellipse', 'diamond', 'text'].includes(el.type) && !el.containerId) {
+      nodeIds.add(el.id);
+    }
+  }
+
+  // 构建 parentMap（子→父）和 childrenMap（父→子）
+  const parentMap = new Map<string, string>();
+  const childrenMap = new Map<string, string[]>();
+  for (const el of elements) {
+    if (el.type === 'arrow' || el.type === 'line') {
+      const start = el.startBinding?.elementId;
+      const end = el.endBinding?.elementId;
+      if (start && end && nodeIds.has(start) && nodeIds.has(end)) {
+        if (!childrenMap.has(start)) childrenMap.set(start, []);
+        childrenMap.get(start)!.push(end);
+        if (!parentMap.has(end)) parentMap.set(end, start);
+      }
+    }
+  }
+
+  // BFS 计算每个节点的 depth
+  const depthMap = new Map<string, number>();
+  const roots = [...nodeIds].filter(id => !parentMap.has(id));
+  const queue: Array<[string, number]> = roots.map(id => [id, 0]);
+  while (queue.length > 0) {
+    const [id, depth] = queue.shift()!;
+    if (depthMap.has(id)) continue;
+    depthMap.set(id, depth);
+    for (const child of childrenMap.get(id) || []) {
+      if (!depthMap.has(child)) queue.push([child, depth + 1]);
+    }
+  }
+
+  // 注入 customData
+  return elements.map(el => {
+    // 分支箭头标记
+    if (el.type === 'arrow' || el.type === 'line') {
+      const start = el.startBinding?.elementId;
+      const end = el.endBinding?.elementId;
+      if (start && end && nodeIds.has(start) && nodeIds.has(end)) {
+        return { ...el, customData: { ...el.customData, isBranch: true } };
+      }
+    }
+
+    // 节点 depth + isAdditionalRoot
+    if (nodeIds.has(el.id)) {
+      const depth = depthMap.get(el.id) ?? 0;
+      const isRoot = !parentMap.has(el.id);
+      return {
+        ...el,
+        customData: {
+          ...el.customData,
+          depth,
+          ...(isRoot ? { isAdditionalRoot: true } : {}),
+        },
+      };
+    }
+
+    return el;
+  });
+}
+
+/**
  * 构建完整的 Excalidraw JSON 文件内容。
  * 
  * @param elements 输入的元素定义数组
@@ -478,19 +557,25 @@ function buildExcalidrawJSON(
   layout?: DiagramLayoutType,
   context?: ToolContext,
   isAlreadyResolved = false,
+  icons: ProcessedIcon[] = [],
+  growthMode?: string,
 ): ExcalidrawFile {
   // 0. Preprocess element sizes for text fitting BEFORE running the layout engine.
   const preprocessed = isAlreadyResolved ? elements : preprocessElementSizes(elements);
 
   // Deterministic semantic layout and collision resolution
-  const resolved = isAlreadyResolved ? preprocessed : arrangeWithFallback(preprocessed, layout);
+  const layoutOptions = growthMode ? { growthMode } : undefined;
+  const resolved = isAlreadyResolved ? preprocessed : arrangeWithFallback(preprocessed, layout, layoutOptions);
+
+  // 0.5 Inject MindMapBuilder-compatible customData markers (isBranch, depth, isAdditionalRoot)
+  const enriched = injectCustomData(resolved);
 
   // 1. Resolve Obsidian theme
   const theme = resolveObsidianTheme(context);
 
   // 2. Apply style processor
   const { elements: styledElements, viewBackgroundColor } = applyDiagramStyle({
-    elements: resolved,
+    elements: enriched,
     layout,
     theme,
   });
@@ -500,6 +585,11 @@ function buildExcalidrawJSON(
   for (const el of styledElements) {
     elMap.set(el.id, el);
   }
+
+  // Icon lookup (by parent element id) + Excalidraw files map for embedded SVGs
+  const iconMap = new Map<string, ProcessedIcon>();
+  for (const ic of icons) iconMap.set(ic.elementId, ic);
+  const files: Record<string, unknown> = {};
 
   // Pre-scan for all arrows/lines to build bidirectional shape references
   const shapeArrowRefs = new Map<string, Array<{ id: string; type: 'arrow' }>>();
@@ -621,6 +711,23 @@ function buildExcalidrawJSON(
       }
       result.push(shapeEl);
     }
+
+    // Append icon as an Excalidraw `image` element (embedded SVG), if present.
+    // Icons are added AFTER layout, so they never affect layout/collision math.
+    const icon = iconMap.get(el.id);
+    if (icon) {
+      const fileId = `icon-${el.id}`;
+      const coloredSvg = icon.svg.replace(/currentColor/g, icon.color ?? '#1f2937');
+      const dataUrl = `data:image/svg+xml;base64,${toBase64(coloredSvg)}`;
+      files[fileId] = {
+        mimeType: 'image/svg+xml',
+        id: fileId,
+        dataURL: dataUrl,
+        created: now(),
+        lastRetrieved: now(),
+      };
+      result.push(toIconImageElement(el.id, icon, fileId));
+    }
   }
 
   result.sort((a, b) => getZOrder(a) - getZOrder(b));
@@ -639,7 +746,75 @@ function buildExcalidrawJSON(
       scrollY: viewport.scrollY,
       zoom: viewport.zoom,
     },
-    files: {},
+    files,
+  };
+}
+
+/**
+ * 将 SVG 字符串编码为 base64（浏览器 + Node 全局 btoa 均可用，
+ * 避免直接 import Node 核心模块 Buffer，符合移动端约束）。
+ */
+function toBase64(svg: string): string {
+  if (typeof btoa === 'function') {
+    return btoa(unescape(encodeURIComponent(svg)));
+  }
+  // 兜底：逐字符手动 UTF-8 → base64 编码（无 btoa 环境）
+  const bytes = new Uint8Array([...unescape(encodeURIComponent(svg))].map(c => c.charCodeAt(0)));
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  // 同样使用 btoa 逻辑，但作为最终兜底若仍无 btoa 则用字符映射
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let result = '';
+  for (let i = 0; i < binary.length; i += 3) {
+    const a = binary.charCodeAt(i);
+    const b = i + 1 < binary.length ? binary.charCodeAt(i + 1) : 0;
+    const c = i + 2 < binary.length ? binary.charCodeAt(i + 2) : 0;
+    result += chars[a >> 2];
+    result += chars[((a & 3) << 4) | (b >> 4)];
+    result += i + 1 < binary.length ? chars[((b & 15) << 2) | (c >> 6)] : '=';
+    result += i + 2 < binary.length ? chars[c & 63] : '=';
+  }
+  return result;
+}
+
+/**
+ * 构建 Excalidraw `image` 元素，嵌入图标 SVG（dataURL 已在父作用域写入 files）。
+ */
+function toIconImageElement(
+  parentId: string,
+  icon: ProcessedIcon,
+  fileId: string,
+): ExcalidrawElement {
+  return {
+    id: `${parentId}_icon`,
+    type: 'image',
+    x: icon.x,
+    y: icon.y,
+    width: icon.size,
+    height: icon.size,
+    angle: 0,
+    strokeColor: 'transparent',
+    backgroundColor: 'transparent',
+    fillStyle: 'solid',
+    strokeWidth: 1,
+    strokeStyle: 'solid',
+    roughness: 0,
+    opacity: 100,
+    groupIds: [],
+    frameId: null,
+    roundness: null,
+    seed: nextSeed(),
+    version: 1,
+    versionNonce: now(),
+    isDeleted: false,
+    boundElements: null,
+    updated: now(),
+    link: null,
+    locked: false,
+    status: 'saved',
+    fileId,
+    scale: [1, 1],
+    customData: null,
   };
 }
 
@@ -821,6 +996,8 @@ function validateSemantics(elements: ElementDef[]): string[] {
  * @param layout 选用的几何布局类型
  * @param context 工具上下文
  * @param isAlreadyResolved 若为 true，则在构建 JSON 时不重新计算 preprocess 与 layout 步骤（避免 execute 等前置调用处的重复耗时计算）
+ * @param icons 图标处理结果
+ * @param growthMode 思维导图生长方向
  * @returns 最终 `.excalidraw.md` 文件的路径和嵌入语法
  */
 export async function saveExcalidrawFile(
@@ -829,9 +1006,11 @@ export async function saveExcalidrawFile(
   layout: DiagramLayoutType | undefined,
   context: ToolContext,
   isAlreadyResolved = false,
+  icons: ProcessedIcon[] = [],
+  growthMode?: string,
 ): Promise<{ filepath: string; embed: string }> {
-  // 1. 构建完整 JSON
-  const excalidrawFile = buildExcalidrawJSON(elements, layout, context, isAlreadyResolved);
+  // 1. 构建完整 JSON（含图标 image 元素）
+  const excalidrawFile = buildExcalidrawJSON(elements, layout, context, isAlreadyResolved, icons, growthMode);
 
   // 2. 写入文件系统
   const dir = 'Excalidraw';
@@ -850,10 +1029,11 @@ export async function saveExcalidrawFile(
 
 export const excalidrawTool: ToolExecutor = {
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-    const { filename, elements, layout } = args as {
+    const { filename, elements, layout, growthMode } = args as {
       filename: string;
       elements: ElementDef[];
       layout?: DiagramLayoutType;
+      growthMode?: string;
     };
 
     if (!filename || !elements || !Array.isArray(elements) || elements.length === 0) {
@@ -877,7 +1057,8 @@ export const excalidrawTool: ToolExecutor = {
     try {
       // 0. 前置执行大小适配与布局引擎，确保诊断运行在最终坐标/尺寸上
       const preprocessed = preprocessElementSizes(elements);
-      const resolved = arrangeWithFallback(preprocessed, layout);
+      const layoutOptions = growthMode ? { growthMode } : undefined;
+      const resolved = arrangeWithFallback(preprocessed, layout, layoutOptions);
 
       // 1. 碰撞检测 + 语义验证
       const warnings = detectOverlaps(resolved);
@@ -885,8 +1066,15 @@ export const excalidrawTool: ToolExecutor = {
       const connectorWarnings = detectConnectorNodeOverlaps(resolved);
       const semanticWarnings = validateSemantics(resolved);
 
+      // 1.5 图标处理：加载 SVG 并计算位置（异步，依赖 CDN；
+      //     加载失败的元素静默跳过，不影响其余图表生成）
+      const iconDefs = await processIcons(resolved, resolveObsidianTheme(context));
+      if (iconDefs.length > 0) {
+        log('info', `[excalidraw] ${iconDefs.length} icons prepared`);
+      }
+
       // 2. 写入文件（透传 isAlreadyResolved = true，避免重复计算布局）
-      const { filepath, embed } = await saveExcalidrawFile(filename, resolved, layout, context, true);
+      const { filepath, embed } = await saveExcalidrawFile(filename, resolved, layout, context, true, iconDefs, growthMode);
       log('info', `Excalidraw 图形已生成: ${filepath}`);
 
       const allWarnings = [...warnings, ...textWarnings, ...connectorWarnings, ...semanticWarnings];

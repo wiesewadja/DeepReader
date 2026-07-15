@@ -2,10 +2,27 @@ import type { ElementDef, LayoutEngine, LayoutOptions } from '../excalidraw-type
 import { syncBoundTextPositions, shouldIgnoreInLayout } from './utils.js';
 
 /**
- * Left-right mind map layout.
+ * Growth modes for mind-map layout.
+ * - Right-Left (default): Level-1 children alternate between right and left sides
+ * - Right-facing: All Level-1 children go right
+ * - Left-facing: All Level-1 children go left
+ * - Radial: Center node + ring of Level-1 (like radial but with hierarchy)
+ * - Up-Down / Up-facing / Down-facing: Vertical layouts
+ */
+export type GrowthMode =
+  | 'Right-Left'
+  | 'Right-facing'
+  | 'Left-facing'
+  | 'Radial'
+  | 'Up-Down'
+  | 'Up-facing'
+  | 'Down-facing';
+
+/**
+ * Left-right mind map layout with configurable growth mode.
  *
  * - Center node sits in the middle.
- * - Level-1 children alternate between right and left sides.
+ * - Level-1 children distributed according to growthMode.
  * - Level-2+ children continue outward on the same side as their parent.
  * - Subtrees are stacked vertically and centered around the center node.
  */
@@ -14,6 +31,7 @@ export const MindMapLayout: LayoutEngine = {
     const centerX = 500;
     const centerY = 300;
     const siblingSpacingY = options?.spacing?.y ?? 80;
+    const growthMode: GrowthMode = (options?.growthMode as GrowthMode) ?? 'Right-Left';
 
     const clonedElements = elements.map(el => ({ ...el }));
     const elementMap = new Map<string, ElementDef>(clonedElements.map(el => [el.id, el]));
@@ -43,18 +61,55 @@ export const MindMapLayout: LayoutEngine = {
 
     const level1Children = childrenMap.get(centerNode.id) || [];
 
-    // Alternate level-1 children between right and left.
-    const rightChildren: ElementDef[] = [];
-    const leftChildren: ElementDef[] = [];
-    level1Children.forEach((child, i) => {
-      if (i % 2 === 0) rightChildren.push(child);
-      else leftChildren.push(child);
-    });
-
     const heightCache = new Map<string, number>();
 
-    layoutSide(rightChildren, 1, centerNode, centerY, siblingSpacingY, childrenMap, heightCache);
-    layoutSide(leftChildren, -1, centerNode, centerY, siblingSpacingY, childrenMap, heightCache);
+    // Distribute Level-1 children based on growthMode
+    switch (growthMode) {
+      case 'Right-facing': {
+        // All children go right
+        layoutSide(level1Children, 1, centerNode, centerY, siblingSpacingY, childrenMap, heightCache);
+        break;
+      }
+      case 'Left-facing': {
+        // All children go left
+        layoutSide(level1Children, -1, centerNode, centerY, siblingSpacingY, childrenMap, heightCache);
+        break;
+      }
+      case 'Up-facing': {
+        layoutVertical(level1Children, 'up', centerNode, centerX, siblingSpacingY, childrenMap, heightCache);
+        break;
+      }
+      case 'Down-facing': {
+        layoutVertical(level1Children, 'down', centerNode, centerX, siblingSpacingY, childrenMap, heightCache);
+        break;
+      }
+      case 'Up-Down': {
+        const half = Math.ceil(level1Children.length / 2);
+        const upChildren = level1Children.slice(0, half);
+        const downChildren = level1Children.slice(half);
+        layoutVertical(upChildren, 'up', centerNode, centerX, siblingSpacingY, childrenMap, heightCache);
+        layoutVertical(downChildren, 'down', centerNode, centerX, siblingSpacingY, childrenMap, heightCache);
+        break;
+      }
+      case 'Radial': {
+        // Distribute around center in a circle
+        layoutRadial(level1Children, centerNode, centerX, centerY, childrenMap, heightCache);
+        break;
+      }
+      case 'Right-Left':
+      default: {
+        // Alternate left and right (original behavior)
+        const rightChildren: ElementDef[] = [];
+        const leftChildren: ElementDef[] = [];
+        level1Children.forEach((child, i) => {
+          if (i % 2 === 0) rightChildren.push(child);
+          else leftChildren.push(child);
+        });
+        layoutSide(rightChildren, 1, centerNode, centerY, siblingSpacingY, childrenMap, heightCache);
+        layoutSide(leftChildren, -1, centerNode, centerY, siblingSpacingY, childrenMap, heightCache);
+        break;
+      }
+    }
 
     syncBoundTextPositions(clonedElements, elementMap);
     return clonedElements;
@@ -205,4 +260,88 @@ function layoutDescendants(
 
     currentY += subtreeHeight + siblingSpacingY;
   }
+}
+
+/**
+ * Vertical layout for Up-facing / Down-facing growth modes.
+ * Children are stacked vertically above or below the center node.
+ */
+function layoutVertical(
+  nodes: ElementDef[],
+  direction: 'up' | 'down',
+  centerNode: ElementDef,
+  centerX: number,
+  siblingSpacingY: number,
+  childrenMap: Map<string, ElementDef[]>,
+  heightCache: Map<string, number>,
+): void {
+  if (nodes.length === 0) return;
+
+  const side = direction === 'up' ? -1 : 1;
+  const totalWidth = nodes.reduce((a, n) => a + n.width, 0) + (nodes.length - 1) * 60;
+  let currentX = centerX - totalWidth / 2;
+
+  for (const node of nodes) {
+    const dynamicSpacingY = node.height / 2 + centerNode.height / 2 + 60;
+
+    node.x = currentX;
+    node.y = centerNode.y + centerNode.height / 2 + side * dynamicSpacingY - node.height / 2;
+
+    // Layout descendants vertically
+    layoutDescendantsVertical(node, direction, siblingSpacingY, childrenMap, new Set(), heightCache);
+
+    currentX += node.width + 60;
+  }
+}
+
+function layoutDescendantsVertical(
+  parent: ElementDef,
+  direction: 'up' | 'down',
+  siblingSpacingY: number,
+  childrenMap: Map<string, ElementDef[]>,
+  visited: Set<string>,
+  heightCache: Map<string, number>,
+): void {
+  if (visited.has(parent.id)) return;
+  visited.add(parent.id);
+
+  const children = childrenMap.get(parent.id) || [];
+  if (children.length === 0) return;
+
+  const side = direction === 'up' ? -1 : 1;
+  const totalWidth = children.reduce((a, c) => a + c.width, 0) + (children.length - 1) * 60;
+  let currentX = parent.x + parent.width / 2 - totalWidth / 2;
+  const dynamicSpacingY = parent.height / 2 + 60;
+
+  for (const child of children) {
+    child.x = currentX;
+    child.y = parent.y + parent.height / 2 + side * dynamicSpacingY - child.height / 2;
+
+    layoutDescendantsVertical(child, direction, siblingSpacingY, childrenMap, new Set(visited), heightCache);
+
+    currentX += child.width + 60;
+  }
+}
+
+/**
+ * Radial layout: distribute children in a circle around the center node.
+ */
+function layoutRadial(
+  nodes: ElementDef[],
+  centerNode: ElementDef,
+  centerX: number,
+  centerY: number,
+  childrenMap: Map<string, ElementDef[]>,
+  heightCache: Map<string, number>,
+): void {
+  if (nodes.length === 0) return;
+
+  const radius = 200;
+  const angleStep = (2 * Math.PI) / nodes.length;
+
+  nodes.forEach((node, i) => {
+    const angle = i * angleStep - Math.PI / 2; // Start from top
+    node.x = centerX + radius * Math.cos(angle) - node.width / 2;
+    node.y = centerY + radius * Math.sin(angle) - node.height / 2;
+  });
 }

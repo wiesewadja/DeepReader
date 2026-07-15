@@ -2,9 +2,9 @@ import type { PromptModule } from '../types.js';
 
 export const diagramPrompt: PromptModule = {
   id: 'diagram.excalidraw',
-  version: '1.1.0',
+  version: '1.2.0',
   name: 'Excalidraw 图形生成',
-  description: '生成丰富多彩、现代视觉审美的 Excalidraw 图形',
+  description: '生成丰富多彩、现代视觉审美的 Excalidraw 图形（支持 Lucide 图标）',
   metadata: {
     category: 'auxiliary',
     tokenEstimate: 2000,
@@ -43,14 +43,15 @@ export const diagramPrompt: PromptModule = {
 | 自由发散词、平级无层级关联词（无父子结构，非思维导图/脑图） | "radial" | 卫星环形均分布局（相邻卫星按关系拓扑邻近） |
 | SWOT分析、四象限、2x2对比、优劣交叉分析 | "matrix" | 带有十字分割虚线坐标轴的四象限网格 |
 
-## 多彩现代色板与填充纹理（必须使用 semanticColor 属性表达颜色语义）
-不要硬编码十六进制色值。系统会根据你指定的 semanticColor 自动渲染适配 Light/Dark 主题的优雅低饱和「雾霭柔彩」配色，全部为实心（solid）填充：
-- primary: 主流程、主节点（柔和靛蓝色，实心填充，用于核心主干节点）
-- emphasis: 重点、起点、关键决策（柔和玫红色，实心填充，用于强调或根节点）
-- success: 成功、终点、结论（柔和薄荷绿，实心填充，用于最终结果节点）
-- warning: 警告、备选、冲突（柔和琥珀橘，实心填充，用于分支对比或需注意的节点）
-- highlight: 高亮、注释、特例（柔和薰衣草紫，实心填充，用于补充标注或重点高亮节点）
-- neutral: 默认、普通分类节点（柔和雾灰色，实心填充，用于辅助细节/说明要点）
+## 手绘风格色板（必须使用 semanticColor 属性表达颜色语义）
+不要硬编码十六进制色值。系统会根据你指定的 semanticColor 自动渲染手绘风格配色：
+温暖米色背景 + 黑色粗边框 + 鲜艳填充 + 手绘粗糙感，全部为实心（solid）填充：
+- primary: 主流程、主节点（青色/蓝绿，实心填充，用于核心主干节点）
+- emphasis: 重点、起点、关键决策（橙色/珊瑚，实心填充，用于强调或根节点）
+- success: 成功、终点、结论（绿色，实心填充，用于最终结果节点）
+- warning: 警告、备选、冲突（黄色/琥珀，实心填充，用于分支对比或需注意的节点）
+- highlight: 高亮、注释、特例（紫色，实心填充，用于补充标注或重点高亮节点）
+- neutral: 默认、普通分类节点（浅灰色，实心填充，用于辅助细节/说明要点）
 
 ## 形状语义
 | 概念类型 | 形状 |
@@ -65,10 +66,55 @@ export const diagramPrompt: PromptModule = {
 | 时间线标记 | 小 ellipse 10-20px |
 
 ## 关系连接与性能优化规则
-- **节点数量与信息密度平衡**：为了加快图表生成速度，节点数应控制在 **8-15 个**。但同时必须确保图表信息的可用性与关键知识密度，**严禁为了减少节点而删减核心逻辑**。应当通过**“合并同类项/富文本节点”**的方式：将次要细节和关联要点以短语或换行列表的形式写入主节点的 \`text\` 中（系统会自动计算多行文字并安全拉高容器），而不是为每个琐碎细节创建单独的子节点。
+- **节点数量与信息密度平衡**：为了加快图表生成速度，节点数应控制在 **8-15 个**。但同时必须确保图表信息的可用性与关键知识密度，**严禁为了减少节点而删减核心逻辑**。应当通过**"合并同类项/富文本节点"**的方式：将次要细节和关联要点以短语或换行列表的形式写入主节点的 \`text\` 中（系统会自动计算多行文字并安全拉高容器），而不是为每个琐碎细节创建单独的子节点。
 - 连线的 x/y 坐标和 points 会被系统自动计算为元素边缘交点，不要手动计算。
 - 你必须提供正确的 startBinding 和 endBinding。所有关系必须通过 arrow 显式连接。
 - 重点：不要输出冗余字段！在 startBinding/endBinding 中只需输出 elementId 字段（系统会自动处理 gap 和 focus，无需输出它们）。不要输出 strokeColor、backgroundColor、opacity、roughness、fontFamily 等默认属性，由系统渲染器统一处理，以极大地减少输出 token，提升绘图速度！
+
+## 图标语义匹配（可选，仅用于增强视觉表达）
+对于关键节点，你可以添加语义匹配的图标来增强视觉表达。图标会自动从 Lucide 库加载并放置在节点内部左侧。
+
+### 可用图标分类
+| 图标名 | 语义含义 | 适用场景 |
+|--------|----------|----------|
+| book | 阅读、学习、知识 | 书籍、笔记、学习相关 |
+| brain | 思考、认知、智能 | 思维、脑力、智能相关 |
+| lightbulb | 创意、灵感、想法 | 创新、点子、启发相关 |
+| target | 目标、焦点、目的 | 目标设定、重点标注 |
+| check-circle | 完成、确认、成功 | 任务完成、验证通过 |
+| alert-circle | 警告、注意、问题 | 风险提示、注意事项 |
+| users | 团队、协作、人群 | 多人、团队协作 |
+| database | 数据、存储、持久化 | 数据库、数据管理 |
+| code | 代码、开发、技术 | 编程、开发相关 |
+| zap | 快速、执行、动作 | 快速操作、执行步骤 |
+| eye | 查看、观察、视觉 | 检查、审查、视觉相关 |
+| link | 连接、关系、关联 | 关系、链接、依赖 |
+| file-text | 文档、内容、文本 | 文档、笔记、内容 |
+| calendar | 时间、日期、计划 | 时间相关、日程安排 |
+| star | 重点、优秀、推荐 | 重点标注、推荐内容 |
+
+### 图标使用规则
+1. **可选字段**：icon 字段是可选的，不添加图标完全合法
+2. **语义匹配**：图标必须与节点内容有语义关联
+3. **位置选择**：
+   - \`inside\`（默认）：图标在节点内部左侧，与文本同行
+   - \`left\`：图标在节点左侧外部
+   - \`top-right\`：图标在节点右上角
+   - \`above\`：图标在节点上方
+4. **数量控制**：整个图表最多添加 5-8 个图标，避免视觉混乱
+
+### 图标字段格式
+\`\`\`json
+{
+  "id": "node1",
+  "type": "rectangle",
+  "text": "阅读笔记",
+  "icon": {
+    "name": "book",
+    "position": "inside"
+  }
+}
+\`\`\`
 
 ## 输出格式
 输出包含以下字段的 JSON 对象（严禁包含任何其他说明文字或 Markdown 标记）：
@@ -86,6 +132,7 @@ export const diagramPrompt: PromptModule = {
       "text": "本元素显示的文本",
       "fontSize": 20, // 选自 16 | 20 | 28 | 36 之一，可省略
       "semanticColor": "primary | emphasis | success | warning | highlight | neutral", // 必须指定！
+      "icon": { "name": "图标名（可选，见图标语义匹配章节）", "position": "inside | left | top-right | above（可选，默认 inside）" }, // 可选，用于增强视觉表达
       "startBinding": { "elementId": "起点节点ID" }, // arrow/line 必须配置（注意：只需包含 elementId，无需 gap 和 focus 字段！）
       "endBinding": { "elementId": "终点节点ID" } // arrow/line 必须配置
     }
@@ -100,6 +147,51 @@ export const diagramPrompt: PromptModule = {
 - The system will auto-wrap and expand the height of shape containers to fit your text automatically.
 - Choose font sizes from [16, 20, 28, 36] only.
 
+## Icon Semantic Matching (Optional, for Visual Enhancement)
+For key nodes, you can add semantically matched icons to enhance visual expression. Icons are automatically loaded from the Lucide library and placed inside the node on the left side.
+
+### Available Icon Categories
+| Icon Name | Semantic Meaning | Use Cases |
+|-----------|------------------|-----------|
+| book | Reading, learning, knowledge | Books, notes, learning related |
+| brain | Thinking, cognition, intelligence | Thinking, mental, AI related |
+| lightbulb | Creativity, inspiration, ideas | Innovation, ideas, inspiration |
+| target | Goal, focus, purpose | Goal setting, focus points |
+| check-circle | Complete, confirm, success | Task done, verified, passed |
+| alert-circle | Warning, attention, issue | Risk alerts, precautions |
+| users | Team, collaboration, people | Multi-person, teamwork |
+| database | Data, storage, persistence | Database, data management |
+| code | Code, development, tech | Programming, development |
+| zap | Fast, execute, action | Quick actions, execution steps |
+| eye | View, observe, visual | Inspection, review, visual |
+| link | Connect, relation, link | Relationships, connections |
+| file-text | Document, content, text | Documents, notes, content |
+| calendar | Time, date, plan | Time-related, scheduling |
+| star | Key point, excellent, recommended | Key points, recommendations |
+
+### Icon Usage Rules
+1. **Optional Field**: The icon field is optional; diagrams without icons are fully valid
+2. **Semantic Matching**: Icons must have semantic relevance to the node content
+3. **Position Selection**:
+   - \`inside\` (default): Icon inside the node on the left, same line as text
+   - \`left\`: Icon outside on the left side
+   - \`top-right\`: Icon at the top-right corner
+   - \`above\`: Icon above the node
+4. **Quantity Control**: Maximum 5-8 icons per diagram to avoid visual clutter
+
+### Icon Field Format
+\`\`\`json
+{
+  "id": "node1",
+  "type": "rectangle",
+  "text": "Reading Notes",
+  "icon": {
+    "name": "book",
+    "position": "inside"
+  }
+}
+\`\`\`
+
 ## Output Format
 Output strict JSON object with "filename", "layout", and "elements" fields. No markdown wrappers or conversational filler:
 {
@@ -112,6 +204,7 @@ Output strict JSON object with "filename", "layout", and "elements" fields. No m
       "x": number, "y": number, "width": number, "height": number,
       "text": "text content",
       "semanticColor": "primary | emphasis | success | warning | highlight | neutral",
+      "icon": { "name": "icon_name (optional, see Icon Semantic Matching)", "position": "inside | left | top-right | above (optional, default inside)" },
       "startBinding": { "elementId": "origin_node_id" },
       "endBinding": { "elementId": "target_node_id" }
     }
