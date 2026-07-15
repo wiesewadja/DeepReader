@@ -7,7 +7,7 @@
 
 import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
 
-const PDF_FILE = '69fe2a55b93bb0732b1fe33c_The-Founders-Playbook-05062026_v3 (1).pdf';
+const PDF_FILE = '设计原本.pdf';
 
 export default {
 	id: 'pdf-parsing',
