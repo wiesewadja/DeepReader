@@ -112,16 +112,17 @@ export default {
 				const state = await evalObsidian(`(() => {
 					const svc = app.plugins.plugins["deepreader-dev"].readingModeService;
 					const paginator = svc.paginator;
+					const isReady = paginator?.isReady ?? false;
 					const totalPages = paginator?.getTotalPages?.() ?? 0;
-					return { hasPaginator: !!paginator, totalPages };
+					return { hasPaginator: !!paginator, isReady, totalPages };
 				})()`);
 				
-				if (state.hasPaginator && state.totalPages > 1) {
+				if (state.isReady && state.totalPages > 1) {
 					ready = true;
 					break;
 				}
 				
-				if (i % 10 === 9) log?.warn?.(`    等待中… (${(i + 1) * 0.5}s) totalPages=${state.totalPages}`);
+				if (i % 10 === 9) log?.warn?.(`    等待中… (${(i + 1) * 0.5}s) isReady=${state.isReady} totalPages=${state.totalPages}`);
 				await new Promise(r => setTimeout(r, 500));
 			}
 			if (ready) {
