@@ -2,9 +2,9 @@
  * 视觉风格处理器。
  *
  * 把 LLM 输出的语义化元素（带 semanticColor）转换为具体视觉属性：
- * - 节点：低饱和度柔色彩色板 + solid 实填充 + 细描边
- * - 连线/箭头：统一柔灰色，降低视觉噪音
- * - 背景：冷灰/深蓝黑
+ * - 节点：手绘风格配色 + solid 实填充 + 粗描边 + 手绘粗糙感
+ * - 连线/箭头：深灰色 + 粗线条 + 手绘感
+ * - 背景：温暖米色（浅色）/ 深蓝黑（深色）
  *
  * 入口：applyDiagramStyle
  */
@@ -49,8 +49,8 @@ function styleNodes(elements: ElementDef[], theme: ObsidianTheme): ElementDef[] 
         strokeColor: col.stroke,
         backgroundColor: col.fill,
         roughness: col.roughness,
-        strokeWidth: col.strokeWidth,
-        fillStyle: 'solid',
+        strokeWidth: el.customData?.isBoundary ? 1 : col.strokeWidth,
+        fillStyle: el.customData?.isBoundary ? 'hachure' : 'solid',
       });
     } else if (isText) {
       result.push({ ...el });
@@ -72,13 +72,25 @@ function styleConnectors(
     const isLine = el.type === 'line';
     if (!isArrow && !isLine) continue;
 
-    result.push({
-      ...el,
-      strokeColor: connStyle.stroke,
-      strokeWidth: connStyle.strokeWidth,
-      roughness: 0,
-      opacity: el.opacity ?? 90,
-    });
+    // crossLink 样式：虚线 + 细线 + 半透明
+    if (el.customData?.isCrossLink) {
+      result.push({
+        ...el,
+        strokeColor: connStyle.stroke,
+        strokeWidth: 1,
+        strokeStyle: 'dashed',
+        roughness: 1,
+        opacity: 60,
+      });
+    } else {
+      result.push({
+        ...el,
+        strokeColor: connStyle.stroke,
+        strokeWidth: connStyle.strokeWidth,
+        roughness: 1,
+        opacity: el.opacity ?? 90,
+      });
+    }
   }
   return result;
 }

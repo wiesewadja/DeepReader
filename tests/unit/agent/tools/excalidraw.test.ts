@@ -893,3 +893,148 @@ describe('customData injection', () => {
     expect(root.customData?.depth).toBe(0);
   });
 });
+
+describe('boundary generation', () => {
+  it('generates boundary for Level-1 subtrees', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child2', type: 'rectangle', x: 200, y: 100, width: 100, height: 50 }),
+      makeElement({ id: 'arrow1', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child1', gap: 2, focus: 0 },
+      }),
+      makeElement({ id: 'arrow2', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child2', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const boundary = result.elements.find(e => e.id === 'boundary-child1');
+
+    expect(boundary).toBeDefined();
+    expect(boundary?.type).toBe('rectangle');
+    expect(boundary?.customData?.isBoundary).toBe(true);
+    expect(boundary?.customData?.parentId).toBe('child1');
+    expect(boundary?.fillStyle).toBe('hachure');
+    expect(boundary?.strokeWidth).toBe(1);
+  });
+
+  it('boundary includes 20px padding around subtree', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 200, y: 50, width: 100, height: 50 }),
+      makeElement({ id: 'grandchild1', type: 'rectangle', x: 400, y: 50, width: 80, height: 40 }),
+      makeElement({ id: 'arrow1', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child1', gap: 2, focus: 0 },
+      }),
+      makeElement({ id: 'arrow2', type: 'arrow',
+        startBinding: { elementId: 'child1', gap: 2, focus: 0 },
+        endBinding: { elementId: 'grandchild1', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const boundary = result.elements.find(e => e.id === 'boundary-child1');
+
+    expect(boundary).toBeDefined();
+    // child1 at x=200, grandchild1 at x=400, width=80 → maxX=480
+    // boundary x = 200-20 = 180, width = 480-180+20 = 320
+    expect(boundary?.x).toBe(180);
+    expect(boundary?.width).toBe(320);
+  });
+
+  it('does not generate boundary for depth=0 root nodes', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const boundary = result.elements.find(e => e.id?.startsWith('boundary-'));
+
+    expect(boundary).toBeUndefined();
+  });
+
+  it('generates separate boundaries for each Level-1 subtree', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child2', type: 'rectangle', x: 200, y: 200, width: 100, height: 50 }),
+      makeElement({ id: 'arrow1', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child1', gap: 2, focus: 0 },
+      }),
+      makeElement({ id: 'arrow2', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child2', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const boundaries = result.elements.filter(e => e.id?.startsWith('boundary-'));
+
+    expect(boundaries.length).toBe(2);
+    expect(boundaries.some(b => b.customData?.parentId === 'child1')).toBe(true);
+    expect(boundaries.some(b => b.customData?.parentId === 'child2')).toBe(true);
+  });
+});
+
+describe('crossLinks styling', () => {
+  it('applies dashed style to crossLink arrows', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'node1', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'node2', type: 'rectangle', x: 200, y: 200, width: 100, height: 50 }),
+      makeElement({ id: 'crossLink1', type: 'arrow',
+        startBinding: { elementId: 'node1', gap: 2, focus: 0 },
+        endBinding: { elementId: 'node2', gap: 2, focus: 0 },
+        customData: { isCrossLink: true },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const crossLink = result.elements.find(e => e.id === 'crossLink1');
+
+    expect(crossLink).toBeDefined();
+    expect(crossLink?.strokeStyle).toBe('dashed');
+    expect(crossLink?.strokeWidth).toBe(1);
+    expect(crossLink?.opacity).toBe(60);
+  });
+
+  it('does not apply dashed style to regular branch arrows', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'branchArrow', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const branchArrow = result.elements.find(e => e.id === 'branchArrow');
+
+    expect(branchArrow).toBeDefined();
+    expect(branchArrow?.strokeStyle).not.toBe('dashed');
+    expect(branchArrow?.strokeWidth).not.toBe(1);
+  });
+
+  it('preserves crossLink customData after styling', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'node1', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'node2', type: 'rectangle', x: 200, y: 200, width: 100, height: 50 }),
+      makeElement({ id: 'crossLink1', type: 'arrow',
+        startBinding: { elementId: 'node1', gap: 2, focus: 0 },
+        endBinding: { elementId: 'node2', gap: 2, focus: 0 },
+        customData: { isCrossLink: true, source: 'analysis' },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const crossLink = result.elements.find(e => e.id === 'crossLink1');
+
+    expect(crossLink?.customData?.isCrossLink).toBe(true);
+    expect(crossLink?.customData?.source).toBe('analysis');
+  });
+});

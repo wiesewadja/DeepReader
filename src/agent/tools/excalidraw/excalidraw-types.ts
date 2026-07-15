@@ -51,6 +51,8 @@ export interface ElementDef {
   customData?: Record<string, any>;
   /** 可选：图标定义，用于增强节点语义表达 */
   icon?: IconDef;
+  /** 可选：圆角配置 */
+  roundness?: null | { type: number };
 }
 
 export type DiagramLayoutType =

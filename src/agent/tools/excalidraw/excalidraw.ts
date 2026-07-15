@@ -544,6 +544,99 @@ function injectCustomData(elements: ElementDef[]): ElementDef[] {
 }
 
 /**
+ * 为 Level-1 子树生成 boundary 边界装饰矩形。
+ *
+ * 规则：
+ * - 仅处理 depth=1 的节点（Level-1 子节点）及其子树
+ * - boundary 包围该子树所有节点的 bounding box + 20px padding
+ * - 样式：strokeWidth: 1, fillStyle: 'hachure', roundness: 8
+ * - boundary 矩形插入到 elements 数组最前面（Z-order 最低）
+ *
+ * @param elements 已注入 customData 的元素数组
+ * @returns 添加 boundary 后的元素数组
+ */
+function generateBoundaries(elements: ElementDef[]): ElementDef[] {
+  // 收集所有节点（排除 arrow/line/text-with-container）
+  const nodeIds = new Set<string>();
+  for (const el of elements) {
+    if (['rectangle', 'ellipse', 'diamond'].includes(el.type)) {
+      nodeIds.add(el.id);
+    }
+  }
+
+  // 构建 childrenMap（父→子）
+  const childrenMap = new Map<string, string[]>();
+  for (const el of elements) {
+    if (el.type === 'arrow' || el.type === 'line') {
+      const start = el.startBinding?.elementId;
+      const end = el.endBinding?.elementId;
+      if (start && end && nodeIds.has(start) && nodeIds.has(end)) {
+        if (!childrenMap.has(start)) childrenMap.set(start, []);
+        childrenMap.get(start)!.push(end);
+      }
+    }
+  }
+
+  // 找到 depth=1 的 Level-1 节点
+  const level1Nodes = elements.filter(el =>
+    nodeIds.has(el.id) && el.customData?.depth === 1
+  );
+
+  if (level1Nodes.length === 0) return elements;
+
+  const boundaries: ElementDef[] = [];
+  const BOUNDARY_PADDING = 20;
+
+  for (const l1Node of level1Nodes) {
+    // 收集该子树所有节点
+    const subtreeNodes: ElementDef[] = [l1Node];
+    const queue = [l1Node.id];
+    while (queue.length > 0) {
+      const parentId = queue.shift()!;
+      for (const childId of childrenMap.get(parentId) || []) {
+        const childEl = elements.find(el => el.id === childId);
+        if (childEl) {
+          subtreeNodes.push(childEl);
+          queue.push(childId);
+        }
+      }
+    }
+
+    // 计算 bounding box
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const node of subtreeNodes) {
+      minX = Math.min(minX, node.x);
+      minY = Math.min(minY, node.y);
+      maxX = Math.max(maxX, node.x + (node.width || 0));
+      maxY = Math.max(maxY, node.y + (node.height || 0));
+    }
+
+    // 生成 boundary 矩形
+    const boundary: ElementDef = {
+      id: `boundary-${l1Node.id}`,
+      type: 'rectangle',
+      x: minX - BOUNDARY_PADDING,
+      y: minY - BOUNDARY_PADDING,
+      width: maxX - minX + BOUNDARY_PADDING * 2,
+      height: maxY - minY + BOUNDARY_PADDING * 2,
+      strokeColor: l1Node.semanticColor || '#6B7280',
+      backgroundColor: l1Node.semanticColor || '#6B7280',
+      fillStyle: 'hachure',
+      strokeWidth: 1,
+      roughness: 1,
+      roundness: { type: 3 },
+      opacity: 40,
+      customData: { isBoundary: true, parentId: l1Node.id },
+    };
+
+    boundaries.push(boundary);
+  }
+
+  // boundary 插入到最前面（Z-order 最低）
+  return [...boundaries, ...elements];
+}
+
+/**
  * 构建完整的 Excalidraw JSON 文件内容。
  * 
  * @param elements 输入的元素定义数组
@@ -570,12 +663,15 @@ function buildExcalidrawJSON(
   // 0.5 Inject MindMapBuilder-compatible customData markers (isBranch, depth, isAdditionalRoot)
   const enriched = injectCustomData(resolved);
 
+  // 0.6 Generate boundary decorations for Level-1 subtrees
+  const withBoundaries = generateBoundaries(enriched);
+
   // 1. Resolve Obsidian theme
   const theme = resolveObsidianTheme(context);
 
   // 2. Apply style processor
   const { elements: styledElements, viewBackgroundColor } = applyDiagramStyle({
-    elements: enriched,
+    elements: withBoundaries,
     layout,
     theme,
   });
