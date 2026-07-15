@@ -2,7 +2,6 @@
 /**
  * generate.mjs — generate 子命令
  */
-import { spawn } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -42,7 +41,7 @@ export async function main({ bookTitle, vaultPath }) {
   await spawnPI({
     systemPrompt, vault,
     promptMessage: `为书籍《${bookTitle}》（bookId=${bookId}）生成黄金测试题集。
-步骤：1. 读取 .obsidian/plugins/deepreader/pageindex/${bookId}/tree.json 2. 读取 .obsidian/plugins/deepreader/pageindex/${bookId}/book-meta.json 3. 从不同卷/部分抽样 8-10 个章节 4. 生成恰好 20 道测试题
+ 步骤：1. 读取 .obsidian/plugins/deepreader-dev/pageindex/${bookId}/tree.json 2. 读取 .obsidian/plugins/deepreader-dev/pageindex/${bookId}/book-meta.json 3. 从不同卷/部分抽样 8-10 个章节 4. 生成恰好 20 道测试题
 写入 .eval/datasets/${bookTitle}/golden.json`,
   });
 

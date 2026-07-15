@@ -82,3 +82,18 @@ opencode.json
 .mcp.json
 .teach
 .workbuddy
+
+# Local working / personal docs & generated bundles（非源码，勿提交）
+.wayfinder/
+docs/wayfinder/
+docs/marketing/
+learning-records/
+lessons/
+specs/
+MISSION.md
+NOTES.md
+RESOURCES.md
+assets/
+
+# Eval build artifact（由 build-eval-entry.mjs 重新生成）
+scripts/eval/search-bundle.cjs

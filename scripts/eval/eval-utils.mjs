@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 
 import { resolve, join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
+import { spawn } from 'child_process';
 
 const _require = createRequire(import.meta.url);
 
@@ -356,9 +357,15 @@ export function spawnPI({ PI_BIN, systemPrompt, vault, promptMessage, tools, tim
         } catch {}
       }
     });
-    child.stderr.on('data', () => {});
+    child.stderr.on('data', d => { process.stderr.write(d.toString('utf-8')); });
     child.on('error', err => { if (!settled) { settled = true; clearTimeout(timer); reject(new EvalError(`PI 启动失败: ${err.message}`, 'ENOENT')); } });
-    child.on('close', () => { if (!settled) { settled = true; clearTimeout(timer); resolve({ done: true }); } });
+    child.on('close', code => {
+      if (!settled) {
+        settled = true; clearTimeout(timer);
+        if (code !== 0) reject(new EvalError(`PI Agent 异常退出（code=${code}）`, 'EPIPE'));
+        else resolve({ done: true });
+      }
+    });
 
     setTimeout(() => {
       child.stdin.write(JSON.stringify({ type: 'prompt', message: promptMessage }) + '\n');
