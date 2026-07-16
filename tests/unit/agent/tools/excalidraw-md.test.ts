@@ -94,7 +94,7 @@ describe('buildExcalidrawMd — 属性 100% 保留（UI 不变坏的保证）', 
   });
 
   it('appState（视口/缩放/背景色）保留', () => {
-    expect(roundtripped.appState.viewBackgroundColor).toBe('#f8fafc');
+    expect(roundtripped.appState.viewBackgroundColor).toBe('#FDF6E3'); // hand-drawn style beige background
     expect(roundtripped.appState.zoom).toEqual(file.appState.zoom);
   });
 

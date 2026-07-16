@@ -82,6 +82,7 @@ opencode.json
 .mcp.json
 .teach
 .workbuddy
+.opencode
 
 # Local working / personal docs & generated bundles（非源码，勿提交）
 .wayfinder/

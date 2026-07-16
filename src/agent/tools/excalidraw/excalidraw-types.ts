@@ -70,11 +70,21 @@ export interface LayoutScore {
   edgeCrossings: number;      // 边交叉数；Phase 1 固定返回 0
 }
 
+/** 思维导图生长方向 */
+export type GrowthMode =
+  | 'Right-Left'
+  | 'Right-facing'
+  | 'Left-facing'
+  | 'Radial'
+  | 'Up-Down'
+  | 'Up-facing'
+  | 'Down-facing';
+
 export interface LayoutOptions {
   columns?: number;                       // matrix: 列数
   direction?: 'horizontal' | 'vertical';  // flow / timeline
   spacing?: { x: number; y: number };     // 可选间距覆盖
-  growthMode?: string;                     // mind-map: 生长方向（Right-Left / Right-facing / Left-facing / Radial / Up-Down / Up-facing / Down-facing）
+  growthMode?: GrowthMode;                 // mind-map: 生长方向
 }
 
 export interface LayoutEngine {

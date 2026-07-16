@@ -30,17 +30,17 @@ describe('applyDiagramStyle', () => {
     const rect = result.elements.find(e => e.id === 'rect_1')!;
     const ellipse = result.elements.find(e => e.id === 'ellipse_1')!;
 
-    // light primary: stroke '#3b82f6', fill '#dbeafe'
-    expect(rect.strokeColor).toBe('#3b82f6');
-    expect(rect.backgroundColor).toBe('#dbeafe');
+    // light primary: stroke '#0E7490', fill '#CFFAFE' (hand-drawn style)
+    expect(rect.strokeColor).toBe('#0E7490');
+    expect(rect.backgroundColor).toBe('#CFFAFE');
     expect(rect.fillStyle).toBe('solid');
-    expect(rect.strokeWidth).toBe(1.5);
+    expect(rect.strokeWidth).toBe(2);
 
-    // light emphasis: stroke '#ec4899', fill '#fce7f3'
-    expect(ellipse.strokeColor).toBe('#ec4899');
-    expect(ellipse.backgroundColor).toBe('#fce7f3');
+    // light emphasis: stroke '#C2410C', fill '#FFEDD5' (hand-drawn style)
+    expect(ellipse.strokeColor).toBe('#C2410C');
+    expect(ellipse.backgroundColor).toBe('#FFEDD5');
 
-    expect(result.viewBackgroundColor).toBe('#f8fafc'); // light background
+    expect(result.viewBackgroundColor).toBe('#FDF6E3'); // hand-drawn style beige background
   });
 
   it('applies dark theme colors', () => {
@@ -54,10 +54,10 @@ describe('applyDiagramStyle', () => {
     });
 
     const rect = result.elements.find(e => e.id === 'rect_1')!;
-    // dark success: stroke '#34d399', fill '#064e3b'
-    expect(rect.strokeColor).toBe('#34d399');
-    expect(rect.backgroundColor).toBe('#064e3b');
-    expect(result.viewBackgroundColor).toBe('#0f172a'); // dark background
+    // dark success: stroke '#4ADE80', fill '#14532D' (hand-drawn style)
+    expect(rect.strokeColor).toBe('#4ADE80');
+    expect(rect.backgroundColor).toBe('#14532D');
+    expect(result.viewBackgroundColor).toBe('#1E293B'); // hand-drawn style dark background
   });
 
   it('styles connectors with unified color', () => {
@@ -80,10 +80,10 @@ describe('applyDiagramStyle', () => {
     });
 
     const arrow = result.elements.find(e => e.id === 'arrow_1')!;
-    // light connector: stroke '#94a3b8', strokeWidth 1.5
-    expect(arrow.strokeColor).toBe('#94a3b8');
-    expect(arrow.strokeWidth).toBe(1.5);
-    expect(arrow.roughness).toBe(0);
+    // light connector: stroke '#374151', strokeWidth 2 (hand-drawn style)
+    expect(arrow.strokeColor).toBe('#374151');
+    expect(arrow.strokeWidth).toBe(2);
+    expect(arrow.roughness).toBe(1);
     expect(arrow.opacity).toBe(90);
   });
 
@@ -115,9 +115,9 @@ describe('applyDiagramStyle', () => {
     });
 
     const rect = result.elements.find(e => e.id === 'rect_1')!;
-    // light neutral: stroke '#94a3b8', fill '#f1f5f9'
-    expect(rect.strokeColor).toBe('#94a3b8');
-    expect(rect.backgroundColor).toBe('#f1f5f9');
+    // light neutral: stroke '#374151', fill '#F3F4F6' (hand-drawn style)
+    expect(rect.strokeColor).toBe('#374151');
+    expect(rect.backgroundColor).toBe('#F3F4F6');
   });
 });
 

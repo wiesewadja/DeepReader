@@ -1,22 +1,5 @@
-import type { ElementDef, LayoutEngine, LayoutOptions } from '../excalidraw-types.js';
+import type { ElementDef, LayoutEngine, LayoutOptions, GrowthMode } from '../excalidraw-types.js';
 import { syncBoundTextPositions, shouldIgnoreInLayout } from './utils.js';
-
-/**
- * Growth modes for mind-map layout.
- * - Right-Left (default): Level-1 children alternate between right and left sides
- * - Right-facing: All Level-1 children go right
- * - Left-facing: All Level-1 children go left
- * - Radial: Center node + ring of Level-1 (like radial but with hierarchy)
- * - Up-Down / Up-facing / Down-facing: Vertical layouts
- */
-export type GrowthMode =
-  | 'Right-Left'
-  | 'Right-facing'
-  | 'Left-facing'
-  | 'Radial'
-  | 'Up-Down'
-  | 'Up-facing'
-  | 'Down-facing';
 
 /**
  * Left-right mind map layout with configurable growth mode.
@@ -31,7 +14,7 @@ export const MindMapLayout: LayoutEngine = {
     const centerX = 500;
     const centerY = 300;
     const siblingSpacingY = options?.spacing?.y ?? 80;
-    const growthMode: GrowthMode = (options?.growthMode as GrowthMode) ?? 'Right-Left';
+    const growthMode: GrowthMode = options?.growthMode ?? 'Right-Left';
 
     const clonedElements = elements.map(el => ({ ...el }));
     const elementMap = new Map<string, ElementDef>(clonedElements.map(el => [el.id, el]));

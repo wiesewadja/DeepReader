@@ -8,7 +8,7 @@
 import { log } from '../../../utils/logger.js';
 import { calculateViewport, edgeIntersection } from './excalidraw-geometry.js';
 import type { ToolExecutor, ToolContext } from '../types.js';
-import { type ElementDef, type DiagramLayoutType, FREE_TEXT_BG_SUFFIX } from './excalidraw-types.js';
+import { type ElementDef, type DiagramLayoutType, type GrowthMode, FREE_TEXT_BG_SUFFIX } from './excalidraw-types.js';
 
 import { arrangeWithFallback } from './excalidraw-layout.js';
 import { applyDiagramStyle } from './excalidraw-style-processor.js';
@@ -549,7 +549,7 @@ function injectCustomData(elements: ElementDef[]): ElementDef[] {
  * 规则：
  * - 仅处理 depth=1 的节点（Level-1 子节点）及其子树
  * - boundary 包围该子树所有节点的 bounding box + 20px padding
- * - 样式：strokeWidth: 1, fillStyle: 'hachure', roundness: 8
+ * - 样式：strokeWidth: 1, fillStyle: 'hachure', roundness: { type: 3 }（Excalidraw 最大圆角）
  * - boundary 矩形插入到 elements 数组最前面（Z-order 最低）
  *
  * @param elements 已注入 customData 的元素数组
@@ -588,17 +588,26 @@ function generateBoundaries(elements: ElementDef[]): ElementDef[] {
   const BOUNDARY_PADDING = 20;
 
   for (const l1Node of level1Nodes) {
-    // 收集该子树所有节点
+    // 收集该子树所有节点（含通过箭头连接的子节点）
     const subtreeNodes: ElementDef[] = [l1Node];
+    const subtreeIds = new Set([l1Node.id]);
     const queue = [l1Node.id];
     while (queue.length > 0) {
       const parentId = queue.shift()!;
       for (const childId of childrenMap.get(parentId) || []) {
         const childEl = elements.find(el => el.id === childId);
-        if (childEl) {
+        if (childEl && !subtreeIds.has(childId)) {
           subtreeNodes.push(childEl);
+          subtreeIds.add(childId);
           queue.push(childId);
         }
+      }
+    }
+
+    // 补充：绑定在子树节点内的 text 节点（如标签），确保 boundary 不裁切文本
+    for (const el of elements) {
+      if (el.type === 'text' && el.containerId && subtreeIds.has(el.containerId)) {
+        subtreeNodes.push(el);
       }
     }
 
@@ -651,7 +660,7 @@ function buildExcalidrawJSON(
   context?: ToolContext,
   isAlreadyResolved = false,
   icons: ProcessedIcon[] = [],
-  growthMode?: string,
+  growthMode?: GrowthMode,
 ): ExcalidrawFile {
   // 0. Preprocess element sizes for text fitting BEFORE running the layout engine.
   const preprocessed = isAlreadyResolved ? elements : preprocessElementSizes(elements);
@@ -1103,7 +1112,7 @@ export async function saveExcalidrawFile(
   context: ToolContext,
   isAlreadyResolved = false,
   icons: ProcessedIcon[] = [],
-  growthMode?: string,
+  growthMode?: GrowthMode,
 ): Promise<{ filepath: string; embed: string }> {
   // 1. 构建完整 JSON（含图标 image 元素）
   const excalidrawFile = buildExcalidrawJSON(elements, layout, context, isAlreadyResolved, icons, growthMode);
@@ -1129,7 +1138,7 @@ export const excalidrawTool: ToolExecutor = {
       filename: string;
       elements: ElementDef[];
       layout?: DiagramLayoutType;
-      growthMode?: string;
+      growthMode?: GrowthMode;
     };
 
     if (!filename || !elements || !Array.isArray(elements) || elements.length === 0) {
