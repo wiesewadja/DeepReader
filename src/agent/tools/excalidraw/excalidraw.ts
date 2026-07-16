@@ -14,7 +14,6 @@ import { arrangeWithFallback } from './excalidraw-layout.js';
 import { applyDiagramStyle } from './excalidraw-style-processor.js';
 import { PALETTE, TEXT_COLORS } from './excalidraw-organic-palette.js';
 import { buildExcalidrawMd } from './excalidraw-md.js';
-import { processIcons, type ProcessedIcon } from './excalidraw-icon-processor.js';
 
 /** 完整的 .excalidraw JSON 结构 */
 interface ExcalidrawFile {
@@ -659,7 +658,6 @@ function buildExcalidrawJSON(
   layout?: DiagramLayoutType,
   context?: ToolContext,
   isAlreadyResolved = false,
-  icons: ProcessedIcon[] = [],
   growthMode?: GrowthMode,
 ): ExcalidrawFile {
   // 0. Preprocess element sizes for text fitting BEFORE running the layout engine.
@@ -691,9 +689,7 @@ function buildExcalidrawJSON(
     elMap.set(el.id, el);
   }
 
-  // Icon lookup (by parent element id) + Excalidraw files map for embedded SVGs
-  const iconMap = new Map<string, ProcessedIcon>();
-  for (const ic of icons) iconMap.set(ic.elementId, ic);
+  // Excalidraw files map for embedded assets (kept empty; no embedded icons/images)
   const files: Record<string, unknown> = {};
 
   // Pre-scan for all arrows/lines to build bidirectional shape references
@@ -816,26 +812,6 @@ function buildExcalidrawJSON(
       }
       result.push(shapeEl);
     }
-
-    // Append icon as an Excalidraw `image` element (embedded SVG), if present.
-    // Icons are added AFTER layout, so they never affect layout/collision math.
-    const icon = iconMap.get(el.id);
-    if (icon) {
-      // Generate a short unique fileId (Excalidraw expects 21-22 char base62)
-      const fileId = crypto.randomUUID().replace(/-/g, '').substring(0, 22);
-      const coloredSvg = icon.svg.replace(/currentColor/g, icon.color ?? '#1f2937');
-      const dataUrl = `data:image/svg+xml;base64,${toBase64(coloredSvg)}`;
-      files[fileId] = {
-        mimeType: 'image/svg+xml',
-        fileId: fileId,
-        dataURL: dataUrl,
-        created: now(),
-        size: { width: icon.size, height: icon.size },
-        hasSVGwithBitmap: false,
-        pdfPageViewProps: null,
-      };
-      result.push(toIconImageElement(el.id, icon, fileId));
-    }
   }
 
   result.sort((a, b) => getZOrder(a) - getZOrder(b));
@@ -855,74 +831,6 @@ function buildExcalidrawJSON(
       zoom: viewport.zoom,
     },
     files,
-  };
-}
-
-/**
- * 将 SVG 字符串编码为 base64（浏览器 + Node 全局 btoa 均可用，
- * 避免直接 import Node 核心模块 Buffer，符合移动端约束）。
- */
-function toBase64(svg: string): string {
-  if (typeof btoa === 'function') {
-    return btoa(unescape(encodeURIComponent(svg)));
-  }
-  // 兜底：逐字符手动 UTF-8 → base64 编码（无 btoa 环境）
-  const bytes = new Uint8Array([...unescape(encodeURIComponent(svg))].map(c => c.charCodeAt(0)));
-  let binary = '';
-  for (const b of bytes) binary += String.fromCharCode(b);
-  // 同样使用 btoa 逻辑，但作为最终兜底若仍无 btoa 则用字符映射
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let result = '';
-  for (let i = 0; i < binary.length; i += 3) {
-    const a = binary.charCodeAt(i);
-    const b = i + 1 < binary.length ? binary.charCodeAt(i + 1) : 0;
-    const c = i + 2 < binary.length ? binary.charCodeAt(i + 2) : 0;
-    result += chars[a >> 2];
-    result += chars[((a & 3) << 4) | (b >> 4)];
-    result += i + 1 < binary.length ? chars[((b & 15) << 2) | (c >> 6)] : '=';
-    result += i + 2 < binary.length ? chars[c & 63] : '=';
-  }
-  return result;
-}
-
-/**
- * 构建 Excalidraw `image` 元素，嵌入图标 SVG（dataURL 已在父作用域写入 files）。
- */
-function toIconImageElement(
-  parentId: string,
-  icon: ProcessedIcon,
-  fileId: string,
-): ExcalidrawElement {
-  return {
-    id: `${parentId}_icon`,
-    type: 'image',
-    x: icon.x,
-    y: icon.y,
-    width: icon.size,
-    height: icon.size,
-    angle: 0,
-    strokeColor: 'transparent',
-    backgroundColor: 'transparent',
-    fillStyle: 'solid',
-    strokeWidth: 1,
-    strokeStyle: 'solid',
-    roughness: 0,
-    opacity: 100,
-    groupIds: [],
-    frameId: null,
-    roundness: null,
-    seed: nextSeed(),
-    version: 1,
-    versionNonce: now(),
-    isDeleted: false,
-    boundElements: null,
-    updated: now(),
-    link: null,
-    locked: false,
-    status: 'saved',
-    fileId,
-    scale: [1, 1],
-    customData: null,
   };
 }
 
@@ -1114,11 +1022,10 @@ export async function saveExcalidrawFile(
   layout: DiagramLayoutType | undefined,
   context: ToolContext,
   isAlreadyResolved = false,
-  icons: ProcessedIcon[] = [],
   growthMode?: GrowthMode,
 ): Promise<{ filepath: string; embed: string }> {
-  // 1. 构建完整 JSON（含图标 image 元素）
-  const excalidrawFile = buildExcalidrawJSON(elements, layout, context, isAlreadyResolved, icons, growthMode);
+  // 1. 构建完整 JSON
+  const excalidrawFile = buildExcalidrawJSON(elements, layout, context, isAlreadyResolved, growthMode);
 
   // 2. 写入文件系统
   const dir = 'Excalidraw';
@@ -1174,15 +1081,8 @@ export const excalidrawTool: ToolExecutor = {
       const connectorWarnings = detectConnectorNodeOverlaps(resolved);
       const semanticWarnings = validateSemantics(resolved);
 
-      // 1.5 图标处理：加载 SVG 并计算位置（异步，依赖 CDN；
-      //     加载失败的元素静默跳过，不影响其余图表生成）
-      const iconDefs = await processIcons(resolved, resolveObsidianTheme(context));
-      if (iconDefs.length > 0) {
-        log('info', `[excalidraw] ${iconDefs.length} icons prepared`);
-      }
-
       // 2. 写入文件（透传 isAlreadyResolved = true，避免重复计算布局）
-      const { filepath, embed } = await saveExcalidrawFile(filename, resolved, layout, context, true, iconDefs, growthMode);
+      const { filepath, embed } = await saveExcalidrawFile(filename, resolved, layout, context, true, growthMode);
       log('info', `Excalidraw 图形已生成: ${filepath}`);
 
       const allWarnings = [...warnings, ...textWarnings, ...connectorWarnings, ...semanticWarnings];

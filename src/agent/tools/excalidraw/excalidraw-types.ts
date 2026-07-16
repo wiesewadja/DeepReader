@@ -2,25 +2,6 @@
  * Excalidraw semantic layout types.
  */
 
-/**
- * 图标放置位置
- */
-export type IconPosition =
-  | 'inside'     // 节点内部左侧
-  | 'left'       // 节点左侧外部
-  | 'top-right'  // 节点右上角
-  | 'above';     // 节点上方
-
-/**
- * 图标定义
- */
-export interface IconDef {
-  /** 图标名称（如 heart, star, user） */
-  name: string;
-  /** 图标放置位置 */
-  position: IconPosition;
-}
-
 export interface ElementDef {
   id: string;
   type: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'line' | 'text' | 'freedraw';
@@ -49,8 +30,6 @@ export interface ElementDef {
   groupIds?: string[];
   semanticColor?: 'primary' | 'emphasis' | 'success' | 'warning' | 'highlight' | 'neutral';
   customData?: Record<string, any>;
-  /** 可选：图标定义，用于增强节点语义表达 */
-  icon?: IconDef;
   /** 可选：圆角配置 */
   roundness?: null | { type: number };
 }

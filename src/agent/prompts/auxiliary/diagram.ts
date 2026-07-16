@@ -71,51 +71,6 @@ export const diagramPrompt: PromptModule = {
 - 你必须提供正确的 startBinding 和 endBinding。所有关系必须通过 arrow 显式连接。
 - 重点：不要输出冗余字段！在 startBinding/endBinding 中只需输出 elementId 字段（系统会自动处理 gap 和 focus，无需输出它们）。不要输出 strokeColor、backgroundColor、opacity、roughness、fontFamily 等默认属性，由系统渲染器统一处理，以极大地减少输出 token，提升绘图速度！
 
-## 图标语义匹配（可选，仅用于增强视觉表达）
-对于关键节点，你可以添加语义匹配的图标来增强视觉表达。图标会自动从 Lucide 库加载并放置在节点内部左侧。
-
-### 可用图标分类
-| 图标名 | 语义含义 | 适用场景 |
-|--------|----------|----------|
-| book | 阅读、学习、知识 | 书籍、笔记、学习相关 |
-| brain | 思考、认知、智能 | 思维、脑力、智能相关 |
-| lightbulb | 创意、灵感、想法 | 创新、点子、启发相关 |
-| target | 目标、焦点、目的 | 目标设定、重点标注 |
-| check-circle | 完成、确认、成功 | 任务完成、验证通过 |
-| alert-circle | 警告、注意、问题 | 风险提示、注意事项 |
-| users | 团队、协作、人群 | 多人、团队协作 |
-| database | 数据、存储、持久化 | 数据库、数据管理 |
-| code | 代码、开发、技术 | 编程、开发相关 |
-| zap | 快速、执行、动作 | 快速操作、执行步骤 |
-| eye | 查看、观察、视觉 | 检查、审查、视觉相关 |
-| link | 连接、关系、关联 | 关系、链接、依赖 |
-| file-text | 文档、内容、文本 | 文档、笔记、内容 |
-| calendar | 时间、日期、计划 | 时间相关、日程安排 |
-| star | 重点、优秀、推荐 | 重点标注、推荐内容 |
-
-### 图标使用规则
-1. **可选字段**：icon 字段是可选的，不添加图标完全合法
-2. **语义匹配**：图标必须与节点内容有语义关联
-3. **位置选择**：
-   - \`inside\`（默认）：图标在节点内部左侧，与文本同行
-   - \`left\`：图标在节点左侧外部
-   - \`top-right\`：图标在节点右上角
-   - \`above\`：图标在节点上方
-4. **数量控制**：整个图表最多添加 5-8 个图标，避免视觉混乱
-
-### 图标字段格式
-\`\`\`json
-{
-  "id": "node1",
-  "type": "rectangle",
-  "text": "阅读笔记",
-  "icon": {
-    "name": "book",
-    "position": "inside"
-  }
-}
-\`\`\`
-
 ## 输出格式
 输出包含以下字段的 JSON 对象（严禁包含任何其他说明文字或 Markdown 标记）：
 {
@@ -132,7 +87,6 @@ export const diagramPrompt: PromptModule = {
       "text": "本元素显示的文本",
       "fontSize": 20, // 选自 16 | 20 | 28 | 36 之一，可省略
       "semanticColor": "primary | emphasis | success | warning | highlight | neutral", // 必须指定！
-      "icon": { "name": "图标名（可选，见图标语义匹配章节）", "position": "inside | left | top-right | above（可选，默认 inside）" }, // 可选，用于增强视觉表达
       "startBinding": { "elementId": "起点节点ID" }, // arrow/line 必须配置（注意：只需包含 elementId，无需 gap 和 focus 字段！）
       "endBinding": { "elementId": "终点节点ID" } // arrow/line 必须配置
     }
@@ -147,51 +101,6 @@ export const diagramPrompt: PromptModule = {
 - The system will auto-wrap and expand the height of shape containers to fit your text automatically.
 - Choose font sizes from [16, 20, 28, 36] only.
 
-## Icon Semantic Matching (Optional, for Visual Enhancement)
-For key nodes, you can add semantically matched icons to enhance visual expression. Icons are automatically loaded from the Lucide library and placed inside the node on the left side.
-
-### Available Icon Categories
-| Icon Name | Semantic Meaning | Use Cases |
-|-----------|------------------|-----------|
-| book | Reading, learning, knowledge | Books, notes, learning related |
-| brain | Thinking, cognition, intelligence | Thinking, mental, AI related |
-| lightbulb | Creativity, inspiration, ideas | Innovation, ideas, inspiration |
-| target | Goal, focus, purpose | Goal setting, focus points |
-| check-circle | Complete, confirm, success | Task done, verified, passed |
-| alert-circle | Warning, attention, issue | Risk alerts, precautions |
-| users | Team, collaboration, people | Multi-person, teamwork |
-| database | Data, storage, persistence | Database, data management |
-| code | Code, development, tech | Programming, development |
-| zap | Fast, execute, action | Quick actions, execution steps |
-| eye | View, observe, visual | Inspection, review, visual |
-| link | Connect, relation, link | Relationships, connections |
-| file-text | Document, content, text | Documents, notes, content |
-| calendar | Time, date, plan | Time-related, scheduling |
-| star | Key point, excellent, recommended | Key points, recommendations |
-
-### Icon Usage Rules
-1. **Optional Field**: The icon field is optional; diagrams without icons are fully valid
-2. **Semantic Matching**: Icons must have semantic relevance to the node content
-3. **Position Selection**:
-   - \`inside\` (default): Icon inside the node on the left, same line as text
-   - \`left\`: Icon outside on the left side
-   - \`top-right\`: Icon at the top-right corner
-   - \`above\`: Icon above the node
-4. **Quantity Control**: Maximum 5-8 icons per diagram to avoid visual clutter
-
-### Icon Field Format
-\`\`\`json
-{
-  "id": "node1",
-  "type": "rectangle",
-  "text": "Reading Notes",
-  "icon": {
-    "name": "book",
-    "position": "inside"
-  }
-}
-\`\`\`
-
 ## Output Format
 Output strict JSON object with "filename", "layout", and "elements" fields. No markdown wrappers or conversational filler:
 {
@@ -204,7 +113,6 @@ Output strict JSON object with "filename", "layout", and "elements" fields. No m
       "x": number, "y": number, "width": number, "height": number,
       "text": "text content",
       "semanticColor": "primary | emphasis | success | warning | highlight | neutral",
-      "icon": { "name": "icon_name (optional, see Icon Semantic Matching)", "position": "inside | left | top-right | above (optional, default inside)" },
       "startBinding": { "elementId": "origin_node_id" },
       "endBinding": { "elementId": "target_node_id" }
     }
