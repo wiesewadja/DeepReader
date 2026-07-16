@@ -821,15 +821,18 @@ function buildExcalidrawJSON(
     // Icons are added AFTER layout, so they never affect layout/collision math.
     const icon = iconMap.get(el.id);
     if (icon) {
-      const fileId = `icon-${el.id}`;
+      // Generate a short unique fileId (Excalidraw expects 21-22 char base62)
+      const fileId = crypto.randomUUID().replace(/-/g, '').substring(0, 22);
       const coloredSvg = icon.svg.replace(/currentColor/g, icon.color ?? '#1f2937');
       const dataUrl = `data:image/svg+xml;base64,${toBase64(coloredSvg)}`;
       files[fileId] = {
         mimeType: 'image/svg+xml',
-        id: fileId,
+        fileId: fileId,
         dataURL: dataUrl,
         created: now(),
-        lastRetrieved: now(),
+        size: { width: icon.size, height: icon.size },
+        hasSVGwithBitmap: false,
+        pdfPageViewProps: null,
       };
       result.push(toIconImageElement(el.id, icon, fileId));
     }

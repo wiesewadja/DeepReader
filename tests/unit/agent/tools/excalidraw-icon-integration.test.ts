@@ -374,14 +374,17 @@ describe('End-to-end icon embedding (PRD #25/#29)', () => {
     const file = buildExcalidrawJSON(elements, 'mind-map', undefined, true, icons);
     const img = file.elements.find(e => e.type === 'image');
     expect(img).toBeDefined();
-    expect(img!.fileId).toBe('icon-r1');
+    expect(img!.fileId).toBeDefined();
+    expect(img!.fileId!.length).toBe(22); // Excalidraw fileId is 22 chars
     expect(img!.x).toBe(112);
     expect(img!.width).toBe(40); // 40% of node height (100)
 
-    const fileEntry = file.files['icon-r1'] as any;
+    const fileEntry = file.files[img!.fileId!] as any;
     expect(fileEntry).toBeDefined();
     expect(fileEntry.mimeType).toBe('image/svg+xml');
+    expect(fileEntry.fileId).toBe(img!.fileId);
     expect(fileEntry.dataURL).toContain('data:image/svg+xml;base64,');
+    expect(fileEntry.size).toEqual({ width: 40, height: 40 });
     // color inherited: currentColor replaced with semantic stroke
     const decoded = Buffer.from(fileEntry.dataURL.split(',')[1], 'base64').toString('utf8');
     expect(decoded).toContain('#0E7490');
