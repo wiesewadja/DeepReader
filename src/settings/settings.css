@@ -1088,6 +1088,13 @@
 	display: inline-flex;
 }
 
+.deeppdf-collapse-subtitle {
+	font-size: 11px;
+	color: var(--text-faint);
+	margin: -4px 0 8px 22px;
+	line-height: 1.4;
+}
+
 .deeppdf-collapse-toggle.is-open .deeppdf-collapse-arrow {
 	transform: rotate(90deg);
 }

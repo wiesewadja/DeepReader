@@ -511,7 +511,10 @@ function renderOtherProvidersSection(
 	const arrow = toggle.createSpan({ cls: 'deeppdf-collapse-arrow' });
 	setIcon(arrow, 'chevron-right');
 	toggle.appendText(' 其他服务商 Key');
-	toggle.createSpan({ text: '  DeepSeek / Kimi / Minimax / OpenAI / SenseNova', cls: 'deeppdf-key-group-hint' });
+
+	// 供应商列表作为 toggle 下方的副标题（独立行，避免与标题行基线错位）
+	const subtitle = card.createDiv({ cls: 'deeppdf-collapse-subtitle' });
+	subtitle.createEl('span', { text: 'DeepSeek / Kimi / Minimax / OpenAI / SenseNova' });
 
 	const body = card.createDiv({ cls: `deeppdf-collapse-body ${isOpen ? 'is-open' : ''}` });
 	if (isOpen) {
