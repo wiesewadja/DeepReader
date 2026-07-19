@@ -1,11 +1,12 @@
 /**
- * AI 服务 Tab — 奚童预设快速配置 / 摘要 / 专家模式
+ * AI 服务 Tab — 三层统一布局（plan 快选 / 角色分配 / 其他服务商）
  */
 
 import { Notice, Setting, setIcon } from 'obsidian';
-import { getPresetById, detectCurrentPreset } from '../../config/presets';
+import { PRESETS, getPresetById, detectCurrentPreset, computePreviewRoles } from '../../config/presets';
 import { PROVIDER_LABELS, PROVIDER_CONFIGS, applyPreset } from '../../config/providers';
 import type { ProviderType, RoleType } from '../../config/types';
+import type { AIRoleConfig } from '../../config/ai-roles';
 import type DeepReaderPlugin from '../../main';
 import { renderProviderDetail } from '../components/provider-card';
 import { createRoleCard } from '../components/role-card';
@@ -14,20 +15,24 @@ import type { SectionContext } from '../types';
 
 const PROPOSITION_ENABLED = false;
 
+const DEFAULT_PRESET_ID = 'agent-plan';
+
 export interface LLMState {
 	expandedSections: Set<string>;
-	testStatus: { success: boolean; message: string } | null;
-	fallbackTestStatus: { success: boolean; message: string } | null;
+	volcarkTestStatus: { success: boolean; message: string } | null;
+	mimoTestStatus: { success: boolean; message: string } | null;
 	siliconflowTestStatus: { success: boolean; message: string } | null;
+	selectedPresetId: string;
 	forceShowQuickSetup: boolean;
 }
 
 export function createLLMState(): LLMState {
 	return {
 		expandedSections: new Set(),
-		testStatus: null,
-		fallbackTestStatus: null,
+		volcarkTestStatus: null,
+		mimoTestStatus: null,
 		siliconflowTestStatus: null,
+		selectedPresetId: DEFAULT_PRESET_ID,
 		forceShowQuickSetup: false,
 	};
 }
@@ -39,31 +44,101 @@ export function renderLLMSection(
 	onRerender: () => void,
 ): void {
 	if (!ctx.plugin.settings.setupComplete || state.forceShowQuickSetup) {
+		// 首次配置 / 重新配置：① plan 卡片 + 角色预览 + 确认
 		renderQuickSetup(container, ctx, state, onRerender);
 	} else {
+		// 已配置：摘要头 + ② 角色分配（常态，可微调）
 		renderConfigSummary(container, ctx, state, onRerender);
+		renderRoleAssignment(container, ctx, state, onRerender);
 	}
 
-	const advancedKey = 'advanced-llm';
-	const isAdvanced = state.expandedSections.has(advancedKey);
+	// ③ 其他服务商 + MinerU（常态折叠，放底部）
+	renderOtherProvidersSection(container, ctx, state, onRerender);
+}
 
-	const toggleAdvanced = container.createDiv({ cls: 'deeppdf-toggle-advanced' });
-	toggleAdvanced.empty();
-		const arrow = toggleAdvanced.createSpan();
-		setIcon(arrow, isAdvanced ? 'chevron-down' : 'chevron-right');
-		toggleAdvanced.appendText(isAdvanced ? ' 收起专家设置' : ' 展开专家设置');
-	toggleAdvanced.addEventListener('click', () => {
-		if (state.expandedSections.has(advancedKey)) {
-			state.expandedSections.delete(advancedKey);
-		} else {
-			state.expandedSections.add(advancedKey);
-		}
-		onRerender();
+// ── Key 输入组件 / 角色预览（三层布局）──
+
+/* ── 通用 Key 输入（内嵌于 plan 卡片或独立行）── */
+
+function createProviderKeyInput(
+	parent: HTMLElement,
+	ctx: SectionContext,
+	providerId: string,
+	placeholder: string,
+	testStatus: { success: boolean; message: string } | null,
+	onKeyChange?: () => void,
+): HTMLInputElement {
+	const wrap = parent.createDiv({ cls: 'deeppdf-key-input-wrap' });
+	const input = wrap.createEl('input', {
+		cls: 'deeppdf-key-input',
+		attr: { type: 'password', placeholder },
+	});
+	input.value = ctx.plugin.settings.providers[providerId]?.apiKey || '';
+
+	const debouncedSave = debounceAsync(async () => {
+		const providers = ctx.plugin.settings.providers as Record<string, { apiKey?: string }>;
+		if (!providers[providerId]) providers[providerId] = {};
+		providers[providerId].apiKey = input.value.trim();
+		await ctx.plugin.saveSettings();
+	}, 300);
+	input.addEventListener('input', () => {
+		debouncedSave();
+		onKeyChange?.();
 	});
 
-	if (isAdvanced) {
-		renderExpertArea(container, ctx, state, onRerender);
+	const eye = wrap.createEl('button', { cls: 'deeppdf-btn-eye' });
+	setIcon(eye, 'eye');
+	let visible = false;
+	eye.addEventListener('click', () => {
+		visible = !visible;
+		input.type = visible ? 'text' : 'password';
+	});
+
+	if (testStatus) {
+		wrap.createEl('span', {
+			text: testStatus.message,
+			cls: `deeppdf-key-status ${testStatus.success ? 'is-success' : 'is-error'}`,
+		});
 	}
+	return input;
+}
+
+/* ── 角色预览行（computePreviewRoles 的 UI 投影）── */
+
+const ROLE_LABELS: Record<RoleType, string> = {
+	chat: '对话',
+	router: '路由',
+	pageindex: '索引',
+	proposition: '原子事实',
+	embedding: '向量',
+	reranker: '重排序',
+	tts: '语音',
+	imagegen: '图片',
+};
+
+const ROLE_DOT_CLASS: Record<string, string> = {
+	volcark: 'is-volcark',
+	xiaomi: 'is-xiaomi',
+	siliconflow: 'is-siliconflow',
+};
+
+function renderRolePreviewRow(
+	parent: HTMLElement,
+	role: RoleType,
+	assignment: AIRoleConfig | null,
+): void {
+	const row = parent.createDiv({ cls: 'deeppdf-role-row' });
+	row.createEl('span', { text: ROLE_LABELS[role], cls: 'deeppdf-role-label' });
+	row.createEl('span', { text: role, cls: 'deeppdf-role-key' });
+	row.createEl('span', { text: '→', cls: 'deeppdf-role-arrow' });
+	const empty = !assignment;
+	row.createEl('span', {
+		text: empty ? '未配置' : assignment.model,
+		cls: `deeppdf-role-model ${empty ? 'is-empty' : ''}`,
+	});
+	row.createEl('span', {
+		cls: `deeppdf-role-dot ${empty ? 'is-empty' : (ROLE_DOT_CLASS[assignment!.provider] || 'is-other')}`,
+	});
 }
 
 // ─────────────────────────────────────────────────────
@@ -77,183 +152,122 @@ function renderQuickSetup(
 	onRerender: () => void,
 ): void {
 	const card = container.createDiv({ cls: 'deeppdf-settings-card deeppdf-quick-setup' });
-	card.createEl('div', { text: '开始使用 奚童', cls: 'deeppdf-quick-setup-title' });
+	card.createEl('div', { text: '快速配置', cls: 'deeppdf-quick-setup-title' });
 	card.createEl('div', {
-		text: '填写 API Key 即可开始，推荐同时填写两组 Key 以获得完整体验',
+		text: '选择服务商并填写 API Key，系统会自动分配角色模型。',
 		cls: 'deeppdf-quick-setup-desc',
 	});
 
-	// ── 小米 MIMO Key 组 ──
-	const mimoGroup = card.createDiv({ cls: 'deeppdf-key-group' });
-	mimoGroup.createEl('div', { text: '小米 MIMO', cls: 'deeppdf-key-group-label' });
-	mimoGroup.createEl('div', { text: '对话 · 索引 · 语音', cls: 'deeppdf-key-group-hint' });
+	// ── ① Plan 卡片（内嵌 Key，二选一）──
+	const inputs: Record<string, HTMLInputElement> = {};
+	let refreshPreview: () => void = () => {};  // 在预览区创建后赋值，Key 输入时即时刷新
+	const presetRow = card.createDiv({ cls: 'deeppdf-preset-row' });
+	for (const preset of PRESETS) {
+		const pc = presetRow.createDiv({ cls: 'deeppdf-preset-card' });
+		if (preset.id === state.selectedPresetId) pc.addClass('is-selected');
 
-	const currentMimoKey = ctx.plugin.settings.providers['xiaomi']?.apiKey || '';
-	const mimoRow = mimoGroup.createDiv({ cls: 'deeppdf-key-row' });
-	mimoRow.createEl('div', { text: 'Token Plan Key', cls: 'deeppdf-key-label' });
-	const mimoInputWrap = mimoRow.createDiv({ cls: 'deeppdf-key-input-wrap' });
-	const mimoInput = mimoInputWrap.createEl('input', {
-		cls: 'deeppdf-key-input',
-		attr: { type: 'password', placeholder: '输入 Token Plan Key（必填）' },
-	});
-	mimoInput.value = currentMimoKey;
-	const debouncedMimoSave = debounceAsync(async () => {
-		const providers = ctx.plugin.settings.providers as Record<string, { apiKey?: string }>;
-		if (!providers['xiaomi']) providers['xiaomi'] = {};
-		providers['xiaomi'].apiKey = mimoInput.value.trim();
-		await ctx.plugin.saveSettings();
-	}, 300);
-	mimoInput.addEventListener('input', () => debouncedMimoSave());
-	const mimoEye = mimoInputWrap.createEl('button', { cls: 'deeppdf-btn-eye' });
-	setIcon(mimoEye, 'eye');
-	let mimoVisible = false;
-	mimoEye.addEventListener('click', () => {
-		mimoVisible = !mimoVisible;
-		mimoInput.type = mimoVisible ? 'text' : 'password';
-	});
+		const header = pc.createDiv({ cls: 'deeppdf-preset-card-header' });
+		header.createEl('div', { text: preset.label, cls: 'deeppdf-preset-card-name' });
+		if (preset.recommended) {
+			header.createEl('span', { text: '推荐', cls: 'deeppdf-preset-card-badge' });
+		}
+		pc.createEl('div', { text: preset.description, cls: 'deeppdf-preset-card-desc' });
 
-	if (state.testStatus) {
-		mimoRow.createEl('span', {
-			text: state.testStatus.message,
-			cls: `deeppdf-key-status ${state.testStatus.success ? 'is-success' : 'is-error'}`,
+		// 内嵌 Key 输入（主 provider）
+		const testStatus = preset.provider === 'volcark' ? state.volcarkTestStatus : state.mimoTestStatus;
+		const placeholder = preset.provider === 'volcark' ? 'ark-（火山方舟套餐 Key）' : 'tp-（小米 Token Plan Key）';
+		const input = createProviderKeyInput(pc, ctx, preset.provider, placeholder, testStatus, () => refreshPreview());
+		inputs[preset.provider] = input;
+
+		// 点击卡片切换预设（点 input/eye 不触发）
+		pc.addEventListener('click', (e) => {
+			if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).closest('.deeppdf-btn-eye')) return;
+			if (state.selectedPresetId !== preset.id) {
+				state.selectedPresetId = preset.id;
+				state.volcarkTestStatus = null;
+				state.mimoTestStatus = null;
+				state.siliconflowTestStatus = null;
+				onRerender();
+			}
 		});
 	}
 
-	// API Key (可选，默认折叠)
-		const currentFallbackKey = ctx.plugin.settings.providers['xiaomi']?.fallbackApiKey || '';
-		const fallbackSectionId = 'fallback-api-key';
-		const fallbackExpanded = state.expandedSections.has(fallbackSectionId);
+	// ── SiliconFlow 可选增强 ──
+	const sfGroup = card.createDiv({ cls: 'deeppdf-key-group' });
+	sfGroup.createEl('div', { text: 'SiliconFlow（可选增强）', cls: 'deeppdf-key-group-label' });
+	inputs['siliconflow'] = createProviderKeyInput(sfGroup, ctx, 'siliconflow', 'sk-（向量搜索 + 重排序）', state.siliconflowTestStatus, () => refreshPreview());
+	sfGroup.createEl('div', { text: '不填则向量搜索降级、重排序关闭', cls: 'deeppdf-key-group-hint' });
 
-		const fallbackToggle = mimoGroup.createDiv({ cls: 'deeppdf-fallback-toggle' });
-		const fallbackArrow = fallbackToggle.createSpan();
-		setIcon(fallbackArrow, fallbackExpanded ? 'chevron-down' : 'chevron-right');
-		fallbackToggle.appendText(' API Key（按量付费）');
-		if (currentFallbackKey) {
-			fallbackToggle.createSpan({ text: ' · 已配置', cls: 'deeppdf-fallback-hint' });
-		} else {
-			fallbackToggle.createSpan({ text: ' · 可选', cls: 'deeppdf-fallback-hint' });
-		}
-
-		let fallbackInput: HTMLInputElement | null = null;
-	if (fallbackExpanded) {
-		const fallbackRow = mimoGroup.createDiv({ cls: 'deeppdf-key-row' });
-		const fallbackInputWrap = fallbackRow.createDiv({ cls: 'deeppdf-key-input-wrap' });
-		fallbackInput = fallbackInputWrap.createEl('input', {
-			cls: 'deeppdf-key-input',
-			attr: { type: 'password', placeholder: '按量付费 Key（可选，Token Plan 耗尽时自动切换）' },
-		});
-		fallbackInput.value = currentFallbackKey;
-		const debouncedFallbackSave = debounceAsync(async () => {
-			const providers = ctx.plugin.settings.providers as Record<string, { fallbackApiKey?: string }>;
-			if (!providers['xiaomi']) providers['xiaomi'] = {};
-			providers['xiaomi'].fallbackApiKey = fallbackInput!.value.trim();
-			await ctx.plugin.saveSettings();
-		}, 300);
-		fallbackInput.addEventListener('input', () => debouncedFallbackSave());
-		const fallbackEye = fallbackInputWrap.createEl('button', { cls: 'deeppdf-btn-eye' });
-		setIcon(fallbackEye, 'eye');
-		let fallbackVisible = false;
-		fallbackEye.addEventListener('click', () => {
-			fallbackVisible = !fallbackVisible;
-			fallbackInput!.type = fallbackVisible ? 'text' : 'password';
-		});
-
-			if (state.fallbackTestStatus) {
-				fallbackRow.createEl('span', {
-					text: state.fallbackTestStatus.message,
-					cls: `deeppdf-key-status ${state.fallbackTestStatus.success ? 'is-success' : 'is-error'}`,
-				});
-			}
-		}
-
-		fallbackToggle.addEventListener('click', () => {
-			if (state.expandedSections.has(fallbackSectionId)) {
-				state.expandedSections.delete(fallbackSectionId);
-			} else {
-				state.expandedSections.add(fallbackSectionId);
-			}
-			onRerender();
-		});
-// 分隔线
 	card.createEl('hr', { cls: 'deeppdf-divider' });
 
-	// ── SiliconFlow Key 组 ──
-	const sfGroup = card.createDiv({ cls: 'deeppdf-key-group' });
-	sfGroup.createEl('div', { text: 'SiliconFlow', cls: 'deeppdf-key-group-label' });
-	sfGroup.createEl('div', { text: '路由 · 向量搜索 · 重排序', cls: 'deeppdf-key-group-hint' });
+	// ── ② 角色预览（点卡片/填 Key 即时更新）──
+	const previewWrap = card.createDiv({ cls: 'deeppdf-role-preview is-pending' });
+	const previewTitle = previewWrap.createDiv({ cls: 'deeppdf-role-preview-title' });
+	previewTitle.createEl('span', { text: '当前角色分配' });
+	previewTitle.createEl('span', { text: '预览', cls: 'deeppdf-preview-tag is-pending' });
+	const previewBody = previewWrap.createDiv({ cls: 'deeppdf-role-preview-body' });
 
-	const currentSfKey = ctx.plugin.settings.providers['siliconflow']?.apiKey || '';
-	const sfRow = sfGroup.createDiv({ cls: 'deeppdf-key-row' });
-	sfRow.createEl('div', { text: 'API Key', cls: 'deeppdf-key-label' });
-	const sfInputWrap = sfRow.createDiv({ cls: 'deeppdf-key-input-wrap' });
-	const sfInput = sfInputWrap.createEl('input', {
-		cls: 'deeppdf-key-input',
-		attr: { type: 'password', placeholder: '输入 SiliconFlow API Key（推荐填写）' },
-	});
-	sfInput.value = currentSfKey;
-	const debouncedSfSave = debounceAsync(async () => {
-		const providers = ctx.plugin.settings.providers as Record<string, { apiKey?: string }>;
-		if (!providers['siliconflow']) providers['siliconflow'] = {};
-		providers['siliconflow'].apiKey = sfInput.value.trim();
-		await ctx.plugin.saveSettings();
-	}, 300);
-	sfInput.addEventListener('input', () => debouncedSfSave());
-	const sfEye = sfInputWrap.createEl('button', { cls: 'deeppdf-btn-eye' });
-	setIcon(sfEye, 'eye');
-	let sfVisible = false;
-	sfEye.addEventListener('click', () => {
-		sfVisible = !sfVisible;
-		sfInput.type = sfVisible ? 'text' : 'password';
-	});
-
-	if (state.siliconflowTestStatus) {
-		sfRow.createEl('span', {
-			text: state.siliconflowTestStatus.message,
-			cls: `deeppdf-key-status ${state.siliconflowTestStatus.success ? 'is-success' : 'is-error'}`,
-		});
-	}
+	const roleOrder: RoleType[] = ['chat', 'router', 'pageindex', 'proposition', 'embedding', 'reranker', 'tts', 'imagegen'];
+	const refreshPreviewImpl = () => {
+		const providersWithKeys = new Set<string>();
+		if (inputs['volcark']?.value.trim()) providersWithKeys.add('volcark');
+		if (inputs['xiaomi']?.value.trim()) providersWithKeys.add('xiaomi');
+		if (inputs['siliconflow']?.value.trim()) providersWithKeys.add('siliconflow');
+		const roles = computePreviewRoles(state.selectedPresetId, providersWithKeys);
+		previewBody.empty();
+		for (const role of roleOrder) {
+			renderRolePreviewRow(previewBody, role, roles[role]);
+		}
+	};
+	refreshPreview = refreshPreviewImpl;
+	refreshPreviewImpl();
 
 	// ── 操作按钮 ──
 	const actionsRow = card.createDiv({ cls: 'deeppdf-actions-row' });
 	const testBtn = actionsRow.createEl('button', { text: '测试连接', cls: 'deeppdf-btn-secondary' });
 	const confirmBtn = actionsRow.createEl('button', { text: '确认配置 →', cls: 'deeppdf-btn-primary' });
 
-	const hintLink = card.createEl('div', { cls: 'deeppdf-hint-link' });
+	const hintLink = card.createDiv({ cls: 'deeppdf-hint-link' });
 	hintLink.createSpan({ text: '还没有 Key？' });
 	hintLink.createEl('a', {
-		text: '前往注册 SiliconFlow（免费额度）',
+		text: '开通火山方舟',
+		attr: { href: 'https://console.volcengine.com/ark', target: '_blank', rel: 'noopener noreferrer' },
+	});
+	hintLink.createSpan({ text: ' · ' });
+	hintLink.createEl('a', {
+		text: '注册 SiliconFlow（免费额度）',
 		attr: { href: 'https://cloud.siliconflow.cn', target: '_blank', rel: 'noopener noreferrer' },
 	});
 
 	// ── 测试连接 ──
 	testBtn.addEventListener('click', async () => {
-		const mimoVal = mimoInput.value.trim();
-		const fallbackVal = fallbackInput?.value?.trim() || '';
-		const sfVal = sfInput.value.trim();
+		const volcarkVal = inputs['volcark']?.value.trim() || '';
+		const mimoVal = inputs['xiaomi']?.value.trim() || '';
+		const sfVal = inputs['siliconflow']?.value.trim() || '';
 
-		if (!mimoVal && !fallbackVal && !sfVal) {
+		if (!volcarkVal && !mimoVal && !sfVal) {
 			new Notice('请至少填写一个 Key');
 			return;
 		}
 
 		testBtn.textContent = '测试中...';
 		testBtn.setAttribute('disabled', 'true');
-		state.testStatus = null;
-		state.fallbackTestStatus = null;
+		state.volcarkTestStatus = null;
+		state.mimoTestStatus = null;
 		state.siliconflowTestStatus = null;
 
 		const { testConnection } = await import('../../config/model-fetcher');
 		const tests: Promise<{ key: string; success: boolean; message: string }>[] = [];
 
+		if (volcarkVal) {
+			tests.push(testConnection(PROVIDER_CONFIGS['volcark'].baseUrl, volcarkVal, 'doubao-seed-2.0-lite', 'chat')
+				.then(r => ({ key: 'volcark', success: r.success, message: r.success ? `${r.latencyMs}ms` : (r.error || 'failed') }))
+				.catch(e => ({ key: 'volcark', success: false, message: `✗ ${(e instanceof Error ? e.message : String(e))}` })));
+		}
 		if (mimoVal) {
 			tests.push(testConnection('https://token-plan-cn.xiaomimimo.com/v1', mimoVal, 'mimo-v2.5', 'chat')
 				.then(r => ({ key: 'mimo', success: r.success, message: r.success ? `${r.latencyMs}ms` : (r.error || 'failed') }))
 				.catch(e => ({ key: 'mimo', success: false, message: `✗ ${(e instanceof Error ? e.message : String(e))}` })));
-		}
-		if (fallbackVal) {
-			tests.push(testConnection('https://api.xiaomimimo.com/v1', fallbackVal, 'mimo-v2.5', 'chat')
-				.then(r => ({ key: 'fallback', success: r.success, message: r.success ? `${r.latencyMs}ms` : (r.error || 'failed') }))
-				.catch(e => ({ key: 'fallback', success: false, message: `✗ ${(e instanceof Error ? e.message : String(e))}` })));
 		}
 		if (sfVal) {
 			tests.push(testConnection('https://api.siliconflow.cn/v1', sfVal, 'Qwen/Qwen3-8B', 'chat')
@@ -263,8 +277,8 @@ function renderQuickSetup(
 
 		const results = await Promise.all(tests);
 		for (const r of results) {
-			if (r.key === 'mimo') state.testStatus = { success: r.success, message: r.message };
-			else if (r.key === 'fallback') state.fallbackTestStatus = { success: r.success, message: r.message };
+			if (r.key === 'volcark') state.volcarkTestStatus = { success: r.success, message: r.message };
+			else if (r.key === 'mimo') state.mimoTestStatus = { success: r.success, message: r.message };
 			else if (r.key === 'sf') state.siliconflowTestStatus = { success: r.success, message: r.message };
 		}
 
@@ -273,50 +287,55 @@ function renderQuickSetup(
 		onRerender();
 	});
 
-	// ── 确认配置 ──
+	// ── 确认配置（才 applyPreset 写入）──
 	confirmBtn.addEventListener('click', async () => {
-		const mimoVal = mimoInput.value.trim();
-		const fallbackVal = fallbackInput?.value?.trim() || '';
-		const sfVal = sfInput.value.trim();
+		const volcarkVal = inputs['volcark']?.value.trim() || '';
+		const mimoVal = inputs['xiaomi']?.value.trim() || '';
+		const sfVal = inputs['siliconflow']?.value.trim() || '';
 
-		if (!mimoVal && !fallbackVal) {
-			new Notice('请至少填写一个小米 Key');
+		if (state.selectedPresetId === 'agent-plan' && !volcarkVal) {
+			new Notice('请填写火山方舟 API Key');
+			return;
+		}
+		if (state.selectedPresetId === 'xitong' && !mimoVal) {
+			new Notice('请填写小米 MIMO Token Plan Key');
 			return;
 		}
 
-		// 应用奚童预设
-		const primaryApiKey = mimoVal || fallbackVal;
-		applyPreset('xitong', primaryApiKey, ctx.plugin.settings, sfVal || undefined);
-
-		// 保存 fallback Key
-		const accounts = ctx.plugin.settings.providers as Record<string, { apiKey?: string; fallbackApiKey?: string }>;
-		if (accounts['xiaomi']) {
-			if (fallbackVal) {
-					accounts['xiaomi'].fallbackApiKey = fallbackVal;
-				}
-			// 如果主 Key 是 fallback（没有 Token Plan），需要把 fallback 放到 apiKey
-			if (!mimoVal && fallbackVal) {
-				accounts['xiaomi'].apiKey = fallbackVal;
-				accounts['xiaomi'].fallbackApiKey = undefined;
-			}
+		if (state.selectedPresetId === 'agent-plan') {
+			applyPreset('agent-plan', volcarkVal, ctx.plugin.settings, undefined, {
+				xiaomi: mimoVal,
+				siliconflow: sfVal,
+			});
+		} else if (state.selectedPresetId === 'xitong') {
+			applyPreset('xitong', mimoVal, ctx.plugin.settings, sfVal || undefined);
 		}
 
 		ctx.plugin.settings.setupComplete = true;
 		ctx.plugin.resetFrontendAgent();
 		await ctx.plugin.saveSettings();
-		state.testStatus = null;
-		state.fallbackTestStatus = null;
+		state.volcarkTestStatus = null;
+		state.mimoTestStatus = null;
 		state.siliconflowTestStatus = null;
 		state.forceShowQuickSetup = false;
 
-		if (sfVal) {
+		const hasMimo = !!mimoVal;
+		const hasSf = !!sfVal;
+		if (hasMimo && hasSf) {
 			new Notice('配置完成！所有功能可用');
+		} else if (hasMimo) {
+			new Notice('配置完成！重排序未启用，可稍后在角色分配中补填 SiliconFlow');
+		} else if (hasSf) {
+			new Notice('配置完成！语音未启用，可稍后在角色分配中补填 MIMO');
+		} else if (state.selectedPresetId === 'agent-plan') {
+			new Notice('配置完成！语音和重排序未启用，可稍后补填');
 		} else {
-			new Notice('配置完成！向量搜索和重排序未启用，可在专家模式补填 SiliconFlow Key');
+			new Notice('配置完成！向量搜索和重排序未启用，可稍后补填');
 		}
 		onRerender();
 	});
 }
+
 
 // ─────────────────────────────────────────────────────
 // 配置摘要
@@ -333,69 +352,69 @@ function renderConfigSummary(
 
 	const roles = ctx.plugin.settings.roles as unknown as Record<string, { provider: string; model: string } | null>;
 	const currentPreset = detectCurrentPreset(roles);
-	const hasSiliconFlowKey = !!ctx.plugin.settings.providers['siliconflow']?.apiKey;
-		const hasEmbedding = !!ctx.plugin.settings.roles?.embedding;
-		const hasReranker = !!ctx.plugin.settings.roles?.reranker;
-		const allFeaturesAvailable = hasSiliconFlowKey && hasEmbedding && hasReranker;
-	const isCustom = !currentPreset;
+	const hasMimoKey = !!ctx.plugin.settings.providers['xiaomi']?.apiKey;
+	const hasSiliconflowKey = !!ctx.plugin.settings.providers['siliconflow']?.apiKey;
+	const hasTTS = !!ctx.plugin.settings.roles?.tts;
+	const hasReranker = !!ctx.plugin.settings.roles?.reranker;
+	const allFeaturesAvailable = !!currentPreset && hasMimoKey && hasSiliconflowKey && hasTTS && hasReranker;
 
-	if (isCustom) {
-		// 自定义配置
-		summary.createEl('div', { text: '自定义配置', cls: 'deeppdf-config-summary-title' });
-		if (!hasSiliconFlowKey) {
+	if (currentPreset) {
+		const presetName = currentPreset.label;
+		if (allFeaturesAvailable) {
+			summary.createEl('div', { text: `${presetName} · 已就绪 ✓`, cls: 'deeppdf-config-summary-title deeppdf-status-ok' });
+			summary.createEl('div', { text: '所有功能可用', cls: 'deeppdf-config-summary-detail' });
+		} else {
+			const missing = [];
+			if (!hasMimoKey || !hasTTS) missing.push('语音功能');
+			if (!hasSiliconflowKey || !hasReranker) missing.push('重排序');
+			summary.createEl('div', { text: `${presetName} · 部分功能不可用`, cls: 'deeppdf-config-summary-title deeppdf-status-partial' });
 			summary.createEl('div', {
-				text: '⚠ 向量搜索、重排序未配置 · 补填 SiliconFlow Key 可启用全部功能',
+				text: `⚠ ${missing.join('、')}未配置 · 补填对应 Key 可启用全部功能`,
 				cls: 'deeppdf-config-summary-detail',
 			});
 		}
 
 		const actions = summary.createDiv({ cls: 'deeppdf-config-summary-actions' });
-		actions.createEl('button', { text: '重置为奚童默认', cls: 'deeppdf-btn-danger' })
-			.addEventListener('click', () => {
-				showResetConfirm(async () => {
-					// 重置角色为奚童默认（保留已有 Key）
-					const mimoKey = ctx.plugin.settings.providers['xiaomi']?.apiKey || '';
-					const sfKey = ctx.plugin.settings.providers['siliconflow']?.apiKey || undefined;
-					applyPreset('xitong', mimoKey, ctx.plugin.settings, sfKey);
-					ctx.plugin.resetFrontendAgent();
-					await ctx.plugin.saveSettings();
-					state.forceShowQuickSetup = true;
-					state.testStatus = null;
-					state.fallbackTestStatus = null;
-					state.siliconflowTestStatus = null;
-					onRerender();
-				});
-			});
-	} else if (allFeaturesAvailable) {
-		// 奚童已就绪
-		summary.createEl('div', { text: '奚童配置 · 已就绪 ✓', cls: 'deeppdf-config-summary-title deeppdf-status-ok' });
-		summary.createEl('div', { text: '所有功能可用', cls: 'deeppdf-config-summary-detail' });
-
-		const actions = summary.createDiv({ cls: 'deeppdf-config-summary-actions' });
 		actions.createEl('button', { text: '重新配置', cls: 'deeppdf-btn-secondary' })
 			.addEventListener('click', () => {
 				state.forceShowQuickSetup = true;
-				state.testStatus = null;
-				state.fallbackTestStatus = null;
+				state.volcarkTestStatus = null;
+				state.mimoTestStatus = null;
 				state.siliconflowTestStatus = null;
 				onRerender();
 			});
 	} else {
-		// 部分可用
-		summary.createEl('div', { text: '奚童配置 · 部分功能不可用', cls: 'deeppdf-config-summary-title deeppdf-status-partial' });
-		summary.createEl('div', {
-			text: '⚠ 向量搜索、重排序未配置 · 补填 SiliconFlow Key 可启用全部功能',
-			cls: 'deeppdf-config-summary-detail',
-		});
+		// 自定义配置
+		summary.createEl('div', { text: '自定义配置', cls: 'deeppdf-config-summary-title' });
+		const missing = [];
+		if (!hasMimoKey || !hasTTS) missing.push('语音功能');
+		if (!hasSiliconflowKey || !hasReranker) missing.push('重排序');
+		if (missing.length > 0) {
+			summary.createEl('div', {
+				text: `⚠ ${missing.join('、')}未配置 · 补填对应 Key 可启用全部功能`,
+				cls: 'deeppdf-config-summary-detail',
+			});
+		}
 
 		const actions = summary.createDiv({ cls: 'deeppdf-config-summary-actions' });
-		actions.createEl('button', { text: '重新配置', cls: 'deeppdf-btn-secondary' })
+		actions.createEl('button', { text: `重置为 ${PRESETS[0].label} 默认`, cls: 'deeppdf-btn-danger' })
 			.addEventListener('click', () => {
-				state.forceShowQuickSetup = true;
-				state.testStatus = null;
-				state.fallbackTestStatus = null;
-				state.siliconflowTestStatus = null;
-				onRerender();
+				showResetConfirm(async () => {
+					const volcarkKey = ctx.plugin.settings.providers['volcark']?.apiKey || '';
+					const mimoKey = ctx.plugin.settings.providers['xiaomi']?.apiKey || '';
+					const sfKey = ctx.plugin.settings.providers['siliconflow']?.apiKey || '';
+					const additionalKeys: Record<string, string> = {};
+					if (mimoKey) additionalKeys.xiaomi = mimoKey;
+					if (sfKey) additionalKeys.siliconflow = sfKey;
+					applyPreset(DEFAULT_PRESET_ID, volcarkKey, ctx.plugin.settings, undefined, additionalKeys);
+					ctx.plugin.resetFrontendAgent();
+					await ctx.plugin.saveSettings();
+					state.forceShowQuickSetup = true;
+					state.volcarkTestStatus = null;
+					state.mimoTestStatus = null;
+					state.siliconflowTestStatus = null;
+					onRerender();
+				});
 			});
 	}
 }
@@ -403,9 +422,9 @@ function renderConfigSummary(
 function showResetConfirm(onConfirm: () => void): void {
 	const modal = document.body.createDiv({ cls: 'deeppdf-modal-overlay' });
 	const dialog = modal.createDiv({ cls: 'deeppdf-modal' });
-	dialog.createEl('div', { text: '重置为奚童默认配置', cls: 'deeppdf-modal-title' });
+	dialog.createEl('div', { text: '重置为默认配置', cls: 'deeppdf-modal-title' });
 	dialog.createEl('div', {
-		text: '将重置所有角色分配为奚童默认值（MIMO 对话 + SiliconFlow 搜索）。你之前的手动调整将丢失。',
+		text: '将重置所有角色分配为默认值。你之前的手动调整将丢失。',
 		cls: 'deeppdf-modal-body',
 	});
 	const actions = dialog.createDiv({ cls: 'deeppdf-modal-actions' });
@@ -419,27 +438,21 @@ function showResetConfirm(onConfirm: () => void): void {
 }
 
 // ─────────────────────────────────────────────────────
-// 专家模式
+// ② 角色分配（常态显示，已配置后可逐角色微调）
 // ─────────────────────────────────────────────────────
 
-function renderExpertArea(
+function renderRoleAssignment(
 	container: HTMLElement,
 	ctx: SectionContext,
 	state: LLMState,
 	onRerender: () => void,
 ): void {
-	const area = container.createDiv({ cls: 'deeppdf-expert-area' });
-
-			// 1. 服务商卡片网格（排除小米和硅基流动，已在新手区配置）
-		area.createEl('h3', { text: '其他服务商' });
-		area.createEl('p', {
-			text: '点击卡片配置 API Key。小米 MIMO 和 SiliconFlow 请在上方“重新配置”中管理。',
-			cls: 'setting-item-description',
-		});
-		renderProviderGrid(area, ctx, state, onRerender);
-
-		// 2. 角色分配
-	area.createEl('h3', { text: '角色分配', cls: 'deeppdf-expert-subtitle' });
+	const card = container.createDiv({ cls: 'deeppdf-settings-card' });
+	card.createEl('div', { text: '角色分配', cls: 'deeppdf-quick-setup-title' });
+	card.createEl('div', {
+		text: '每个角色可选择已配置 Key 的服务商。改动即时保存。',
+		cls: 'deeppdf-quick-setup-desc',
+	});
 
 	const roleCtx = {
 		plugin: ctx.plugin,
@@ -455,8 +468,7 @@ function renderExpertArea(
 		onRerender,
 	};
 
-
-	const coreCard = area.createDiv({ cls: 'deeppdf-settings-card' });
+	const coreCard = card.createDiv({ cls: 'deeppdf-settings-card' });
 	coreCard.createEl('h4', { text: '核心服务' });
 	const requiredRoles: { role: RoleType; label: string; desc: string }[] = [
 		{ role: 'chat', label: '主对话', desc: '用于主要对话和分析' },
@@ -467,7 +479,7 @@ function renderExpertArea(
 		createRoleCard(coreCard, role, label, desc, false, roleCtx);
 	}
 
-	const enhanceCard = area.createDiv({ cls: 'deeppdf-settings-card' });
+	const enhanceCard = card.createDiv({ cls: 'deeppdf-settings-card' });
 	enhanceCard.createEl('h4', { text: '增强服务（可选）' });
 	const optionalRoles: { role: RoleType; label: string; desc: string }[] = [
 		...(PROPOSITION_ENABLED ? [{ role: 'proposition' as RoleType, label: '原子事实', desc: '提取原子事实卡片' }] : []),
@@ -479,16 +491,49 @@ function renderExpertArea(
 	for (const { role, label, desc } of optionalRoles) {
 		createRoleCard(enhanceCard, role, label, desc, true, roleCtx);
 	}
+}
 
-	// 3. MinerU
-	renderMineruSection(area, ctx, state, onRerender);
+// ─────────────────────────────────────────────────────
+// ③ 其他服务商 Key + MinerU（常态折叠，放底部）
+// ─────────────────────────────────────────────────────
+
+function renderOtherProvidersSection(
+	container: HTMLElement,
+	ctx: SectionContext,
+	state: LLMState,
+	onRerender: () => void,
+): void {
+	const sectionId = 'other-providers';
+	const isOpen = state.expandedSections.has(sectionId);
+
+	const card = container.createDiv({ cls: 'deeppdf-settings-card' });
+	const toggle = card.createDiv({ cls: `deeppdf-collapse-toggle ${isOpen ? 'is-open' : ''}` });
+	const arrow = toggle.createSpan({ cls: 'deeppdf-collapse-arrow' });
+	setIcon(arrow, 'chevron-right');
+	toggle.appendText(' 其他服务商 Key');
+	toggle.createSpan({ text: '  DeepSeek / Kimi / Minimax / OpenAI / SenseNova', cls: 'deeppdf-key-group-hint' });
+
+	const body = card.createDiv({ cls: `deeppdf-collapse-body ${isOpen ? 'is-open' : ''}` });
+	if (isOpen) {
+		renderProviderGrid(body, ctx, state, onRerender);
+		renderMineruSection(body, ctx, state, onRerender);
+	}
+
+	toggle.addEventListener('click', () => {
+		if (state.expandedSections.has(sectionId)) {
+			state.expandedSections.delete(sectionId);
+		} else {
+			state.expandedSections.add(sectionId);
+		}
+		onRerender();
+	});
 }
 
 // ─────────────────────────────────────────────────────
 // 服务商卡片网格
 // ─────────────────────────────────────────────────────
 
-const EXCLUDED_PROVIDERS = ['xiaomi', 'siliconflow', 'mineru'];
+const EXCLUDED_PROVIDERS = ['volcark', 'xiaomi', 'siliconflow', 'mineru'];
 
 const PROVIDER_ICONS: Record<string, string> = {
 	minimax: 'M',

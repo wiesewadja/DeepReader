@@ -141,13 +141,10 @@ function createRoleContent(
     .setDesc(availableProviders.length === 0 ? '没有已配置的服务商，请先在上方填写 API Key' : '')
     .addDropdown(dropdown => {
       const requiredCap = ROLE_CAPABILITY[role];
-      const allProviders = new Set<string>([...availableProviders, currentProvider]);
-      // 加入所有具备该能力的内置服务商（即使未填 Key，方便用户发现和配置）
-      for (const [id, config] of Object.entries(PROVIDER_CONFIGS)) {
-        if (config.capabilities[requiredCap as keyof typeof config.capabilities]) {
-          allProviders.add(id);
-        }
-      }
+      // 只列「已配 Key 的服务商」+ 当前选中项（即使无 Key 也要可见，让用户知道现状）。
+      // spec: 每个角色的选择器只能选已配置 Key 的服务商。
+      const allProviders = new Set<string>(availableProviders);
+      if (currentProvider) allProviders.add(currentProvider);
       for (const p of allProviders) {
         const hasKey = !!(settings.providers as Record<string, unknown>)[p] &&
           !!((settings.providers as Record<string, unknown>)[p] as { apiKey?: string })?.apiKey;

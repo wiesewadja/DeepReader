@@ -904,3 +904,206 @@
 	background: var(--background-secondary);
 	border-radius: 4px;
 }
+
+/* ════════════════════════════════════════════════════════
+   AI 服务设置三层布局（spec/ai-services-settings-redesign）
+   ════════════════════════════════════════════════════════ */
+
+/* ① Plan 卡片行 — 两张平级，二选一 */
+.deeppdf-preset-row {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 12px;
+	margin-bottom: 16px;
+}
+
+.deeppdf-preset-card {
+	border: 2px solid var(--background-modifier-border);
+	border-radius: 8px;
+	padding: 14px;
+	background: var(--background-secondary);
+	cursor: pointer;
+	opacity: 0.55;
+	transition: opacity 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.deeppdf-preset-card:hover {
+	border-color: var(--background-modifier-border-hover);
+	opacity: 0.85;
+}
+
+.deeppdf-preset-card.is-selected {
+	opacity: 1;
+	border-color: var(--interactive-accent);
+	background: var(--background-primary);
+}
+
+.deeppdf-preset-card-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 4px;
+}
+
+.deeppdf-preset-card-name {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.deeppdf-preset-card-badge {
+	font-size: 10px;
+	font-weight: 600;
+	padding: 2px 6px;
+	border-radius: 10px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	margin-left: auto;
+}
+
+.deeppdf-preset-card-desc {
+	font-size: 11px;
+	color: var(--text-muted);
+	margin-bottom: 10px;
+}
+
+/* ② 角色预览区 */
+.deeppdf-role-preview-title {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-normal);
+	margin-bottom: 8px;
+}
+
+.deeppdf-preview-tag {
+	font-size: 10px;
+	font-weight: 500;
+	padding: 2px 8px;
+	border-radius: 10px;
+	color: var(--text-on-accent);
+}
+
+.deeppdf-preview-tag.is-pending {
+	background: var(--color-orange);
+}
+
+.deeppdf-preview-tag.is-committed {
+	background: var(--color-green);
+}
+
+.deeppdf-role-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 7px 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+	font-size: 13px;
+}
+
+.deeppdf-role-row:last-child {
+	border-bottom: none;
+}
+
+.deeppdf-role-label {
+	width: 52px;
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+
+.deeppdf-role-key {
+	width: 78px;
+	font-family: var(--font-monospace);
+	font-size: 11px;
+	color: var(--text-faint);
+	flex-shrink: 0;
+}
+
+.deeppdf-role-arrow {
+	color: var(--text-faint);
+	flex-shrink: 0;
+}
+
+.deeppdf-role-model {
+	flex: 1;
+	color: var(--text-normal);
+}
+
+.deeppdf-role-model.is-empty {
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+.deeppdf-role-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+.deeppdf-role-dot.is-volcark {
+	background: var(--interactive-accent);
+}
+
+.deeppdf-role-dot.is-xiaomi {
+	background: var(--color-purple);
+}
+
+.deeppdf-role-dot.is-siliconflow {
+	background: var(--color-green);
+}
+
+.deeppdf-role-dot.is-other {
+	background: var(--color-blue);
+}
+
+.deeppdf-role-dot.is-empty {
+	background: transparent;
+	border: 1.5px dashed var(--text-faint);
+}
+
+.deeppdf-role-preview.is-pending .deeppdf-role-model {
+	opacity: 0.9;
+}
+
+/* ③ 折叠区（其他服务商 / 角色微调等） */
+.deeppdf-collapse-toggle {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	cursor: pointer;
+	padding: 10px 0;
+	color: var(--text-muted);
+	font-size: 13px;
+}
+
+.deeppdf-collapse-toggle:hover {
+	color: var(--text-normal);
+}
+
+.deeppdf-collapse-arrow {
+	transition: transform 0.15s;
+	display: inline-flex;
+}
+
+.deeppdf-collapse-toggle.is-open .deeppdf-collapse-arrow {
+	transform: rotate(90deg);
+}
+
+.deeppdf-collapse-body {
+	display: none;
+	padding-top: 4px;
+}
+
+.deeppdf-collapse-body.is-open {
+	display: block;
+}
+
+/* 移动端：plan 卡片纵向堆叠 */
+@media (max-width: 600px) {
+	.deeppdf-preset-row {
+		grid-template-columns: 1fr;
+	}
+}

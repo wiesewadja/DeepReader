@@ -29,6 +29,7 @@ import type {
 } from "./book-types.js";
 
 import { IndexErrorCode, IndexError } from "./book-types.js";
+import type { BookMeta } from "./book-types.js";
 import { log as piLog } from "./core/logger";
 import { PAGEINDEX_DIR, getPageindexDir } from "./paths.js";
 import {
@@ -204,7 +205,34 @@ export async function searchBookV2(
   } else if (options.embedding && options.embedding.provider !== 'local') {
     try {
       precomputedEmbedding = await getOrGenerateEmbedding(options.query, options.embedding);
-      tracer.endStage("success", { hasEmbedding: true, source: "generated" });
+
+      // ── Dimension mismatch detection ──
+      // 必须先检测：endStage() 调用即清空 currentStage，success 之后的 failure 调用是 no-op（不会被记录）。
+      let dimMismatch = false;
+      if (precomputedEmbedding) {
+        const meta = await loadBookMetaJson(indexDir, app);
+        if (meta?.embedding?.dimensions && precomputedEmbedding.length !== meta.embedding.dimensions) {
+          const queryDim = precomputedEmbedding.length;
+          const indexDim = meta.embedding.dimensions;
+          const dimErr = new IndexError(
+            `Query embedding has ${queryDim} dimensions, but index was built with ${indexDim} dimensions (model: ${meta.embedding.model})`,
+            IndexErrorCode.VECTOR_DIMENSION_MISMATCH,
+            `向量维度不匹配：当前 embedding 模型（${queryDim}维）与索引（${indexDim}维）不兼容，向量搜索已禁用`,
+            "请在 Library 中删除此书后重新添加以重建索引"
+          );
+          piLog(`[book-search-v2] ${dimErr.code}: ${dimErr.message}`);
+          precomputedEmbedding = null;
+          dimMismatch = true;
+          tracer.endStage("failure", {
+            queryDim,
+            indexDim,
+            indexModel: meta.embedding.model,
+          });
+        }
+      }
+      if (!dimMismatch) {
+        tracer.endStage("success", { hasEmbedding: true, source: "generated" });
+      }
     } catch (error) {
       tracer.endStage("failure", { error: String(error) });
       piLog(`[book-search-v2] Query embedding failed: ${error}`);
@@ -504,6 +532,18 @@ export async function loadTreeJson(indexDir: string, app?: App): Promise<TreeDat
       ? await vaultRead(app, treePath)
       : await nodeFs().readFile(treePath, "utf-8");
     return JSON.parse(content) as TreeData;
+  } catch {
+    return null;
+  }
+}
+
+async function loadBookMetaJson(indexDir: string, app?: App): Promise<BookMeta | null> {
+  try {
+    const metaPath = app ? joinPath(indexDir, "book-meta.json") : nodePath().join(indexDir, "book-meta.json");
+    const content = app
+      ? await vaultRead(app, metaPath)
+      : await nodeFs().readFile(metaPath, "utf-8");
+    return JSON.parse(content) as BookMeta;
   } catch {
     return null;
   }

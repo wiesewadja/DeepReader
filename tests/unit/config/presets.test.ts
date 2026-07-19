@@ -2,16 +2,18 @@ import { describe, it, expect } from 'vitest';
 import { PRESETS, getPresetById, buildRolesFromPreset } from '@/config/presets';
 
 describe('Presets', () => {
-	it('should have exactly 1 preset (xitong)', () => {
-		expect(PRESETS).toHaveLength(1);
+	it('should have 2 presets (agent-plan, xitong)', () => {
+		expect(PRESETS).toHaveLength(2);
+		expect(PRESETS[0].id).toBe('agent-plan');
+		expect(PRESETS[1].id).toBe('xitong');
 	});
 
-	it('xitong should be recommended', () => {
-		const xt = getPresetById('xitong')!;
-		expect(PRESETS[0].id).toBe('xitong');
-		expect(xt.recommended).toBe(true);
-		expect(xt.free).toBe(false);
-		expect(xt.provider).toBe('xiaomi');
+	it('agent-plan should be recommended', () => {
+		const ap = getPresetById('agent-plan')!;
+		expect(PRESETS[0].id).toBe('agent-plan');
+		expect(ap.recommended).toBe(true);
+		expect(ap.free).toBe(false);
+		expect(ap.provider).toBe('volcark');
 	});
 
 	it('xitong primary roles use xiaomi', () => {
@@ -41,9 +43,10 @@ describe('Presets', () => {
 		expect(getPresetById('openai-standard')).toBeUndefined();
 	});
 
-	it('buildRolesFromPreset with secondary should build all 7 roles', () => {
+	it('buildRolesFromPreset with all providers should build all 7 roles', () => {
 		const xt = getPresetById('xitong')!;
-		const roles = buildRolesFromPreset(xt, true);
+		const allProviders = new Set(['siliconflow']);
+		const roles = buildRolesFromPreset(xt, allProviders);
 		expect(roles.chat).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-pro' });
 		expect(roles.router).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
 		expect(roles.pageindex).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
@@ -53,9 +56,10 @@ describe('Presets', () => {
 		expect(roles.tts).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' });
 	});
 
-	it('buildRolesFromPreset without secondary only builds primary roles', () => {
+	it('buildRolesFromPreset without providers only builds primary roles', () => {
 		const xt = getPresetById('xitong')!;
-		const roles = buildRolesFromPreset(xt, false);
+		const emptySet = new Set<string>();
+		const roles = buildRolesFromPreset(xt, emptySet);
 		expect(roles.chat).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-pro' });
 		expect(roles.router).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
 		expect(roles.embedding).toBeUndefined();

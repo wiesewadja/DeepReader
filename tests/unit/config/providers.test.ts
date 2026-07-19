@@ -104,8 +104,8 @@ describe('PROVIDER_CONFIGS', () => {
 		}
 	});
 
-	it('has exactly 8 providers', () => {
-		expect(Object.keys(PROVIDER_CONFIGS)).toHaveLength(8);
+	it('has exactly 9 providers', () => {
+		expect(Object.keys(PROVIDER_CONFIGS)).toHaveLength(9);
 	});
 });
 

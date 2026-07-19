@@ -1,11 +1,17 @@
 /**
- * 服务商预设配置 — 奚童预设
+ * 服务商预设配置
  *
- * 奚童预设使用双 Provider：小米 MIMO（对话）+ SiliconFlow（搜索）。
+ * 支持多 Provider 预设（如火山方舟 Agent Plan：volcark + xiaomi + siliconflow）。
  */
 
 import type { AIRoleConfig } from './ai-roles';
 import type { RoleType } from './types';
+
+export interface AdditionalProvider {
+	provider: string;
+	roleAssignments: Partial<Record<RoleType, string>>;
+	website?: string;
+}
 
 /** 预设配置 */
 export interface ProviderPreset {
@@ -18,23 +24,58 @@ export interface ProviderPreset {
 	website?: string;
 	roleAssignments: Partial<Record<RoleType, string>>;
 
-	/** 奚童预设：第二 Provider（SiliconFlow） */
+	/** @deprecated 使用 additionalProviders 替代 */
 	secondaryProvider?: string;
+	/** @deprecated 使用 additionalProviders 替代 */
 	secondaryRoleAssignments?: Partial<Record<RoleType, string>>;
 	secondaryWebsite?: string;
+
+	/** 额外的 Provider 分配（支持多个） */
+	additionalProviders?: AdditionalProvider[];
 }
 
 /**
- * 预设列表 — 只有奚童
+ * 预设列表
  */
 export const PRESETS: ProviderPreset[] = [
+	{
+		id: 'agent-plan',
+		label: '火山方舟 Agent Plan',
+		description: '豆包对话 + MIMO 语音 + SiliconFlow 重排',
+		provider: 'volcark',
+		free: false,
+		recommended: true,
+		website: 'https://console.volcengine.com/ark',
+		roleAssignments: {
+			chat: 'doubao-seed-2.0-pro',
+			router: 'doubao-seed-2.0-lite',
+			pageindex: 'doubao-seed-2.0-lite',
+			proposition: 'doubao-seed-2.0-lite',
+			embedding: 'doubao-embedding-vision',
+		},
+		additionalProviders: [
+			{
+				provider: 'xiaomi',
+				roleAssignments: {
+					tts: 'mimo-v2.5-tts-voicedesign',
+				},
+				website: 'https://platform.xiaomimimo.com',
+			},
+			{
+				provider: 'siliconflow',
+				roleAssignments: {
+					reranker: 'Qwen/Qwen3-Reranker-0.6B',
+				},
+				website: 'https://cloud.siliconflow.cn',
+			},
+		],
+	},
 	{
 		id: 'xitong',
 		label: '奚童',
 		description: 'MIMO 对话 + SiliconFlow 搜索，一个配置全搞定',
 		provider: 'xiaomi',
 		free: false,
-		recommended: true,
 		website: 'https://platform.xiaomimimo.com',
 		roleAssignments: {
 			chat: 'mimo-v2.5-pro',
@@ -58,16 +99,37 @@ export function getPresetById(id: string): ProviderPreset | undefined {
 }
 
 /**
+ * 获取预设的所有额外 Provider（合并 secondary + additionalProviders 以保持向后兼容）
+ */
+export function getAllAdditionalProviders(preset: ProviderPreset): AdditionalProvider[] {
+	const result: AdditionalProvider[] = [];
+
+	if (preset.secondaryProvider && preset.secondaryRoleAssignments) {
+		result.push({
+			provider: preset.secondaryProvider,
+			roleAssignments: preset.secondaryRoleAssignments,
+			website: preset.secondaryWebsite,
+		});
+	}
+
+	if (preset.additionalProviders) {
+		result.push(...preset.additionalProviders);
+	}
+
+	return result;
+}
+
+/**
  * 将预设的角色分配构建为 roles 对象
  *
- * 合并主 Provider 和第二 Provider 的角色分配。
- * 未列出的角色保持 null。
+ * 合并主 Provider 和有 Key 的额外 Provider 的角色分配。
+ * 无 Key 的额外 Provider 不参与角色构建，由调用方单独降级。
  *
- * @param withSecondary 是否包含第二 Provider 角色（用于降级判断）
+ * @param providersWithKeys 有 API Key 的额外 Provider 集合（不传则包含全部）
  */
 export function buildRolesFromPreset(
 	preset: ProviderPreset,
-	withSecondary = true,
+	providersWithKeys?: Set<string>,
 ): Record<string, AIRoleConfig | null> {
 	const roles: Record<string, AIRoleConfig | null> = {};
 
@@ -75,9 +137,10 @@ export function buildRolesFromPreset(
 		roles[role] = { provider: preset.provider, model };
 	}
 
-	if (withSecondary && preset.secondaryProvider && preset.secondaryRoleAssignments) {
-		for (const [role, model] of Object.entries(preset.secondaryRoleAssignments)) {
-			roles[role] = { provider: preset.secondaryProvider, model };
+	for (const additional of getAllAdditionalProviders(preset)) {
+		if (providersWithKeys && !providersWithKeys.has(additional.provider)) continue;
+		for (const [role, model] of Object.entries(additional.roleAssignments)) {
+			roles[role] = { provider: additional.provider, model };
 		}
 	}
 
@@ -85,7 +148,7 @@ export function buildRolesFromPreset(
 }
 
 /**
- * 检测当前 settings 是否匹配某个预设（含第二 Provider）
+ * 检测当前 settings 是否匹配某个预设
  *
  * 当所有角色的 provider + model 完全一致时返回该预设，否则返回 null。
  */
@@ -93,23 +156,53 @@ export function detectCurrentPreset(
 	roles: Record<string, { provider: string; model: string } | null>,
 ): ProviderPreset | null {
 	return PRESETS.find(p => {
-		const expected = buildRolesFromPreset(p);
-
-		// 检查主 Provider 角色
 		const allPrimaryMatch = Object.entries(p.roleAssignments).every(([role, model]) => {
 			const r = roles[role];
 			return r?.provider === p.provider && r?.model === model;
 		});
 		if (!allPrimaryMatch) return false;
 
-		// 检查第二 Provider 角色
-		if (p.secondaryProvider && p.secondaryRoleAssignments) {
-			return Object.entries(p.secondaryRoleAssignments).every(([role, model]) => {
+		for (const additional of getAllAdditionalProviders(p)) {
+			const allMatch = Object.entries(additional.roleAssignments).every(([role, model]) => {
 				const r = roles[role];
-				return r?.provider === p.secondaryProvider && r?.model === model;
+				return r?.provider === additional.provider && r?.model === model;
 			});
+			if (!allMatch) return false;
 		}
 
 		return true;
 	}) ?? null;
+}
+
+/**
+ * 预览角色分配（纯函数，无副作用）
+ *
+ * UI 预览用：给定选中的预设 + 哪些额外 Provider 有 Key，算出各角色的预览分配。
+ * 是 buildRolesFromPreset 的薄封装，补齐全部 RoleType（未分配的角色为 null）。
+ *
+ * @param presetId 预设 ID
+ * @param providersWithKeys 有 API Key 的额外 Provider 集合
+ */
+export function computePreviewRoles(
+	presetId: string,
+	providersWithKeys: Set<string>,
+): Record<RoleType, AIRoleConfig | null> {
+	const preset = getPresetById(presetId);
+	if (!preset) throw new Error(`Unknown preset: ${presetId}`);
+
+	const built = buildRolesFromPreset(preset, providersWithKeys);
+	const roles: Record<RoleType, AIRoleConfig | null> = {
+		chat: null,
+		router: null,
+		pageindex: null,
+		proposition: null,
+		embedding: null,
+		reranker: null,
+		tts: null,
+		imagegen: null,
+	};
+	for (const [role, cfg] of Object.entries(built)) {
+		roles[role as RoleType] = cfg;
+	}
+	return roles;
 }

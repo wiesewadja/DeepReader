@@ -59,6 +59,7 @@ const data = {
 			fallbackApiKey: get('DEEPREADER_XIAOMI_FALLBACK_KEY'),
 		},
 		sensenova: { apiKey: get('DEEPREADER_SENSENOVA_API_KEY') },
+		volcark: { apiKey: get('DEEPREADER_VOLCARK_API_KEY') },
 		mineru: { apiKey: get('DEEPREADER_MINERU_API_KEY') },
 	},
 	roles: {
