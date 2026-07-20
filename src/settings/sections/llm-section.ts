@@ -23,6 +23,8 @@ export interface LLMState {
 	mimoTestStatus: { success: boolean; message: string } | null;
 	siliconflowTestStatus: { success: boolean; message: string } | null;
 	selectedPresetId: string;
+	/** selectedPresetId 是否已从 settings 推断过（避免覆盖用户显式选择） */
+	presetInited?: boolean;
 	forceShowQuickSetup: boolean;
 }
 
@@ -43,6 +45,14 @@ export function renderLLMSection(
 	state: LLMState,
 	onRerender: () => void,
 ): void {
+	// 首次渲染：从当前 settings 推断默认预设（重启后保持用户上次确认的选择）
+	if (!state.presetInited) {
+		const roles = ctx.plugin.settings.roles as unknown as Record<string, { provider: string; model: string } | null>;
+		const detected = detectCurrentPreset(roles);
+		if (detected) state.selectedPresetId = detected.id;
+		state.presetInited = true;
+	}
+
 	if (!ctx.plugin.settings.setupComplete || state.forceShowQuickSetup) {
 		// 首次配置 / 重新配置：① plan 卡片 + 角色预览 + 确认
 		renderQuickSetup(container, ctx, state, onRerender);
