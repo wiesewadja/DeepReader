@@ -126,18 +126,39 @@ function extractHeaders(init: RequestInit): {
  * 2. 如果遇到网络/CORS 错误，降级为 `requestUrl()` 非流式请求
  *    构造一个兼容的 Response 对象，body 为完整响应
  */
+/**
+ * 已知不支持浏览器 CORS 的服务商域名（预检必失败、会污染控制台日志）。
+ * 命中即跳过原生 fetch，直接走 requestUrl（主进程，不受 CORS 限制）。
+ */
+const NO_CORS_FETCH_HOSTS = [
+	'ark.cn-beijing.volces.com', // 火山方舟：预检不允许 authorization 头
+];
+
+function shouldSkipNativeFetch(url: string): boolean {
+	try {
+		const host = new URL(url).host;
+		return NO_CORS_FETCH_HOSTS.some(h => host === h || host.endsWith('.' + h));
+	} catch {
+		return false;
+	}
+}
+
 export async function fetchWithCorsFallback(
 	url: string,
 	init: RequestInit,
 ): Promise<Response> {
-	try {
-		return await fetch(url, init);
-	} catch (error) {
-		if (!isNetworkError(error)) {
-			throw error;
+	// 已知不支持 CORS 的服务商：跳过原生 fetch（预检失败会污染控制台），直接 requestUrl
+	if (!shouldSkipNativeFetch(url)) {
+		try {
+			return await fetch(url, init);
+		} catch (error) {
+			if (!isNetworkError(error)) {
+				throw error;
+			}
 		}
+	}
 
-		// 网络/CORS 错误，降级为 requestUrl 非流式
+	// 网络/CORS 错误（或 NO_CORS 服务商），降级为 requestUrl 非流式
 		const { headers, contentType } = extractHeaders(init);
 
 		const resp = await requestUrl({
@@ -149,8 +170,13 @@ export async function fetchWithCorsFallback(
 			throw: false,
 		});
 
-		// 构造 SSE 格式的 Response，让下游流式解析器正常工作
-		const sseBody = `data: ${resp.text}\n\ndata: [DONE]\n\n`;
+		// requestUrl 一次读完整 body。若原始请求是 stream:true，服务端返回的就是 SSE 原文
+		// （"data: {...}\ndata: {...}\n"），不能再套一层 data: 前缀，否则下游 SSE 解析器双重解析出错。
+		const text = resp.text;
+		const isAlreadySse = /^data:/.test(text) || /\ndata:/.test(text);
+		const sseBody = isAlreadySse
+			? `${text}${text.endsWith('\n') ? '' : '\n'}data: [DONE]\n\n`
+			: `data: ${text}\n\ndata: [DONE]\n\n`;
 		return new Response(sseBody, {
 			status: resp.status,
 			statusText: resp.status >= 400 ? 'Error' : 'OK',
@@ -159,7 +185,6 @@ export async function fetchWithCorsFallback(
 				...resp.headers,
 			}),
 		});
-	}
 }
 
 /**
