@@ -79,7 +79,7 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 		baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
 		defaultModel: 'doubao-seed-2.0-pro',
 		supportsModelList: true,
-		capabilities: { chat: true, embedding: true, reranker: false, tts: false, imagegen: false },
+		capabilities: { chat: true, embedding: true, reranker: false, tts: true, imagegen: false },
 	},
 	custom: {
 		baseUrl: '', // 使用用户输入的 baseUrl

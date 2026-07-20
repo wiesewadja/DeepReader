@@ -90,7 +90,7 @@ describe('applyPreset - agent-plan multi-provider', () => {
 		expect(settings.roles.pageindex).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-lite' });
 		expect(settings.roles.proposition).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-lite' });
 		expect(settings.roles.embedding).toEqual({ provider: 'volcark', model: 'doubao-embedding-vision' });
-		expect(settings.roles.tts).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' });
+		expect(settings.roles.tts).toEqual({ provider: 'volcark', model: 'doubao-seed-tts-2.0' });
 		expect(settings.roles.reranker).toEqual({ provider: 'siliconflow', model: 'Qwen/Qwen3-Reranker-0.6B' });
 	});
 
@@ -102,7 +102,7 @@ describe('applyPreset - agent-plan multi-provider', () => {
 		expect(settings.roles.pageindex).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-lite' });
 		expect(settings.roles.proposition).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-lite' });
 		expect(settings.roles.embedding).toEqual({ provider: 'volcark', model: 'doubao-embedding-vision' });
-		expect(settings.roles.tts).toBeNull();
+		expect(settings.roles.tts).toEqual({ provider: 'volcark', model: 'doubao-seed-tts-2.0' });
 		expect(settings.roles.reranker).toBeNull();
 	});
 
@@ -113,7 +113,7 @@ describe('applyPreset - agent-plan multi-provider', () => {
 		});
 		expect(settings.roles.chat).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-pro' });
 		expect(settings.roles.embedding).toEqual({ provider: 'volcark', model: 'doubao-embedding-vision' });
-		expect(settings.roles.tts).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' });
+		expect(settings.roles.tts).toEqual({ provider: 'volcark', model: 'doubao-seed-tts-2.0' });
 		expect(settings.roles.reranker).toBeNull();
 	});
 
@@ -124,7 +124,7 @@ describe('applyPreset - agent-plan multi-provider', () => {
 		});
 		expect(settings.roles.chat).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-pro' });
 		expect(settings.roles.embedding).toEqual({ provider: 'volcark', model: 'doubao-embedding-vision' });
-		expect(settings.roles.tts).toBeNull();
+		expect(settings.roles.tts).toEqual({ provider: 'volcark', model: 'doubao-seed-tts-2.0' });
 		expect(settings.roles.reranker).toEqual({ provider: 'siliconflow', model: 'Qwen/Qwen3-Reranker-0.6B' });
 	});
 

@@ -41,7 +41,7 @@ export const PRESETS: ProviderPreset[] = [
 	{
 		id: 'agent-plan',
 		label: '火山方舟 Agent Plan',
-		description: '豆包对话 + MIMO 语音 + SiliconFlow 重排',
+		description: '豆包对话+语音 + SiliconFlow 重排',
 		provider: 'volcark',
 		free: false,
 		recommended: true,
@@ -52,15 +52,9 @@ export const PRESETS: ProviderPreset[] = [
 			pageindex: 'doubao-seed-2.0-lite',
 			proposition: 'doubao-seed-2.0-lite',
 			embedding: 'doubao-embedding-vision',
+			tts: 'doubao-seed-tts-2.0',
 		},
 		additionalProviders: [
-			{
-				provider: 'xiaomi',
-				roleAssignments: {
-					tts: 'mimo-v2.5-tts-voicedesign',
-				},
-				website: 'https://platform.xiaomimimo.com',
-			},
 			{
 				provider: 'siliconflow',
 				roleAssignments: {

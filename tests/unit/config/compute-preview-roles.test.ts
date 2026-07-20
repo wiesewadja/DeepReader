@@ -7,33 +7,33 @@ describe('computePreviewRoles', () => {
 		expect(() => computePreviewRoles('nonexistent', new Set())).toThrow('Unknown preset');
 	});
 
-	it('agent-plan with no extra keys → only volcark roles, tts/reranker null', () => {
+	it('agent-plan with no extra keys → only volcark roles (含 tts), reranker null', () => {
 		const roles = computePreviewRoles('agent-plan', new Set());
 		expect(roles.chat).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-pro' });
 		expect(roles.router).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-lite' });
 		expect(roles.pageindex).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-lite' });
 		expect(roles.proposition).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-lite' });
 		expect(roles.embedding).toEqual({ provider: 'volcark', model: 'doubao-embedding-vision' });
-		expect(roles.tts).toBeNull();
+		expect(roles.tts).toEqual({ provider: 'volcark', model: 'doubao-seed-tts-2.0' });
 		expect(roles.reranker).toBeNull();
 	});
 
-	it('agent-plan + xiaomi key → tts enabled', () => {
+	it('agent-plan + xiaomi key → tts 仍为 volcark（主 provider 自带）', () => {
 		const roles = computePreviewRoles('agent-plan', new Set(['xiaomi']));
 		expect(roles.chat).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-pro' });
-		expect(roles.tts).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' });
+		expect(roles.tts).toEqual({ provider: 'volcark', model: 'doubao-seed-tts-2.0' });
 		expect(roles.reranker).toBeNull();
 	});
 
 	it('agent-plan + siliconflow key → reranker enabled', () => {
 		const roles = computePreviewRoles('agent-plan', new Set(['siliconflow']));
 		expect(roles.reranker).toEqual({ provider: 'siliconflow', model: 'Qwen/Qwen3-Reranker-0.6B' });
-		expect(roles.tts).toBeNull();
+		expect(roles.tts).toEqual({ provider: 'volcark', model: 'doubao-seed-tts-2.0' });
 	});
 
-	it('agent-plan + both extra keys → all roles enabled', () => {
+	it('agent-plan + both extra keys → tts=volcark, reranker=siliconflow', () => {
 		const roles = computePreviewRoles('agent-plan', new Set(['xiaomi', 'siliconflow']));
-		expect(roles.tts).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' });
+		expect(roles.tts).toEqual({ provider: 'volcark', model: 'doubao-seed-tts-2.0' });
 		expect(roles.reranker).toEqual({ provider: 'siliconflow', model: 'Qwen/Qwen3-Reranker-0.6B' });
 		expect(roles.embedding).toEqual({ provider: 'volcark', model: 'doubao-embedding-vision' });
 	});

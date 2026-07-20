@@ -159,24 +159,47 @@ export async function fetchWithCorsFallback(
 	}
 
 	// 网络/CORS 错误（或 NO_CORS 服务商），降级为 requestUrl 非流式
-		const { headers, contentType } = extractHeaders(init);
+	const { headers, contentType } = extractHeaders(init);
 
-		const resp = await requestUrl({
-			url,
-			method: (init.method as string) || 'POST',
-			contentType,
-			headers,
-			body: init.body as string,
-			throw: false,
+	const resp = await requestUrl({
+		url,
+		method: (init.method as string) || 'POST',
+		contentType,
+		headers,
+		body: init.body as string,
+		throw: false,
+	});
+
+	// 检测原始请求是否为流式（body 含 "stream":true）。
+	// 非流式请求（如 S1 Router 的 streaming:false）会调用 response.json()，
+	// 若包成 SSE 会导致 .json() 解析 "data: {...}" 失败。
+	let isStreamRequest = false;
+	if (typeof init.body === 'string') {
+		try {
+			const parsed = JSON.parse(init.body);
+			isStreamRequest = !!parsed?.stream;
+		} catch { /* 非 JSON body，视为非流式 */ }
+	}
+
+	const text = resp.text;
+
+	if (!isStreamRequest) {
+		// 非流式：直接返回原始 body（JSON），保持 content-type
+		return new Response(text, {
+			status: resp.status,
+			statusText: resp.status >= 400 ? 'Error' : 'OK',
+			headers: new Headers({
+				'Content-Type': resp.headers['content-type'] || 'application/json',
+				...resp.headers,
+			}),
 		});
+	}
 
-		// requestUrl 一次读完整 body。若原始请求是 stream:true，服务端返回的就是 SSE 原文
-		// （"data: {...}\ndata: {...}\n"），不能再套一层 data: 前缀，否则下游 SSE 解析器双重解析出错。
-		const text = resp.text;
-		const isAlreadySse = /^data:/.test(text) || /\ndata:/.test(text);
-		const sseBody = isAlreadySse
-			? `${text}${text.endsWith('\n') ? '' : '\n'}data: [DONE]\n\n`
-			: `data: ${text}\n\ndata: [DONE]\n\n`;
+	// 流式：构造 SSE 格式。若服务端返回的已是 SSE 原文（data: 开头）则不再套前缀，避免双重解析
+	const isAlreadySse = /^data:/.test(text) || /\ndata:/.test(text);
+	const sseBody = isAlreadySse
+		? `${text}${text.endsWith('\n') ? '' : '\n'}data: [DONE]\n\n`
+		: `data: ${text}\n\ndata: [DONE]\n\n`;
 		return new Response(sseBody, {
 			status: resp.status,
 			statusText: resp.status >= 400 ? 'Error' : 'OK',
