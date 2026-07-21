@@ -33,7 +33,7 @@ function defaultProviders(): Record<string, AIProviderAccount> {
 			proposition: { provider: 'volcark', model: 'doubao-seed-2.0-lite' },
 			embedding:   { provider: 'volcark', model: 'doubao-embedding-vision' },
 			reranker:    { provider: 'siliconflow', model: 'Qwen/Qwen3-Reranker-0.6B' },
-			tts:         { provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' },
+			tts:         { provider: 'volcark', model: 'doubao-seed-tts-2.0' },
 			imagegen:    null,
 		};
 	}

@@ -65,6 +65,7 @@ export function createChatModels(main: ModelConfig, fast?: ModelConfig): ChatMod
     model: main.model || 'deepseek-chat',
     streaming: true,
     temperature: 0.3,
+    maxTokens: 8192,
     modelKwargs: mainKwargs,
     timeout: main.requestTimeout || 60000, // 默认 60 秒超时（@langchain/openai 字段名为 timeout）
   });

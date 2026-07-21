@@ -4,11 +4,12 @@ import { resolveRoleConfig } from "../../../config/providers.js";
 import { MemoryStore } from "../../../agent/memory/store.js";
 import type { TTSContext } from "../../../services/tts/tts-summarizer.js";
 import { PCMStreamPlayer } from "../../../services/tts/pcm-stream-player.js";
-import { TTSClient } from "../../../services/tts/tts-client.js";
+import { type ITTSSynthesizer, createTTSClient } from "../../../services/tts/tts-client.js";
 import { TTSService } from "../../../services/tts/tts-service.js";
 import type { TTSPlayState } from "../../../services/tts/tts-service.js";
 import { preprocessForTTS } from "../../../services/tts/tts-text-preprocessor.js";
 import { serviceLog } from "../../../utils/logger.js";
+
 import { EventBus } from "../event-bus.js";
 import type { SidebarEventMap } from "../events.js";
 
@@ -46,7 +47,7 @@ export class TTSDomain {
 	private options: TTSDomainOptions;
 
 	private ttsService: TTSService | null = null;
-	private readingClient: TTSClient | null = null;
+	private readingClient: ITTSSynthesizer | null = null;
 	private currentSource: TTSSource = "message";
 	private readingAbort: AbortController | null = null;
 	private readingPlayer: PCMStreamPlayer | null = null;
@@ -255,16 +256,12 @@ export class TTSDomain {
 		});
 	}
 
-	private initReadingClient(): TTSClient | null {
+	private initReadingClient(): ITTSSynthesizer | null {
 		const settings = this.plugin.settings;
 		const ttsConfig = resolveRoleConfig("tts", settings);
 		if (!ttsConfig?.apiKey) return null;
 
-		return new TTSClient({
-			apiKey: ttsConfig.apiKey,
-			baseUrl: ttsConfig.baseUrl,
-			model: "mimo-v2.5-tts",
-		});
+		return createTTSClient(ttsConfig);
 	}
 
 	private async handleMessageStreamTTS(messageId: string, content: string): Promise<void> {
@@ -291,11 +288,7 @@ export class TTSDomain {
 			return;
 		}
 
-		const client = new TTSClient({
-			apiKey: ttsConfig.apiKey,
-			baseUrl: ttsConfig.baseUrl,
-			model: "mimo-v2.5-tts",
-		});
+		const client = createTTSClient(ttsConfig);
 
 		const player = new PCMStreamPlayer();
 		this.messagePlayer = player;

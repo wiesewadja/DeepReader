@@ -5,8 +5,7 @@ import { BookGenreDetector } from './book-genre-detector.js';
 import type { BookGenre } from './book-genre-detector.js';
 import { ExpressivePreprocessor } from './expressive-preprocessor.js';
 import { PCMStreamPlayer } from './pcm-stream-player.js';
-import { TTSClient, type ITTSSynthesizer, type TTSVoiceOptions, type TTSOptions } from './tts-client.js';
-import { VolcTTSClient } from './volc-tts-client.js';
+import { type ITTSSynthesizer, type TTSVoiceOptions, type TTSOptions, createTTSClient } from './tts-client.js';
 import { TTSSummarizer, type TTSContext } from './tts-summarizer.js';
 import { resolveVoiceProfile, getDefaultVoiceProfile, type VoiceProfile } from './voice-profile.js';
 import { TTSCacheManager, type CachedAudio } from './tts-cache.js';
@@ -76,20 +75,12 @@ export class TTSService {
     private wakeLockVisibilityHandler: (() => void) | null = null;
 
     constructor(config: TTSServiceConfig) {
-        // 按 provider 分支：火山走专门的 VolcTTSClient（HTTP + X-Api-Key），其余走 OpenAI 兼容 TTSClient
-        if (config.ttsProvider === 'volcark') {
-            this.client = new VolcTTSClient({
-                apiKey: config.ttsApiKey,
-                baseUrl: config.ttsBaseUrl,
-                model: config.ttsModel,
-            });
-        } else {
-            this.client = new TTSClient({
-                apiKey: config.ttsApiKey,
-                baseUrl: config.ttsBaseUrl,
-                model: config.ttsModel,
-            });
-        }
+        this.client = createTTSClient({
+            provider: config.ttsProvider,
+            apiKey: config.ttsApiKey,
+            baseUrl: config.ttsBaseUrl,
+            model: config.ttsModel,
+        });
         this.ttsProvider = config.ttsProvider;
         this.isVoiceDesign = config.ttsModel?.includes('voicedesign') ?? false;
         this.summarizer = new TTSSummarizer({

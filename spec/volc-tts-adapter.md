@@ -27,7 +27,7 @@ Agent Plan 预设的 TTS 角色当前指向小米 MIMO（`mimo-v2.5-tts`），�
 - 端点：`https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional`（HTTP POST）
 - Header：`X-Api-Key: <ark key>` + `X-Api-Resource-Id: seed-tts-2.0`
 - Body：`{user:{uid}, namespace:"BidirectionalTTS", req_params:{text, speaker:"zh_female_vv_uranus_bigtts", audio_params:{format:"mp3", sample_rate:24000, speech_rate:0}}}`
-- 返回：`{code:0, message:"", data:"<base64 mp3>"}`
+- 返回：NDJSON — `{"code":0,"data":"<base64 chunk1>"}` 多行 + `{"code":20000000,"message":"OK","data":null}` 终止行。所有 `code=0` 的 `data` 拼接后 base64 解码得到完整 MP3
 - **ark key（Agent Plan）可直接用于 plan TTS 端点**，无需火山语音 console 的 app_id/access_token（与开源库 doubao-speech 的标准端点凭证不同）
 - speaker 默认 `zh_female_vv_uranus_bigtts`（中文女声 warm）；plan 端点接受标准 seed-tts 音色 ID
 

@@ -66,7 +66,7 @@ export const PRESETS: ProviderPreset[] = [
 	},
 	{
 		id: 'xitong',
-		label: '奚童',
+		label: 'MIMO Token Plan',
 		description: 'MIMO 对话 + SiliconFlow 搜索，一个配置全搞定',
 		provider: 'xiaomi',
 		free: false,

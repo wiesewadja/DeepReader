@@ -648,7 +648,7 @@ export class AIMessage extends Message {
 	}
 
 	highlightParagraphIndex(index: number): void {
-		// TTSReadingController doesn't have this method yet, no-op for now
+		this.ttsReadingCtrl.highlightParagraphIndex(index);
 	}
 
 	private _openFullscreen(): void {

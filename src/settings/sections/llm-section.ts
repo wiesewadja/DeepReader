@@ -17,11 +17,11 @@ const PROPOSITION_ENABLED = false;
 
 const DEFAULT_PRESET_ID = 'agent-plan';
 
+export interface TestStatus { success: boolean; message: string }
+
 export interface LLMState {
 	expandedSections: Set<string>;
-	volcarkTestStatus: { success: boolean; message: string } | null;
-	mimoTestStatus: { success: boolean; message: string } | null;
-	siliconflowTestStatus: { success: boolean; message: string } | null;
+	testStatuses: Record<string, TestStatus>;
 	selectedPresetId: string;
 	/** selectedPresetId 是否已从 settings 推断过（避免覆盖用户显式选择） */
 	presetInited?: boolean;
@@ -31,9 +31,7 @@ export interface LLMState {
 export function createLLMState(): LLMState {
 	return {
 		expandedSections: new Set(),
-		volcarkTestStatus: null,
-		mimoTestStatus: null,
-		siliconflowTestStatus: null,
+		testStatuses: {},
 		selectedPresetId: DEFAULT_PRESET_ID,
 		forceShowQuickSetup: false,
 	};
@@ -184,7 +182,7 @@ function renderQuickSetup(
 		pc.createEl('div', { text: preset.description, cls: 'deeppdf-preset-card-desc' });
 
 		// 内嵌 Key 输入（主 provider）
-		const testStatus = preset.provider === 'volcark' ? state.volcarkTestStatus : state.mimoTestStatus;
+		const testStatus = state.testStatuses[preset.provider] ?? null;
 		const placeholder = preset.provider === 'volcark' ? 'ark-（火山方舟套餐 Key）' : 'tp-（小米 Token Plan Key）';
 		const input = createProviderKeyInput(pc, ctx, preset.provider, placeholder, testStatus, () => refreshPreview());
 		inputs[preset.provider] = input;
@@ -194,9 +192,7 @@ function renderQuickSetup(
 			if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).closest('.deeppdf-btn-eye')) return;
 			if (state.selectedPresetId !== preset.id) {
 				state.selectedPresetId = preset.id;
-				state.volcarkTestStatus = null;
-				state.mimoTestStatus = null;
-				state.siliconflowTestStatus = null;
+				state.testStatuses = {};
 				onRerender();
 			}
 		});
@@ -205,7 +201,7 @@ function renderQuickSetup(
 	// ── SiliconFlow 可选增强 ──
 	const sfGroup = card.createDiv({ cls: 'deeppdf-key-group' });
 	sfGroup.createEl('div', { text: 'SiliconFlow（可选增强）', cls: 'deeppdf-key-group-label' });
-	inputs['siliconflow'] = createProviderKeyInput(sfGroup, ctx, 'siliconflow', 'sk-（向量搜索 + 重排序）', state.siliconflowTestStatus, () => refreshPreview());
+	inputs['siliconflow'] = createProviderKeyInput(sfGroup, ctx, 'siliconflow', 'sk-（向量搜索 + 重排序）', state.testStatuses['siliconflow'] ?? null, () => refreshPreview());
 	sfGroup.createEl('div', { text: '不填则向量搜索降级、重排序关闭', cls: 'deeppdf-key-group-hint' });
 
 	card.createEl('hr', { cls: 'deeppdf-divider' });
@@ -262,9 +258,7 @@ function renderQuickSetup(
 
 		testBtn.textContent = '测试中...';
 		testBtn.setAttribute('disabled', 'true');
-		state.volcarkTestStatus = null;
-		state.mimoTestStatus = null;
-		state.siliconflowTestStatus = null;
+		state.testStatuses = {};
 
 		const { testConnection } = await import('../../config/model-fetcher');
 		const tests: Promise<{ key: string; success: boolean; message: string }>[] = [];
@@ -286,10 +280,10 @@ function renderQuickSetup(
 		}
 
 		const results = await Promise.all(tests);
+		const keyMap: Record<string, string> = { volcark: 'volcark', mimo: 'mimo', sf: 'siliconflow' };
 		for (const r of results) {
-			if (r.key === 'volcark') state.volcarkTestStatus = { success: r.success, message: r.message };
-			else if (r.key === 'mimo') state.mimoTestStatus = { success: r.success, message: r.message };
-			else if (r.key === 'sf') state.siliconflowTestStatus = { success: r.success, message: r.message };
+			const providerKey = keyMap[r.key] ?? r.key;
+			state.testStatuses[providerKey] = { success: r.success, message: r.message };
 		}
 
 		testBtn.textContent = '测试连接';
@@ -324,9 +318,7 @@ function renderQuickSetup(
 		ctx.plugin.settings.setupComplete = true;
 		ctx.plugin.resetFrontendAgent();
 		await ctx.plugin.saveSettings();
-		state.volcarkTestStatus = null;
-		state.mimoTestStatus = null;
-		state.siliconflowTestStatus = null;
+		state.testStatuses = {};
 		state.forceShowQuickSetup = false;
 
 		const hasMimo = !!mimoVal;
@@ -388,9 +380,7 @@ function renderConfigSummary(
 		actions.createEl('button', { text: '重新配置', cls: 'deeppdf-btn-secondary' })
 			.addEventListener('click', () => {
 				state.forceShowQuickSetup = true;
-				state.volcarkTestStatus = null;
-				state.mimoTestStatus = null;
-				state.siliconflowTestStatus = null;
+				state.testStatuses = {};
 				onRerender();
 			});
 	} else {
@@ -420,9 +410,7 @@ function renderConfigSummary(
 					ctx.plugin.resetFrontendAgent();
 					await ctx.plugin.saveSettings();
 					state.forceShowQuickSetup = true;
-					state.volcarkTestStatus = null;
-					state.mimoTestStatus = null;
-					state.siliconflowTestStatus = null;
+					state.testStatuses = {};
 					onRerender();
 				});
 			});

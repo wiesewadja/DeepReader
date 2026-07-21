@@ -98,3 +98,4 @@ assets/
 
 # Eval build artifact（由 build-eval-entry.mjs 重新生成）
 scripts/eval/search-bundle.cjs
+.pi-subagents
