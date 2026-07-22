@@ -10,7 +10,7 @@
  */
 
 import { requestUrl } from 'obsidian';
-import { nodeHttps } from './node-compat.js';
+import { nodeHttps } from './node-compat';
 
 // ═══════════════════════════════════════════════════════════════
 // 非流式请求
