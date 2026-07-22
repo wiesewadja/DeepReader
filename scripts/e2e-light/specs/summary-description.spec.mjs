@@ -41,7 +41,9 @@ export default {
 			try {
 				const result = await evalObsidian(`(() => {
 					const plugin = app.plugins.plugins["deepreader-dev"];
-					return plugin.api.parseEpub(${JSON.stringify(fullPath)});
+					return plugin.api.parseEpub(${JSON.stringify(fullPath)}).then(r => ({
+						chapters: r.chapters.map(c => ({ id: c.id, title: c.title }))
+					}));
 				})()`, { timeout: 30_000 });
 
 				if (!result?.chapters?.length) {

@@ -68,8 +68,8 @@ export async function visualizerNode(
 
   // 独立的 watchdog AbortController：与用户 abortSignal 分开。
   // 超时后 abort 中断底层 invoke fetch，并触发 onDiagramFailed 清理占位。
-  // 单次生成约 40s，超时放宽到 180s 容纳 LLM 偶发慢响应。
-  const DIAGRAM_TIMEOUT_MS = 180_000; // 3 分钟
+  // 单次生成约 40s，超时放宽到 300s 容纳 LLM 偶发慢响应 + 复杂布局计算。
+  const DIAGRAM_TIMEOUT_MS = 300_000; // 5 分钟
   const watchdog = new AbortController();
   const watchdogTimer = setTimeout(() => {
     if (!watchdog.signal.aborted) {

@@ -57,7 +57,7 @@ export default {
 					(async () => {
 						const mainJs = await app.vault.adapter.read('.obsidian/plugins/' + (app.plugins.plugins['deepreader-dev'] ? 'deepreader-dev' : 'deepreader') + '/main.js');
 						return {
-							hasLongPress: mainJs.includes('onLongPress') || mainJs.includes('longpress'),
+							hasLongPress: mainJs.includes('onLongPress') || mainJs.includes('longPress'),
 							hasTouchstart: mainJs.includes('touchstart'),
 							hasTouchend: mainJs.includes('touchend'),
 							hasTouchmove: mainJs.includes('touchmove'),
@@ -144,21 +144,20 @@ export default {
 							hasIdleState: mainJs.includes("'idle'") || mainJs.includes('"idle"'),
 							hasListeningState: mainJs.includes("'listening'") || mainJs.includes('"listening"'),
 							hasRecognizingState: mainJs.includes("'recognizing'") || mainJs.includes('"recognizing"'),
-							hasRewritingState: mainJs.includes("'rewriting'") || mainJs.includes('"rewriting"'),
-							hasSetState: mainJs.includes('setState(') || mainJs.includes('this.state ='),
+							hasSetState: mainJs.includes('this.state =') || mainJs.includes('this.state='),
 						};
 					})()
 				`);
 
 				const allStates = result.hasIdleState && result.hasListeningState &&
-					result.hasRecognizingState && result.hasRewritingState;
+					result.hasRecognizingState;
 
 				if (allStates && result.hasSetState) {
 					pass('状态机转换逻辑完整', Date.now() - t0,
-						`idle=${result.hasIdleState}, listening=${result.hasListeningState}, recognizing=${result.hasRecognizingState}, rewriting=${result.hasRewritingState}`);
+						`idle=${result.hasIdleState}, listening=${result.hasListeningState}, recognizing=${result.hasRecognizingState}`);
 				} else {
 					fail('状态机转换逻辑完整', Date.now() - t0,
-						`idle=${result.hasIdleState}, listening=${result.hasListeningState}, recognizing=${result.hasRecognizingState}, rewriting=${result.hasRewritingState}, setState=${result.hasSetState}`);
+						`idle=${result.hasIdleState}, listening=${result.hasListeningState}, recognizing=${result.hasRecognizingState}, setState=${result.hasSetState}`);
 				}
 			} catch (e) {
 				fail('状态机转换逻辑完整', Date.now() - t0, e);

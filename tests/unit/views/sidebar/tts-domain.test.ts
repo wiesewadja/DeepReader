@@ -30,14 +30,15 @@ vi.mock("@/services/tts/pcm-stream-player", () => {
 });
 
 vi.mock("@/services/tts/tts-client", () => {
-	return {
-		TTSClient: vi.fn().mockImplementation(() => {
-			return {
-				synthesizeStream: vi.fn().mockImplementation(async function* () {
-					yield new ArrayBuffer(8);
-				}),
-			};
+	const mockClient = {
+		synthesizeStream: vi.fn().mockImplementation(async function* () {
+			yield new ArrayBuffer(8);
 		}),
+		synthesize: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+	};
+	return {
+		TTSClient: vi.fn().mockImplementation(() => mockClient),
+		createTTSClient: vi.fn().mockImplementation(() => mockClient),
 	};
 });
 
@@ -132,13 +133,10 @@ describe("TTSDomain", () => {
 	});
 
 	it("stopReading aborts an active reading stream and resets state", async () => {
-		const { TTSClient: MockedTTSClient } = await import("@/services/tts/tts-client");
-		const abortSignal = { aborted: false } as AbortSignal;
-		let controller: AbortController | null = null;
+		const { createTTSClient } = await import("@/services/tts/tts-client");
 
-		vi.mocked(MockedTTSClient).mockImplementation(() => ({
-			synthesizeStream: vi.fn((_text, _opts, signal) => {
-				controller = signal as unknown as AbortController;
+		vi.mocked(createTTSClient).mockImplementation(() => ({
+			synthesizeStream: vi.fn((_text: string, _opts: unknown, signal?: AbortSignal) => {
 				return (async function* () {
 					yield new ArrayBuffer(8);
 					// Keep the stream alive until explicitly aborted.
@@ -147,6 +145,7 @@ describe("TTSDomain", () => {
 					}
 				})();
 			}),
+			synthesize: vi.fn(),
 		}));
 
 		const domain = createDomain();
