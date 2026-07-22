@@ -82,11 +82,12 @@ export default {
 					});
 				})()`, { timeout: 120_000 });
 
-				if (!result || !(result.notesCount > 0)) {
-					throw new Error(`exportToObsidian: notesCount=${result?.notesCount}`);
+				const notesCount = result?.notes?.length ?? 0;
+				if (!result || notesCount === 0) {
+					throw new Error(`exportToObsidian: notes=${notesCount}, mocPath=${result?.mocPath}`);
 				}
 
-				pass('exportToObsidian', Date.now() - t0, `notes=${result.notesCount}`);
+				pass('exportToObsidian', Date.now() - t0, `notes=${notesCount}`);
 			} catch (e) {
 				fail('exportToObsidian', Date.now() - t0, e);
 				return { steps };
