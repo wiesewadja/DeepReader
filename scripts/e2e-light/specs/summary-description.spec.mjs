@@ -101,12 +101,9 @@ export default {
 			try {
 				const result = await evalObsidian(`(() => {
 					const files = app.vault.getMarkdownFiles();
-					const bookDir = app.vault.adapter.basePath + '/AI工程大模型应用开发实战';
+					const epubDir = files.find(f => f.path.endsWith('- MOC.md') && f.path.includes('AI'))?.path.replace(/\\/[^/]+$/, '') || '';
 					const chapterFiles = files.filter(f =>
-						f.path.includes('/') &&
-						!f.path.startsWith('.obsidian') &&
-						!f.path.startsWith('.pageindex') &&
-						f.path.startsWith('DeepReader/AI工程大模型应用开发实战') &&
+						epubDir && f.path.startsWith(epubDir + '/') &&
 						!f.path.includes('MOC') &&
 						f.path.endsWith('.md')
 					);
