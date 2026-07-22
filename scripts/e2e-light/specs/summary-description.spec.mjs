@@ -66,11 +66,12 @@ export default {
 				const result = await evalObsidian(`(() => {
 					const plugin = app.plugins.plugins["deepreader-dev"];
 
-					// 构建 mock summaries
+					// 构建 mock summaries（按 nodeId 索引，与 epub-to-obsidian 的 lookup 对齐）
 					const titles = ${JSON.stringify(chapterTitles.slice(0, 5))};
 					const summaries = {};
-					for (const t of titles) {
-						summaries[t] = '这是' + t + '章节的模拟摘要，用于验证导出结构。';
+					for (let i = 0; i < titles.length; i++) {
+						const nodeId = String(i + 1).padStart(4, '0');
+						summaries[nodeId] = { title: titles[i], summary: '这是' + titles[i] + '章节的模拟摘要，用于验证导出结构。' };
 					}
 					const docDesc = '这是一本关于金钱与公正的书籍，探讨了市场道德边界的问题。';
 
@@ -78,7 +79,7 @@ export default {
 						outputDir: ${JSON.stringify(basePath)},
 						includeIndex: true,
 						docDescription: docDesc,
-						nodeSummaries: JSON.stringify(summaries),
+						nodeSummaries: summaries,
 					});
 				})()`, { timeout: 120_000 });
 
