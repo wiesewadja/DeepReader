@@ -11,6 +11,7 @@ import {
 } from '@/agent/tools/excalidraw/excalidraw';
 import { excalidrawTool } from '@/agent/tools/excalidraw/excalidraw';
 import { writeExcalidrawJson } from '@/agent/tools/excalidraw/excalidraw';
+import { buildOrthogonalPath } from '@/agent/tools/excalidraw/excalidraw-geometry';
 import type { ElementDef } from '@/agent/tools/excalidraw/excalidraw';
 import type { ToolContext } from '@/agent/tools/types';
 
@@ -128,6 +129,39 @@ describe('buildExcalidrawJSON', () => {
     const seedSet = new Set(seeds);
     expect(seedSet.size).toBe(3);
     seeds.forEach(s => expect(s).toBeGreaterThan(0));
+  });
+
+  it('recomputes container element bounding box to neatly enclose child elements', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'c1', type: 'rectangle', x: 0, y: 0, width: 50, height: 50, customData: { isContainer: true, childIds: ['child1', 'child2'] } }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 100, y: 100, width: 100, height: 50 }),
+      makeElement({ id: 'child2', type: 'rectangle', x: 250, y: 200, width: 100, height: 50 }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const container = result.elements.find(e => e.id === 'c1');
+    expect(container).toBeDefined();
+
+    // child1: [100, 100] to [200, 150]
+    // child2: [250, 200] to [350, 250]
+    // bbox: minX=100, minY=100, maxX=350, maxY=250
+    // padding=24
+    expect(container!.x).toBe(100 - 24);
+    expect(container!.y).toBe(100 - 24);
+    expect(container!.width).toBe((350 - 100) + 48);
+    expect(container!.height).toBe((250 - 100) + 48);
+  });
+
+  it('ensures container elements are placed at the bottom of element array (lowest z-order)', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'card1', type: 'rectangle', x: 10, y: 10, width: 50, height: 30 }),
+      makeElement({ id: 'container1', type: 'rectangle', x: 0, y: 0, width: 200, height: 200, customData: { isContainer: true } }),
+      makeElement({ id: 'txt1', type: 'text', x: 20, y: 20, width: 30, height: 10, text: 'hi' }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const firstElement = result.elements[0];
+    expect(firstElement.id).toBe('container1');
   });
 
   it('converts line elements with width/height set to 0', () => {
@@ -1036,5 +1070,16 @@ describe('crossLinks styling', () => {
 
     expect(crossLink?.customData?.isCrossLink).toBe(true);
     expect(crossLink?.customData?.source).toBe('analysis');
+  });
+});
+
+describe('buildOrthogonalPath', () => {
+  it('generates 4-point orthogonal elbow path for vertically offset elements', () => {
+    const start = makeElement({ id: 's', x: 100, y: 0, width: 100, height: 50 });
+    const end = makeElement({ id: 'e', x: 200, y: 200, width: 100, height: 50 });
+
+    const path = buildOrthogonalPath(start, end);
+    expect(path.points.length).toBe(4);
+    expect(path.points[0]).toEqual([0, 0]);
   });
 });

@@ -17,6 +17,7 @@ import {
   BACKGROUNDS,
   CONNECTOR_COLORS,
 } from './excalidraw-organic-palette.js';
+import { isContainer } from './excalidraw-geometry.js';
 
 export interface StyleProcessorInput {
   elements: ElementDef[];
@@ -42,15 +43,47 @@ function styleNodes(elements: ElementDef[], theme: ObsidianTheme): ElementDef[] 
     const isText = el.type === 'text';
 
     if (isShape) {
+      // 复用 geometry 的单一事实源，避免 frame_/childIds-only 容器在此被漏判
+      const container = isContainer(el);
+      // 仅 depth===0 触发根节点强化；semanticColor 不参与描边强化（保持既有视觉语义）
+      const isRoot = el.customData?.depth === 0;
+
       const semantic = resolveSemanticColor(theme, el.semanticColor);
       const col = PALETTE[theme][semantic];
+
+      // 四分支穷尽赋值，无需 let 初始化（消除"初始化后被覆盖"的死代码）
+      let strokeW: number;
+      let rough: number;
+      let fillSt: 'solid' | 'hachure' | 'cross-hatch';
+      let op = el.opacity ?? 100;
+
+      if (el.customData?.isBoundary) {
+        strokeW = 1;
+        rough = 1;
+        fillSt = 'hachure';
+      } else if (container) {
+        strokeW = 1.5;
+        rough = 1;
+        fillSt = 'hachure';
+        op = 40; // 容器半透明，不冲淡内部卡片
+      } else if (isRoot) {
+        strokeW = 2.5;
+        rough = 2; // 强化根节点手绘质感
+        fillSt = 'solid';
+      } else {
+        strokeW = col.strokeWidth;
+        rough = col.roughness;
+        fillSt = 'solid';
+      }
+
       result.push({
         ...el,
         strokeColor: col.stroke,
         backgroundColor: col.fill,
-        roughness: col.roughness,
-        strokeWidth: el.customData?.isBoundary ? 1 : col.strokeWidth,
-        fillStyle: el.customData?.isBoundary ? 'hachure' : 'solid',
+        roughness: rough,
+        strokeWidth: strokeW,
+        fillStyle: fillSt,
+        opacity: op,
       });
     } else if (isText) {
       result.push({ ...el });

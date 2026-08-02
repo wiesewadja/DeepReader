@@ -73,6 +73,60 @@ export function edgeIntersection(
 }
 
 /**
+ * Calculates a 4-point orthogonal path (3-segment orthogonal elbow line) between source and target elements.
+ */
+export function buildOrthogonalPath(
+  startEl: Positionable,
+  endEl: Positionable,
+  startGap: number = 8,
+  endGap: number = 8,
+): { x: number; y: number; points: [number, number][] } {
+  const startCx = startEl.x + startEl.width / 2;
+  const startCy = startEl.y + startEl.height / 2;
+  const endCx = endEl.x + endEl.width / 2;
+  const endCy = endEl.y + endEl.height / 2;
+
+  const dx = endCx - startCx;
+  const dy = endCy - startCy;
+
+  if (Math.abs(dy) >= Math.abs(dx)) {
+    // Vertical flow (Top to Bottom or Bottom to Top)
+    const [sx, sy] = edgeIntersection(startEl, startCx, dy > 0 ? startCy + 1000 : startCy - 1000, startGap);
+    const [ex, ey] = edgeIntersection(endEl, endCx, dy > 0 ? endCy - 1000 : endCy + 1000, endGap);
+
+    const midY = (sy + ey) / 2;
+
+    return {
+      x: sx,
+      y: sy,
+      points: [
+        [0, 0],
+        [0, midY - sy],
+        [ex - sx, midY - sy],
+        [ex - sx, ey - sy],
+      ],
+    };
+  } else {
+    // Horizontal flow (Left to Right or Right to Left)
+    const [sx, sy] = edgeIntersection(startEl, dx > 0 ? startCx + 1000 : startCx - 1000, startCy, startGap);
+    const [ex, ey] = edgeIntersection(endEl, dx > 0 ? endCx - 1000 : endCx + 1000, endCy, endGap);
+
+    const midX = (sx + ex) / 2;
+
+    return {
+      x: sx,
+      y: sy,
+      points: [
+        [0, 0],
+        [midX - sx, 0],
+        [midX - sx, ey - sy],
+        [ex - sx, ey - sy],
+      ],
+    };
+  }
+}
+
+/**
  * Calculate viewport (scrollX, scrollY, zoom) to center content.
  */
 export function calculateViewport(elements: ExcalidrawElement[]): {
@@ -137,13 +191,74 @@ export function calculateViewport(elements: ExcalidrawElement[]): {
 
 const MIN_GAP = 40;
 const MAX_ITERATIONS = 15;
+export function isContainer<T extends Positionable>(el: T): boolean {
+  const customData = (el as any).customData;
+  if (customData?.isContainer === true) return true;
+  if (Array.isArray(customData?.childIds) && customData.childIds.length > 0) return true;
+  const id = (el as any).id;
+  if (typeof id === 'string' && (id.toLowerCase().startsWith('container_') || id.toLowerCase().startsWith('group_') || id.toLowerCase().startsWith('frame_'))) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Recomputes the bounding box of container elements to neatly wrap their child elements with padding.
+ */
+export function recomputeContainerBounds<T extends Positionable & { id: string; customData?: Record<string, any>; text?: string }>(
+  elements: T[],
+): T[] {
+  const elementMap = new Map(elements.map(e => [e.id, e]));
+  return elements.map(el => {
+    const childIds: string[] = el.customData?.childIds || [];
+    // 仅当确实是容器且有 childIds 时才重算；isContainer 已涵盖 isContainer 标志/前缀/childIds 三种判定
+    if (!isContainer(el) || childIds.length === 0) {
+      return el;
+    }
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const childId of childIds) {
+      const child = elementMap.get(childId);
+      if (child) {
+        minX = Math.min(minX, child.x);
+        minY = Math.min(minY, child.y);
+        maxX = Math.max(maxX, child.x + child.width);
+        maxY = Math.max(maxY, child.y + child.height);
+      }
+    }
+
+    if (minX === Infinity) return el;
+
+    const PADDING_X = 24;
+    const PADDING_Y = 24;
+    const HEADER_H = el.text ? 36 : 0;
+
+    const newX = minX - PADDING_X;
+    const newY = minY - PADDING_Y - HEADER_H;
+    const newW = (maxX - minX) + PADDING_X * 2;
+    const newH = (maxY - minY) + PADDING_Y * 2 + HEADER_H;
+
+    return {
+      ...el,
+      x: newX,
+      y: newY,
+      width: newW,
+      height: newH,
+    };
+  });
+}
+
 const ALIGN_THRESHOLD = 10;
 
 /**
  * Deterministic collision resolution — push apart overlapping elements.
  *
  * Only moves shapes (rectangle/ellipse/diamond) and free texts (no containerId).
- * Arrows are not moved; their coordinates are auto-calculated from bindings later.
+ * Arrows and containers are not moved.
  * After pushing, restores row alignment for elements with similar y coordinates.
  */
 export function resolveOverlaps<T extends Positionable>(elements: T[]): T[] {
@@ -153,7 +268,7 @@ export function resolveOverlaps<T extends Positionable>(elements: T[]): T[] {
   const movableIdx: number[] = [];
   for (let i = 0; i < result.length; i++) {
     const el = result[i];
-    if (['rectangle', 'ellipse', 'diamond'].includes(el.type)) {
+    if (['rectangle', 'ellipse', 'diamond'].includes(el.type) && !isContainer(el)) {
       movableIdx.push(i);
     } else if (el.type === 'text' && !el.containerId) {
       movableIdx.push(i);

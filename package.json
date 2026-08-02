@@ -1,6 +1,6 @@
 {
   "name": "obsidian-deepreader",
-  "version": "2026.07.15",
+  "version": "2026.07.22",
   "description": "奚童 - 深度AI伴读",
   "main": "bin/main.js",
   "scripts": {

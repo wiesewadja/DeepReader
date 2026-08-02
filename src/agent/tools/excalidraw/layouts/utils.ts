@@ -1,4 +1,5 @@
 import type { ElementDef } from '../excalidraw-types.js';
+import { isContainer } from '../excalidraw-geometry.js';
 
 /**
  * Perform a topological sort on movable nodes based on arrow connections.
@@ -62,7 +63,7 @@ export function topologicalSort(movableNodes: ElementDef[], arrows: ElementDef[]
 export function shouldIgnoreInLayout(el: ElementDef): boolean {
   const id = el.id.toLowerCase();
   const isLegacyIgnore = id.includes('title') || id.includes('subtitle') || id === 'header' || id.includes('legend');
-  return (el.type === 'text' && !el.containerId) || isLegacyIgnore;
+  return (el.type === 'text' && !el.containerId) || isLegacyIgnore || isContainer(el);
 }
 
 /**

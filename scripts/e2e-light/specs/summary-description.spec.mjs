@@ -101,7 +101,7 @@ export default {
 			try {
 				const result = await evalObsidian(`(() => {
 					const files = app.vault.getMarkdownFiles();
-					const epubDir = files.find(f => f.path.endsWith('- MOC.md') && f.path.includes('AI'))?.path.replace(/\\/[^/]+$/, '') || '';
+					const epubDir = files.find(f => f.path.endsWith('- MOC.md') && f.path.includes('AI'))?.path.replace(/\/[^/]+$/, '') || '';
 					const chapterFiles = files.filter(f =>
 						epubDir && f.path.startsWith(epubDir + '/') &&
 						!f.path.includes('MOC') &&

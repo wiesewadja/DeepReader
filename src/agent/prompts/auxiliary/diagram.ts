@@ -69,6 +69,7 @@ export const diagramPrompt: PromptModule = {
 - **节点数量与信息密度平衡**：为了加快图表生成速度，节点数应控制在 **8-15 个**。但同时必须确保图表信息的可用性与关键知识密度，**严禁为了减少节点而删减核心逻辑**。应当通过**"合并同类项/富文本节点"**的方式：将次要细节和关联要点以短语或换行列表的形式写入主节点的 \`text\` 中（系统会自动计算多行文字并安全拉高容器），而不是为每个琐碎细节创建单独的子节点。
 - 连线的 x/y 坐标和 points 会被系统自动计算为元素边缘交点，不要手动计算。
 - 你必须提供正确的 startBinding 和 endBinding。所有关系必须通过 arrow 显式连接。
+- 默认连线为直线（自动吸附到元素边缘）。需要正交折线（L 型/直角连线，适合流程图、层级清晰的关系）时，给 arrow 加上 \`"customData": { "routing": "orthogonal" }\` 即可，系统会自动生成 3 段直角折线，不要手写 points。
 - 重点：不要输出冗余字段！在 startBinding/endBinding 中只需输出 elementId 字段（系统会自动处理 gap 和 focus，无需输出它们）。不要输出 strokeColor、backgroundColor、opacity、roughness、fontFamily 等默认属性，由系统渲染器统一处理，以极大地减少输出 token，提升绘图速度！
 
 ## 输出格式
@@ -100,6 +101,7 @@ export const diagramPrompt: PromptModule = {
 - **Keep Node Count to 10-20**: For performance and readability, limit nodes to 10-20. Do NOT remove key logical steps. Instead of many tiny nodes, pack related details as list items/phrases inside a single node's "text" property.
 - The system will auto-wrap and expand the height of shape containers to fit your text automatically.
 - Choose font sizes from [16, 20, 28, 36] only.
+- Connectors default to straight lines (auto-snapped to element edges). For orthogonal (right-angle/elbow) connectors — better for flowcharts and clear hierarchies — add \`"customData": { "routing": "orthogonal" }\` to the arrow; the system generates a 3-segment elbow path, do not hand-write points.
 
 ## Output Format
 Output strict JSON object with "filename", "layout", and "elements" fields. No markdown wrappers or conversational filler:

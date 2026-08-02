@@ -6,7 +6,7 @@
  */
 
 import { log } from '../../../utils/logger.js';
-import { calculateViewport, edgeIntersection } from './excalidraw-geometry.js';
+import { calculateViewport, edgeIntersection, recomputeContainerBounds, buildOrthogonalPath, isContainer } from './excalidraw-geometry.js';
 import type { ToolExecutor, ToolContext } from '../types.js';
 import { type ElementDef, type DiagramLayoutType, type GrowthMode, FREE_TEXT_BG_SUFFIX } from './excalidraw-types.js';
 
@@ -161,6 +161,7 @@ function resolveObsidianTheme(context?: ToolContext): 'light' | 'dark' {
  *  2 = 文本（最顶层）
  */
 function getZOrder(el: ExcalidrawElement): number {
+  if (isContainer(el)) return -1;
   if (el.type === 'rectangle' || el.type === 'ellipse' || el.type === 'diamond') return 0;
   if (el.type === 'line' || el.type === 'arrow' || el.type === 'freedraw' || el.type === 'image') return 1;
   if (el.type === 'text') return 2;
@@ -169,10 +170,9 @@ function getZOrder(el: ExcalidrawElement): number {
 
 /**
  * 容器内文字 padding（Excalidraw 默认容器文字留白）。
- * text 子元素的 width/height 已在 buildExcalidrawJSON 里减去 20px（每边 10），
- * 这里再留少量内边距，避免文字顶到容器边缘。
+ * 提高内边距至 16px，避免文字贴紧容器边缘，提升视觉阅读呼吸感。
  */
-const CONTAINER_TEXT_PADDING = 6;
+const CONTAINER_TEXT_PADDING = 16;
 
 /**
  * 默认箭头与绑定形状边缘的间隙 (px)
@@ -213,7 +213,7 @@ function computeOptimalFontSize(
     const maxChars = Math.max(...userLines.map(l => effectiveCharCount(l)));
     const lineCount = userLines.length;
     const byWidth = availW / (maxChars * CHAR_WIDTH_RATIO);
-    const byHeight = availH / (lineCount * 1.25);
+    const byHeight = availH / (lineCount * 1.4);
     const fontSize = clampFontSize(Math.min(byWidth, byHeight));
     return { fontSize, wrappedText: text };
   }
@@ -226,7 +226,7 @@ function computeOptimalFontSize(
     const charsPerLine = Math.floor(availW / (fs * CHAR_WIDTH_RATIO));
     if (charsPerLine < 1) continue; // 单行一个字都放不下，跳过该档位
     const lineCount = Math.ceil(totalChars / charsPerLine);
-    if (lineCount * fs * 1.25 <= availH) {
+    if (lineCount * fs * 1.4 <= availH) {
       return { fontSize: fs, wrappedText: wrapText(text, charsPerLine) };
     }
   }
@@ -410,10 +410,10 @@ function preprocessElementSizes(elements: ElementDef[]): ElementDef[] {
   const result: ElementDef[] = [];
 
   for (const el of elements) {
-    const isContainer = ['rectangle', 'ellipse', 'diamond'].includes(el.type);
+    const isShape = ['rectangle', 'ellipse', 'diamond'].includes(el.type);
     const isText = el.type === 'text';
 
-    if (isContainer && el.text) {
+    if (isShape && el.text) {
       const { fontSize: optimalFontSize, wrappedText } = computeOptimalFontSize(
         el.text,
         el.width,
@@ -666,9 +666,10 @@ function buildExcalidrawJSON(
   // Deterministic semantic layout and collision resolution
   const layoutOptions = growthMode ? { growthMode } : undefined;
   const resolved = isAlreadyResolved ? preprocessed : arrangeWithFallback(preprocessed, layout, layoutOptions);
+  const containerRefreshed = recomputeContainerBounds(resolved);
 
   // 0.5 Inject MindMapBuilder-compatible customData markers (isBranch, depth, isAdditionalRoot)
-  const enriched = injectCustomData(resolved);
+  const enriched = injectCustomData(containerRefreshed);
 
   // 0.6 Generate boundary decorations for Level-1 subtrees
   const withBoundaries = generateBoundaries(enriched);
@@ -724,9 +725,9 @@ function buildExcalidrawJSON(
       if (eid) el = { ...el, endBinding: { elementId: eid, gap: b.gap as number ?? DEFAULT_ARROW_GAP, focus: b.focus as number ?? 0 } };
     }
 
-    const isContainer = ['rectangle', 'ellipse', 'diamond'].includes(el.type);
+    const isShape = ['rectangle', 'ellipse', 'diamond'].includes(el.type);
     const isText = el.type === 'text';
-    const needsAutoText = isContainer && el.text && !isText;
+    const needsAutoText = isShape && el.text && !isText;
     const isArrowOrLine = el.type === 'arrow' || el.type === 'line';
     const isRedundantBoundText =
       isText && !!el.containerId && !!elMap.get(el.containerId!)?.text;
@@ -772,22 +773,31 @@ function buildExcalidrawJSON(
       if (startEl && endEl) {
         const startGap = el.startBinding?.gap ?? DEFAULT_ARROW_GAP;
         const endGap = el.endBinding?.gap ?? DEFAULT_ARROW_GAP;
-        const startCx = startEl.x + startEl.width / 2;
-        const startCy = startEl.y + startEl.height / 2;
-        const endCx = endEl.x + endEl.width / 2;
-        const endCy = endEl.y + endEl.height / 2;
 
-        const [sx, sy] = edgeIntersection(startEl, endCx, endCy, startGap);
-        const [ex, ey] = edgeIntersection(endEl, startCx, startCy, endGap);
+        const isOrthogonal = el.customData?.routing === 'orthogonal';
+        if (isOrthogonal) {
+          const orth = buildOrthogonalPath(startEl, endEl, startGap, endGap);
+          arrowEl.x = orth.x;
+          arrowEl.y = orth.y;
+          arrowEl.points = orth.points;
+        } else {
+          const startCx = startEl.x + startEl.width / 2;
+          const startCy = startEl.y + startEl.height / 2;
+          const endCx = endEl.x + endEl.width / 2;
+          const endCy = endEl.y + endEl.height / 2;
 
-        arrowEl.x = sx;
-        arrowEl.y = sy;
-        const provided = el.points && el.points.length >= 2 ? el.points : [[0, 0], [1, 0]];
-        arrowEl.points = provided.map((p, i) => {
-          if (i === 0) return [0, 0];
-          if (i === provided.length - 1) return [ex - sx, ey - sy];
-          return p as [number, number];
-        });
+          const [sx, sy] = edgeIntersection(startEl, endCx, endCy, startGap);
+          const [ex, ey] = edgeIntersection(endEl, startCx, startCy, endGap);
+
+          arrowEl.x = sx;
+          arrowEl.y = sy;
+          const provided = el.points && el.points.length >= 2 ? el.points : [[0, 0], [1, 0]];
+          arrowEl.points = provided.map((p, i) => {
+            if (i === 0) return [0, 0];
+            if (i === provided.length - 1) return [ex - sx, ey - sy];
+            return p as [number, number];
+          });
+        }
       } else if (startEl) {
         const startGap = el.startBinding?.gap ?? DEFAULT_ARROW_GAP;
         const cx = startEl.x + startEl.width / 2;
@@ -894,22 +904,35 @@ function detectConnectorNodeOverlaps(elements: ElementDef[]): string[] {
     // 起点（startEl 中心或 points[0]）→ 中间控制点（points[1..n-1]）→ 终点（endEl 中心或 points[last]）
     // 支持 multi-segment 折线/贝塞尔，避免漏检 L 形/Z 形连线穿过节点的情况
     const path: [number, number][] = [];
-    if (startEl) {
-      path.push([startEl.x + startEl.width / 2, startEl.y + startEl.height / 2]);
-    } else if (conn.points && conn.points.length > 0) {
-      path.push([conn.x + conn.points[0][0], conn.y + conn.points[0][1]]);
-    }
-    // 中间控制点：仅当 points ≥ 3 个时才视为真实折线（LLM 默认占位 [[0,0],[1,0]] 长度=2）
-    if (conn.points && conn.points.length >= 3) {
-      for (let i = 1; i < conn.points.length - 1; i++) {
-        path.push([conn.x + conn.points[i][0], conn.y + conn.points[i][1]]);
+
+    // orthogonal 连线：实际渲染的 4 点直角折线由 buildOrthogonalPath 在渲染期生成，
+    // 与 LLM 原始 points 无关，必须用同一算法重建路径，否则碰撞检测会漏报穿透。
+    const isOrthogonal = conn.customData?.routing === 'orthogonal' && !!startEl && !!endEl;
+    if (isOrthogonal && startEl && endEl) {
+      const startGap = conn.startBinding?.gap ?? DEFAULT_ARROW_GAP;
+      const endGap = conn.endBinding?.gap ?? DEFAULT_ARROW_GAP;
+      const orth = buildOrthogonalPath(startEl, endEl, startGap, endGap);
+      for (const [px, py] of orth.points) {
+        path.push([orth.x + px, orth.y + py]);
       }
-    }
-    if (endEl) {
-      path.push([endEl.x + endEl.width / 2, endEl.y + endEl.height / 2]);
-    } else if (conn.points && conn.points.length >= 2) {
-      const last = conn.points[conn.points.length - 1];
-      path.push([conn.x + last[0], conn.y + last[1]]);
+    } else {
+      if (startEl) {
+        path.push([startEl.x + startEl.width / 2, startEl.y + startEl.height / 2]);
+      } else if (conn.points && conn.points.length > 0) {
+        path.push([conn.x + conn.points[0][0], conn.y + conn.points[0][1]]);
+      }
+      // 中间控制点：仅当 points ≥ 3 个时才视为真实折线（LLM 默认占位 [[0,0],[1,0]] 长度=2）
+      if (conn.points && conn.points.length >= 3) {
+        for (let i = 1; i < conn.points.length - 1; i++) {
+          path.push([conn.x + conn.points[i][0], conn.y + conn.points[i][1]]);
+        }
+      }
+      if (endEl) {
+        path.push([endEl.x + endEl.width / 2, endEl.y + endEl.height / 2]);
+      } else if (conn.points && conn.points.length >= 2) {
+        const last = conn.points[conn.points.length - 1];
+        path.push([conn.x + last[0], conn.y + last[1]]);
+      }
     }
 
     // 路径点不足 2 个，无法构成线段
