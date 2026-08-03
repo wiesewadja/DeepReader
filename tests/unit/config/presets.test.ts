@@ -22,7 +22,7 @@ describe('Presets', () => {
 		expect(xt.roleAssignments.router).toBe('mimo-v2.5');
 		expect(xt.roleAssignments.pageindex).toBe('mimo-v2.5');
 		expect(xt.roleAssignments.proposition).toBe('mimo-v2.5');
-		expect(xt.roleAssignments.tts).toBe('mimo-v2.5-tts-voicedesign');
+		expect(xt.roleAssignments.tts).toBe('mimo-v2.5-tts');
 	});
 
 	it('xitong secondary roles use siliconflow', () => {
@@ -53,7 +53,7 @@ describe('Presets', () => {
 		expect(roles.proposition).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
 		expect(roles.embedding).toEqual({ provider: 'siliconflow', model: 'Qwen/Qwen3-Embedding-0.6B' });
 		expect(roles.reranker).toEqual({ provider: 'siliconflow', model: 'Qwen/Qwen3-Reranker-0.6B' });
-		expect(roles.tts).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' });
+		expect(roles.tts).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-tts' });
 	});
 
 	it('buildRolesFromPreset without providers only builds primary roles', () => {

@@ -42,7 +42,7 @@ describe('computePreviewRoles', () => {
 		const roles = computePreviewRoles('xitong', new Set());
 		expect(roles.chat).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-pro' });
 		expect(roles.router).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
-		expect(roles.tts).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' });
+		expect(roles.tts).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-tts' });
 		expect(roles.embedding).toBeNull();
 		expect(roles.reranker).toBeNull();
 	});
