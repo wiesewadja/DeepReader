@@ -239,7 +239,12 @@ async function main() {
 	for (let i = 0; i < specs.length; i++) {
 		const spec = specs[i];
 		if (spec.requires && Object.keys(spec.requires).length > 0) {
-			const baseline = await checkRequires(spec.requires);
+			let baseline;
+			try {
+				baseline = await checkRequires(spec.requires);
+			} catch (e) {
+				baseline = { ok: false, missing: [`前置检查异常（obsidian 无响应/超时）: ${(e.message || '').slice(0, 120)}`] };
+			}
 			if (!baseline.ok) {
 				const skipResult = {
 					id: spec.id,
