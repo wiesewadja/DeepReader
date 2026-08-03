@@ -76,7 +76,7 @@ export const PRESETS: ProviderPreset[] = [
 			router: 'mimo-v2.5',
 			pageindex: 'mimo-v2.5',
 			proposition: 'mimo-v2.5',
-			tts: 'mimo-v2.5-tts-voicedesign',
+			tts: 'mimo-v2.5-tts',
 		},
 		secondaryProvider: 'siliconflow',
 		secondaryRoleAssignments: {

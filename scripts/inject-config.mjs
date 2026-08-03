@@ -69,7 +69,7 @@ const data = {
 		proposition: parseRole(get('DEEPREADER_ROLE_PROPOSITION')) || { provider: 'xiaomi', model: 'mimo-v2.5' },
 		embedding: parseRole(get('DEEPREADER_ROLE_EMBEDDING')) || { provider: 'siliconflow', model: 'Qwen/Qwen3-Embedding-0.6B' },
 		reranker: parseRole(get('DEEPREADER_ROLE_RERANKER')) || { provider: 'siliconflow', model: 'Qwen/Qwen3-Reranker-0.6B' },
-		tts: parseRole(get('DEEPREADER_ROLE_TTS')) || { provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' },
+		tts: parseRole(get('DEEPREADER_ROLE_TTS')) || { provider: 'xiaomi', model: 'mimo-v2.5-tts' },
 		imagegen: parseRole(get('DEEPREADER_ROLE_IMAGEGEN')) || null,
 	},
 	propositionCardsPer500Words: 1,
