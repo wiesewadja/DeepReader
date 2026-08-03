@@ -4,20 +4,21 @@
  * Used by S1 Inspectional and S3 Syntopical to generate excalidraw diagrams
  * when diagram intent is detected in the user query.
  *
- * Design note: this helper calls excalidrawTool.execute directly because
- * S1/S3 run outside the ReAct/PlanExecute tool loop. The LangChain wrapper
- * (createExcalidrawTool) is still registered in createLangChainTools so that
- * S2 Analytical can invoke excalidraw via standard tool_calls when needed.
+ * Design note: excalidraw 是 direct-call-only 工具——仅由本 helper 在 S1/S3
+ * 直接 .execute() 调用，不入 LLM 工具循环。各节点工具门禁见
+ * src/agent/tools/tool-permissions.ts（analytical/advisor 白名单均不含 excalidraw，
+ * 故即便 createExcalidrawTool 在 createLangChainTools 注册了，model 也不会经
+ * tool_calls 触发它）。此处直接 import v1 实现 excalidrawTool，不经 LangChain 包装。
  */
 
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import { agentLog as log } from '../../../utils/logger.js';
-import { excalidrawTool, writeExcalidrawJson, buildExcalidrawJSON } from '../../tools/excalidraw.js';
-import { buildExcalidrawMd } from '../../tools/excalidraw-md.js';
-import type { ElementDef, DiagramLayoutType } from '../../tools/excalidraw-types.js';
+import { excalidrawTool, writeExcalidrawJson, buildExcalidrawJSON } from '../../tools/excalidraw/excalidraw.js';
+import { buildExcalidrawMd } from '../../tools/excalidraw/excalidraw-md.js';
+import type { ElementDef, DiagramLayoutType } from '../../tools/excalidraw/excalidraw-types.js';
 import type { ToolContext } from '../../tools/types.js';
-import { SHARED_DIAGRAM_PROMPT } from '../../tools/excalidraw-prompts.js';
+import { SHARED_DIAGRAM_PROMPT } from '../../tools/excalidraw/excalidraw-prompts.js';
 
 const DIAGRAM_INTENT_RE = /思维导图|脑图|流程图|概念图|画.{0,6}图|可视化展示|可视化|导图|示意图|infographic|图表|知识图谱/;
 const DIAGRAM_SYSTEM_PROMPT = SHARED_DIAGRAM_PROMPT;

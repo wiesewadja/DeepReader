@@ -1,15 +1,23 @@
 import { Notice, type App } from 'obsidian';
-import { nodeFs } from '../../utils/node-fs.js';
-import { serviceLog } from '../../utils/logger.js';
-import { vaultRead, vaultReadBinary, vaultExists, vaultMkdir, vaultRemove, vaultWrite, vaultWriteBinary, joinPath } from '../../utils/mobile-fs.js';
 import { safeRequest } from '../../utils/safe-request.js';
+import { serviceLog } from '../../utils/logger.js';
 import { BookGenreDetector } from './book-genre-detector.js';
 import type { BookGenre } from './book-genre-detector.js';
 import { ExpressivePreprocessor } from './expressive-preprocessor.js';
 import { PCMStreamPlayer } from './pcm-stream-player.js';
-import { TTSClient, type ITTSSynthesizer, type TTSVoiceOptions, type TTSOptions } from './tts-client.js';
+import { type ITTSSynthesizer, type TTSVoiceOptions, type TTSOptions, createTTSClient } from './tts-client.js';
 import { TTSSummarizer, type TTSContext } from './tts-summarizer.js';
 import { resolveVoiceProfile, getDefaultVoiceProfile, type VoiceProfile } from './voice-profile.js';
+import { TTSCacheManager, type CachedAudio } from './tts-cache.js';
+import { mergeAudioChunks } from './tts-audio-merger.js';
+import { splitFirstSentence, splitTextIntoSegments, stripWikiLinksForTTS } from './tts-text-splitter.js';
+
+interface WakeLockSentinel {
+    released: boolean;
+    type: string;
+    onrelease: (() => void) | null;
+    release(): Promise<void>;
+}
 
 export type TTSPlayState = 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 'paused';
 
@@ -32,52 +40,6 @@ export interface TTSServiceConfig {
     onProgressChange?: (messageId: string, progress: number) => void;
 }
 
-interface CachedAudio {
-    blobUrl: string;
-    audio: HTMLAudioElement;
-    /** true = 完整音频，可即时重播 */
-    isFull?: boolean;
-}
-
-interface ManifestEntry {
-    textHash: string;
-    voice: string;
-    wavFile: string;
-    createdAt: number;
-}
-
-interface DiskManifest {
-    entries: ManifestEntry[];
-}
-
-const SENTENCE_END_RE = /[。！？!?]/;
-
-function splitFirstSentence(buffer: string): [string | null, string] {
-    const match = buffer.search(SENTENCE_END_RE);
-    if (match === -1) return [null, buffer];
-    const end = match + 1;
-    return [buffer.slice(0, end), buffer.slice(end)];
-}
-
-/**
- * 清理文本中的 wiki link，仅保留别名用于 TTS 朗读
- * [[note]] → note
- * [[note|alias]] → alias
- * [[path/to/note|alias]] → alias
- */
-function stripWikiLinksForTTS(text: string): string {
-    return text.replace(/\[\[([^\]]+)\]\]/g, (_match, content: string) => {
-        const parts = content.split('|');
-        if (parts.length > 1) {
-            // 有别名，使用别名
-            return parts[1].trim();
-        }
-        // 无别名，使用路径最后一部分（文件名）
-        const pathParts = parts[0].trim().split('/');
-        return pathParts[pathParts.length - 1];
-    });
-}
-
 export class TTSService {
     private state: TTSPlayState = 'idle';
     private client: ITTSSynthesizer;
@@ -86,20 +48,13 @@ export class TTSService {
     private expressivePreprocessor: ExpressivePreprocessor;
     private currentMessageId: string | null = null;
     private currentGenre: BookGenre | null = null;
-    private cache: Map<string, CachedAudio> = new Map();
-    private static readonly MAX_CACHE_ENTRIES = 20;
+    private cacheManager: TTSCacheManager;
     /** 全量口语化改写缓存：messageId → 改写后的文本 */
     private rewrittenCache: Map<string, string> = new Map();
     /** 正在进行的全量改写：messageId → Promise */
     private pendingRewrites: Map<string, Promise<string>> = new Map();
     /** 预览音频原始 buffer，用于与分段音频合并为完整缓存 */
     private previewBuffers: Map<string, ArrayBuffer> = new Map();
-    /** 磁盘缓存目录（空=禁用磁盘缓存） */
-    private diskCacheDir: string = '';
-    private app?: App;
-    private static readonly MAX_DISK_ENTRIES = 10;
-    /** manifest 串行写锁，防止并发覆盖 */
-    private manifestLock: Promise<void> = Promise.resolve();
     private streamPlayer: PCMStreamPlayer | null = null;
     private onStateChange?: (messageId: string | null, state: TTSPlayState) => void;
     private onProgressChange?: (messageId: string, progress: number) => void;
@@ -116,9 +71,12 @@ export class TTSService {
     private isVoiceDesign: boolean;
     /** 正在进行的预加载任务集合，防止并发重复请求 */
     private activePreloads = new Set<string>();
+    private wakeLockSentinel: WakeLockSentinel | null = null;
+    private wakeLockVisibilityHandler: (() => void) | null = null;
 
     constructor(config: TTSServiceConfig) {
-        this.client = new TTSClient({
+        this.client = createTTSClient({
+            provider: config.ttsProvider,
             apiKey: config.ttsApiKey,
             baseUrl: config.ttsBaseUrl,
             model: config.ttsModel,
@@ -159,13 +117,20 @@ export class TTSService {
         this.expressivePreprocessor = new ExpressivePreprocessor();
         this.onStateChange = config.onStateChange;
         this.onProgressChange = config.onProgressChange;
-        this.app = config.app;
-        const pluginId = config.pluginId;
-        if (config.vaultPath || config.app) {
-            const rel = `.obsidian/plugins/${pluginId}/tts-cache`;
-            this.diskCacheDir = config.app
-                ? rel
-                : require('path').join(config.vaultPath!, rel);
+        this.cacheManager = new TTSCacheManager({
+            app: config.app,
+            vaultPath: config.vaultPath,
+            pluginId: config.pluginId,
+        });
+
+        // Setup visibility change listener for wake lock
+        this.wakeLockVisibilityHandler = () => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'visible' && this.state === 'playing') {
+                this.acquireWakeLock();
+            }
+        };
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', this.wakeLockVisibilityHandler);
         }
     }
 
@@ -216,18 +181,18 @@ export class TTSService {
         const voiceProfile = genre ? resolveVoiceProfile(genre, this.ttsProvider, this.isVoiceDesign) : getDefaultVoiceProfile(this.ttsProvider, this.isVoiceDesign);
 
         // Step 3: 构建缓存 key（包含音色指纹）
-        const cacheKey = this.buildCacheKey(messageId, voiceProfile);
-        let cached = this.cache.get(cacheKey);
+        const cacheKey = this.cacheManager.buildCacheKey(messageId, voiceProfile);
+        let cached = this.cacheManager.getCache(cacheKey);
 
         // 清理 wiki link，仅保留别名用于 TTS 朗读
         const cleanContent = stripWikiLinksForTTS(content);
-        const textHash = this.getTextHash(cleanContent);
+        const textHash = this.cacheManager.getTextHash(cleanContent);
 
         // 内存 miss → 查磁盘缓存
         if (!cached) {
-            const diskCached = await this.loadFromDiskCache(textHash, voiceProfile.voice);
+            const diskCached = await this.cacheManager.loadFromDiskCache(textHash, voiceProfile.voice);
             if (diskCached) {
-                this.setCache(cacheKey, diskCached);
+                this.cacheManager.setCache(cacheKey, diskCached);
                 cached = diskCached;
                 serviceLog.info(`[TTS] Disk cache hit: ${textHash}_${voiceProfile.voice}`);
             }
@@ -302,9 +267,9 @@ export class TTSService {
             const voiceProfile = genre ? resolveVoiceProfile(genre, this.ttsProvider, this.isVoiceDesign) : getDefaultVoiceProfile(this.ttsProvider, this.isVoiceDesign);
 
             // 3. 检查缓存是否已存在或正在进行预加载
-            const cacheKey = this.buildCacheKey(messageId, voiceProfile);
+            const cacheKey = this.cacheManager.buildCacheKey(messageId, voiceProfile);
             const cleanContent = stripWikiLinksForTTS(content);
-            const cached = this.cache.get(cacheKey);
+            const cached = this.cacheManager.getCache(cacheKey);
             if (cached) {
                 if (cached.isFull || cleanContent.length <= 250) {
                     return;
@@ -338,7 +303,7 @@ export class TTSService {
                 const blob = new Blob([audioBuffer], { type: 'audio/wav' });
                 const blobUrl = URL.createObjectURL(blob);
                 const audio = new Audio(blobUrl);
-                this.setCache(cacheKey, { blobUrl, audio });
+                this.cacheManager.setCache(cacheKey, { blobUrl, audio });
                 this.previewBuffers.set(cacheKey, audioBuffer);
 
                 serviceLog.info(`[TTS] Preloaded preview for message ${messageId} (${previewText.length} chars)`);
@@ -370,7 +335,7 @@ export class TTSService {
                 const blob = new Blob([audioBuffer], { type: 'audio/wav' });
                 const blobUrl = URL.createObjectURL(blob);
                 const audio = new Audio(blobUrl);
-                this.setCache(cacheKey, { blobUrl, audio, isFull: true });
+                this.cacheManager.setCache(cacheKey, { blobUrl, audio, isFull: true });
                 serviceLog.info(`[TTS] Full audio generated for ${messageId} (${fullContent.length} chars)`);
             })
             .catch(err => {
@@ -444,7 +409,7 @@ export class TTSService {
                     } catch { }
 
                     if (this.currentMessageId === messageId) {
-                        const segments = this.splitTextIntoSegments(textToRead, 300);
+                        const segments = splitTextIntoSegments(textToRead, 300);
                         const numPreLaunch = Math.min(segments.length, TTSService.SYNTHESIS_CONCURRENCY);
                         for (let i = 0; i < numPreLaunch; i++) {
                             preLaunchedPromises.set(i, this.synthesizeSegment(segments[i], voiceProfile));
@@ -543,7 +508,7 @@ export class TTSService {
         diskSaveKey?: string,
         preLaunchedPromises?: Map<number, Promise<{ audio: HTMLAudioElement; buffer: ArrayBuffer }>>,
     ): Promise<void> {
-        const segments = this.splitTextIntoSegments(fullContent, 300);
+        const segments = splitTextIntoSegments(fullContent, 300);
         const totalSegments = segments.length;
         if (totalSegments === 0) return;
 
@@ -627,25 +592,25 @@ export class TTSService {
         // 播放完毕：合并所有段音频为完整 WAV，供下次即时重播
         if (this.currentMessageId === messageId && audioBuffers.length > 0) {
             try {
-                const cacheKey = this.buildCacheKey(messageId, voiceProfile);
+                const cacheKey = this.cacheManager.buildCacheKey(messageId, voiceProfile);
                 const previewBuffer = this.previewBuffers.get(cacheKey);
                 const chunks = previewBuffer ? [previewBuffer, ...audioBuffers] : audioBuffers;
-                const merged = TTSService.mergeAudioChunks(chunks);
+                const merged = mergeAudioChunks(chunks);
                 const blob = new Blob([merged], { type: 'audio/wav' });
                 const blobUrl = URL.createObjectURL(blob);
                 const fullAudio = new Audio(blobUrl);
-                const old = this.cache.get(cacheKey);
+                const old = this.cacheManager.getCache(cacheKey);
                 if (old) {
                     old.audio.pause();
                     old.audio.src = '';
                     URL.revokeObjectURL(old.blobUrl);
                 }
-                this.setCache(cacheKey, { blobUrl, audio: fullAudio, isFull: true });
+                this.cacheManager.setCache(cacheKey, { blobUrl, audio: fullAudio, isFull: true });
                 this.previewBuffers.delete(cacheKey);
 
                 // 异步写入磁盘缓存（不阻塞播放结束）
                 if (diskSaveKey) {
-                    this.saveToDiskCache(diskSaveKey, voiceProfile.voice, merged).catch(err => serviceLog.warn('[TTS] Async disk save failed:', err));
+                    this.cacheManager.saveToDiskCache(diskSaveKey, voiceProfile.voice, merged).catch(err => serviceLog.warn('[TTS] Async disk save failed:', err));
                 }
             } catch (err) {
                 serviceLog.warn('[TTS] Failed to cache merged audio:', err);
@@ -655,61 +620,6 @@ export class TTSService {
             this.setState('idle');
             this.currentMessageId = null;
         }
-    }
-
-    /**
-     * 将文本切分为多个段落
-     *
-     * 切分策略：
-     * 1. 优先按段落（\n\n）切分
-     * 2. 段落过长时按句子切分
-     * 3. 每段目标长度：targetChars（默认 300 字符）
-     */
-    private splitTextIntoSegments(text: string, targetChars: number = 300): string[] {
-        // 先按段落切分
-        const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 0);
-        const segments: string[] = [];
-        let currentSegment = '';
-
-        for (const para of paragraphs) {
-            // 如果当前段落加上已有内容不超过目标，合并
-            if (currentSegment.length + para.length <= targetChars) {
-                currentSegment = currentSegment ? `${currentSegment}\n\n${para}` : para;
-                continue;
-            }
-
-            // 如果当前段落已有内容，先保存
-            if (currentSegment) {
-                segments.push(currentSegment);
-                currentSegment = '';
-            }
-
-            // 单个段落超过目标长度，按句子切分
-            if (para.length > targetChars) {
-                const sentences = para.split(/([。！？.!?])/);
-                let sentenceSegment = '';
-
-                for (let i = 0; i < sentences.length; i++) {
-                    const piece = sentences[i];
-                    if (sentenceSegment.length + piece.length <= targetChars) {
-                        sentenceSegment += piece;
-                    } else {
-                        if (sentenceSegment) segments.push(sentenceSegment);
-                        sentenceSegment = piece;
-                    }
-                }
-                if (sentenceSegment) currentSegment = sentenceSegment;
-            } else {
-                currentSegment = para;
-            }
-        }
-
-        // 最后一段
-        if (currentSegment) {
-            segments.push(currentSegment);
-        }
-
-        return segments;
     }
 
     /**
@@ -736,7 +646,7 @@ export class TTSService {
         // 在播放缓存的同时，提前合成剩余的第一段
         const remainingContent = fullContent.slice(previewChars);
         const segments = remainingContent.length > 0
-            ? this.splitTextIntoSegments(remainingContent, 300)
+            ? splitTextIntoSegments(remainingContent, 300)
             : [];
         let nextResult: Promise<{ audio: HTMLAudioElement; buffer: ArrayBuffer }> | null = segments.length > 0
             ? this.synthesizeSegment(segments[0], voiceProfile)
@@ -877,146 +787,6 @@ export class TTSService {
     }
 
     /**
-     * 构建带音色指纹的缓存 key
-     */
-    private buildCacheKey(messageId: string, voiceProfile: VoiceProfile): string {
-        const prefix = voiceProfile.voiceDesignPrompt ? 'vd_' : '';
-        const voiceId = voiceProfile.voiceDesignPrompt ? 'voicedesign' : voiceProfile.voice;
-        return `${prefix}${messageId}_${voiceId}`;
-    }
-
-    /** 原文内容哈希（djb2），用于磁盘缓存的稳定 key */
-    private getTextHash(text: string): string {
-        let hash = 5381;
-        for (let i = 0; i < text.length; i++) {
-            hash = ((hash << 5) + hash + text.charCodeAt(i)) & 0x7fffffff;
-        }
-        return hash.toString(16);
-    }
-
-    private async ensureDiskCacheDir(): Promise<void> {
-        if (!this.diskCacheDir) return;
-        if (this.app) {
-            if (!(await vaultExists(this.app, this.diskCacheDir))) {
-                await vaultMkdir(this.app, this.diskCacheDir);
-            }
-        } else {
-            await nodeFs().mkdir(this.diskCacheDir, { recursive: true });
-        }
-    }
-
-    private async readDiskManifest(): Promise<ManifestEntry[]> {
-        if (!this.diskCacheDir) return [];
-        try {
-            const manifestPath = this.app
-                ? joinPath(this.diskCacheDir, 'manifest.json')
-                : require('path').join(this.diskCacheDir, 'manifest.json');
-            const data = this.app
-                ? await vaultRead(this.app, manifestPath)
-                : await nodeFs().readFile(manifestPath, 'utf-8');
-            return (JSON.parse(data) as DiskManifest).entries ?? [];
-        } catch {
-            return [];
-        }
-    }
-
-    private async writeDiskManifest(entries: ManifestEntry[]): Promise<void> {
-        if (!this.diskCacheDir) return;
-        await this.ensureDiskCacheDir();
-        const manifestPath = this.app
-            ? joinPath(this.diskCacheDir, 'manifest.json')
-            : require('path').join(this.diskCacheDir, 'manifest.json');
-        const content = JSON.stringify({ entries }, null, 2);
-        if (this.app) {
-            await vaultWrite(this.app, manifestPath, content);
-        } else {
-            await nodeFs().writeFile(manifestPath, content);
-        }
-    }
-
-    /** 将合并后的音频写入磁盘缓存，淘汰超过上限的旧条目 */
-    private async saveToDiskCache(textHash: string, voice: string, audioBuffer: ArrayBuffer): Promise<void> {
-        if (!this.diskCacheDir) return;
-        // manifest 写锁：序列化并发写入，防止 read→write 竞争
-        this.manifestLock = this.manifestLock.then(async () => {
-            try {
-                await this.ensureDiskCacheDir();
-                const wavFile = `${textHash}_${voice}.wav`;
-                const wavPath = this.app
-                    ? joinPath(this.diskCacheDir, wavFile)
-                    : require('path').join(this.diskCacheDir, wavFile);
-                if (this.app) {
-                    await vaultWriteBinary(this.app, wavPath, audioBuffer);
-                } else {
-                    await nodeFs().writeFile(wavPath, Buffer.from(audioBuffer));
-                }
-
-                let entries = await this.readDiskManifest();
-                entries = entries.filter(e => !(e.textHash === textHash && e.voice === voice));
-                entries.push({ textHash, voice, wavFile, createdAt: Date.now() });
-
-                entries.sort((a, b) => b.createdAt - a.createdAt);
-                const removed = entries.splice(TTSService.MAX_DISK_ENTRIES);
-                for (const r of removed) {
-                    try {
-                        const removePath = this.app
-                            ? joinPath(this.diskCacheDir, r.wavFile)
-                            : require('path').join(this.diskCacheDir, r.wavFile);
-                        if (this.app) {
-                            await vaultRemove(this.app, removePath);
-                        } else {
-                            await nodeFs().unlink(removePath);
-                        }
-                    } catch { }
-                }
-
-                await this.writeDiskManifest(entries);
-                serviceLog.info(`[TTS] Disk cache saved: ${wavFile} (${entries.length} entries)`);
-            } catch (err) {
-                serviceLog.warn('[TTS] Disk cache save failed:', err);
-            }
-        });
-        await this.manifestLock;
-    }
-
-    /** 写入内存缓存，超出上限时淘汰最旧条目并释放 Blob URL */
-    private setCache(key: string, entry: CachedAudio): void {
-        if (this.cache.size >= TTSService.MAX_CACHE_ENTRIES && !this.cache.has(key)) {
-            const oldest = this.cache.keys().next().value;
-            if (oldest !== undefined) {
-                const old = this.cache.get(oldest)!;
-                URL.revokeObjectURL(old.blobUrl);
-                this.cache.delete(oldest);
-            }
-        }
-        this.cache.set(key, entry);
-    }
-
-    /** 从磁盘缓存加载音频，未命中返回 null */
-    private async loadFromDiskCache(textHash: string, voice: string): Promise<CachedAudio | null> {
-        if (!this.diskCacheDir) return null;
-        try {
-            const wavFile = `${textHash}_${voice}.wav`;
-            const wavPath = this.app
-                ? joinPath(this.diskCacheDir, wavFile)
-                : require('path').join(this.diskCacheDir, wavFile);
-            let audioBuffer: ArrayBuffer;
-            if (this.app) {
-                audioBuffer = await vaultReadBinary(this.app, wavPath);
-            } else {
-                const buffer = await nodeFs().readFile(wavPath);
-                audioBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-            }
-            const blob = new Blob([audioBuffer], { type: 'audio/wav' });
-            const blobUrl = URL.createObjectURL(blob);
-            const audio = new Audio(blobUrl);
-            return { blobUrl, audio, isFull: true };
-        } catch {
-            return null;
-        }
-    }
-
-    /**
      * 构建 V2.5 导演模式提示词（放入 user message）
      * 格式：角色 / 场景 / 指导 三维度
      */
@@ -1138,104 +908,17 @@ export class TTSService {
             this.playbackReject(new Error('STOPPED'));
             this.playbackReject = null;
         }
-        for (const [, cached] of this.cache) {
-            cached.audio.pause();
-            cached.audio.src = '';
-            URL.revokeObjectURL(cached.blobUrl);
+        if (typeof document !== 'undefined' && this.wakeLockVisibilityHandler) {
+            document.removeEventListener('visibilitychange', this.wakeLockVisibilityHandler);
+            this.wakeLockVisibilityHandler = null;
         }
-        this.cache.clear();
+        this.releaseWakeLock();
+        this.cacheManager.clearAll();
         this.rewrittenCache.clear();
         this.pendingRewrites.clear();
         this.previewBuffers.clear();
         this.currentMessageId = null;
         this.state = 'idle';
-    }
-
-    /**
-     * 合并多个 WAV 音频片段为完整音频
-     * 所有片段必须是相同格式：16bit mono 24000Hz
-     */
-    static mergeAudioChunks(chunks: ArrayBuffer[]): ArrayBuffer {
-        if (chunks.length === 0) {
-            throw new Error('No audio chunks to merge');
-        }
-        if (chunks.length === 1) {
-            return chunks[0];
-        }
-
-        // WAV 头部大小
-        const WAV_HEADER_SIZE = 44;
-
-        // 验证所有片段格式一致
-        const firstView = new DataView(chunks[0]);
-        const sampleRate = firstView.getUint32(24, true);
-        const bitsPerSample = firstView.getUint16(34, true);
-        const numChannels = firstView.getUint16(22, true);
-
-        // 收集所有 PCM 数据
-        const pcmChunks: ArrayBuffer[] = [];
-        for (const chunk of chunks) {
-            const view = new DataView(chunk);
-            // 验证格式
-            const chunkSampleRate = view.getUint32(24, true);
-            const chunkBits = view.getUint16(34, true);
-            const chunkChannels = view.getUint16(22, true);
-
-            if (chunkSampleRate !== sampleRate || chunkBits !== bitsPerSample || chunkChannels !== numChannels) {
-                serviceLog.warn('[TTS] Audio format mismatch, skipping chunk');
-                continue;
-            }
-
-            // 提取 PCM 数据（跳过 44 字节头部）
-            const pcmData = chunk.slice(WAV_HEADER_SIZE);
-            pcmChunks.push(pcmData);
-        }
-
-        if (pcmChunks.length === 0) {
-            return chunks[0];
-        }
-
-        // 计算总 PCM 数据大小
-        const totalPcmSize = pcmChunks.reduce((sum, c) => sum + c.byteLength, 0);
-
-        // 创建新的 WAV 文件
-        const bytesPerSample = bitsPerSample / 8;
-        const blockAlign = numChannels * bytesPerSample;
-        const dataSize = totalPcmSize;
-        const fileSize = WAV_HEADER_SIZE + dataSize;
-
-        const buffer = new ArrayBuffer(fileSize);
-        const view = new DataView(buffer);
-
-        // 写入 WAV 头部
-        // "RIFF" chunk descriptor
-        writeString(view, 0, 'RIFF');
-        view.setUint32(4, fileSize - 8, true);
-        writeString(view, 8, 'WAVE');
-
-        // "fmt " sub-chunk
-        writeString(view, 12, 'fmt ');
-        view.setUint32(16, 16, true);  // sub-chunk size
-        view.setUint16(20, 1, true);   // PCM format
-        view.setUint16(22, numChannels, true);
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, sampleRate * blockAlign, true);  // byte rate
-        view.setUint16(32, blockAlign, true);
-        view.setUint16(34, bitsPerSample, true);
-
-        // "data" sub-chunk
-        writeString(view, 36, 'data');
-        view.setUint32(40, dataSize, true);
-
-        // 复制 PCM 数据
-        let offset = WAV_HEADER_SIZE;
-        for (const pcm of pcmChunks) {
-            const uint8 = new Uint8Array(buffer, offset, pcm.byteLength);
-            uint8.set(new Uint8Array(pcm));
-            offset += pcm.byteLength;
-        }
-
-        return buffer;
     }
 
     /**
@@ -1310,9 +993,9 @@ export class TTSService {
                 const blobUrl = URL.createObjectURL(wavBlob);
                 const audio = new Audio(blobUrl);
                 const cacheKey = voiceProfile
-                    ? this.buildCacheKey(messageId, voiceProfile)
+                    ? this.cacheManager.buildCacheKey(messageId, voiceProfile)
                     : messageId;
-                this.setCache(cacheKey, { blobUrl, audio });
+                this.cacheManager.setCache(cacheKey, { blobUrl, audio });
                 this.listenAudio(audio, messageId);
             }
 
@@ -1402,9 +1085,9 @@ export class TTSService {
             const blobUrl = URL.createObjectURL(wavBlob);
             const audio = new Audio(blobUrl);
             const cacheKey = voiceProfile
-                ? this.buildCacheKey(messageId, voiceProfile)
+                ? this.cacheManager.buildCacheKey(messageId, voiceProfile)
                 : messageId;
-            this.setCache(cacheKey, { blobUrl, audio });
+            this.cacheManager.setCache(cacheKey, { blobUrl, audio });
             this.listenAudio(audio, messageId);
 
             if (this.currentMessageId === messageId) {
@@ -1444,9 +1127,9 @@ export class TTSService {
         const audio = new Audio(blobUrl);
 
         const cacheKey = voiceProfile
-            ? this.buildCacheKey(messageId, voiceProfile)
+            ? this.cacheManager.buildCacheKey(messageId, voiceProfile)
             : messageId;
-        this.setCache(cacheKey, { blobUrl, audio });
+        this.cacheManager.setCache(cacheKey, { blobUrl, audio });
         this.listenAudioWithProgress(audio, messageId);
 
         this.setState('playing');
@@ -1565,14 +1248,39 @@ export class TTSService {
     private setState(newState: TTSPlayState): void {
         this.state = newState;
         this.onStateChange?.(this.currentMessageId, newState);
+        if (newState === 'playing') {
+            this.acquireWakeLock();
+        } else {
+            this.releaseWakeLock();
+        }
     }
-}
 
-/**
- * WAV 文件头部写入字符串的辅助函数
- */
-function writeString(view: DataView, offset: number, str: string): void {
-    for (let i = 0; i < str.length; i++) {
-        view.setUint8(offset + i, str.charCodeAt(i));
+    private async acquireWakeLock(): Promise<void> {
+        if (typeof navigator === 'undefined' || !navigator.wakeLock) return;
+        if (this.wakeLockSentinel) return;
+        try {
+            const sentinel = await (navigator as any).wakeLock.request('screen');
+            this.wakeLockSentinel = sentinel;
+            serviceLog.info('[TTS] Screen Wake Lock acquired.');
+            sentinel.onrelease = () => {
+                serviceLog.info('[TTS] Screen Wake Lock released.');
+                if (this.wakeLockSentinel === sentinel) {
+                    this.wakeLockSentinel = null;
+                }
+            };
+        } catch (err) {
+            serviceLog.warn('[TTS] Failed to acquire Screen Wake Lock:', err);
+        }
+    }
+
+    private async releaseWakeLock(): Promise<void> {
+        if (this.wakeLockSentinel) {
+            try {
+                await this.wakeLockSentinel.release();
+            } catch (err) {
+                serviceLog.warn('[TTS] Error releasing Screen Wake Lock:', err);
+            }
+            this.wakeLockSentinel = null;
+        }
     }
 }

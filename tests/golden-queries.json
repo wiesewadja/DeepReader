@@ -1,0 +1,181 @@
+{
+  "version": "1.0",
+  "description": "Golden query set for search quality evaluation",
+  "queries": [
+    {
+      "id": "q1",
+      "query": "积极主动",
+      "bookId": "0e0e129c",
+      "relevantNodeIds": ["0010"],
+      "description": "高效能人士七个习惯 - 习惯一：积极主动"
+    },
+    {
+      "id": "q2",
+      "query": "以终为始",
+      "bookId": "0e0e129c",
+      "relevantNodeIds": ["0013"],
+      "description": "高效能人士七个习惯 - 习惯二：以终为始"
+    },
+    {
+      "id": "q3",
+      "query": "要事第一",
+      "bookId": "0e0e129c",
+      "relevantNodeIds": ["0016"],
+      "description": "高效能人士七个习惯 - 习惯三：要事第一"
+    },
+    {
+      "id": "q4",
+      "query": "双赢思维",
+      "bookId": "0e0e129c",
+      "relevantNodeIds": ["0022"],
+      "description": "高效能人士七个习惯 - 习惯四：双赢思维"
+    },
+    {
+      "id": "q5",
+      "query": "知彼解己",
+      "bookId": "0e0e129c",
+      "relevantNodeIds": ["0025"],
+      "description": "高效能人士七个习惯 - 习惯五：知彼解己"
+    },
+    {
+      "id": "q6",
+      "query": "统合综效",
+      "bookId": "0e0e129c",
+      "relevantNodeIds": ["0028"],
+      "description": "高效能人士七个习惯 - 习惯六：统合综效"
+    },
+    {
+      "id": "q7",
+      "query": "不断更新",
+      "bookId": "0e0e129c",
+      "relevantNodeIds": ["0031"],
+      "description": "高效能人士七个习惯 - 习惯七：不断更新"
+    },
+    {
+      "id": "q8",
+      "query": "社交货币",
+      "bookId": "d2b30962",
+      "relevantNodeIds": ["0010"],
+      "description": "疯传 - 第一章 社交货币"
+    },
+    {
+      "id": "q9",
+      "query": "诱因",
+      "bookId": "d2b30962",
+      "relevantNodeIds": ["0018"],
+      "description": "疯传 - 第二章 诱因"
+    },
+    {
+      "id": "q10",
+      "query": "情绪唤醒",
+      "bookId": "d2b30962",
+      "relevantNodeIds": ["0029", "0034"],
+      "description": "疯传 - 第三章 情绪（高唤醒情绪）"
+    },
+    {
+      "id": "q11",
+      "query": "STEPPS原则",
+      "bookId": "d2b30962",
+      "relevantNodeIds": ["0009"],
+      "description": "疯传 - 感染力的六个原则概述"
+    },
+    {
+      "id": "q12",
+      "query": "口碑传播",
+      "bookId": "d2b30962",
+      "relevantNodeIds": ["0005", "0006"],
+      "description": "疯传 - 社会传播与口碑"
+    },
+    {
+      "id": "q13",
+      "query": "预测机器",
+      "bookId": "ee090e29",
+      "relevantNodeIds": ["0009"],
+      "description": "AI极简经济学 - 预测机器的魔力"
+    },
+    {
+      "id": "q14",
+      "query": "数据石油",
+      "bookId": "ee090e29",
+      "relevantNodeIds": ["0013"],
+      "description": "AI极简经济学 - 数据就是新一代的石油"
+    },
+    {
+      "id": "q15",
+      "query": "人工智能决策",
+      "bookId": "ee090e29",
+      "relevantNodeIds": ["0019", "0020"],
+      "description": "AI极简经济学 - 决策部分"
+    },
+    {
+      "id": "q16",
+      "query": "自卑情结",
+      "bookId": "9f77964d",
+      "relevantNodeIds": ["0012", "0013"],
+      "description": "自卑与超越 - 自卑感与优越感"
+    },
+    {
+      "id": "q17",
+      "query": "生命的意义",
+      "bookId": "9f77964d",
+      "relevantNodeIds": ["0002"],
+      "description": "自卑与超越 - 第一章 生命的意义"
+    },
+    {
+      "id": "q18",
+      "query": "早期记忆",
+      "bookId": "9f77964d",
+      "relevantNodeIds": ["0015"],
+      "description": "自卑与超越 - 第四章 早期记忆"
+    },
+    {
+      "id": "q19",
+      "query": "家庭影响",
+      "bookId": "9f77964d",
+      "relevantNodeIds": ["0025"],
+      "description": "自卑与超越 - 第六章 家庭的影响"
+    },
+    {
+      "id": "q20",
+      "query": "社会兴趣",
+      "bookId": "9f77964d",
+      "relevantNodeIds": ["0062", "0063"],
+      "description": "自卑与超越中关于社会兴趣的专题章节"
+    },
+    {
+      "id": "q21",
+      "query": "为什么人们总是做出错误的财务决策",
+      "bookId": "ee090e29",
+      "relevantNodeIds": ["0020", "0021"],
+      "description": "AI极简经济学 - 判断的价值与预测判断"
+    },
+    {
+      "id": "q22",
+      "query": "如何让产品像病毒一样传播",
+      "bookId": "d2b30962",
+      "relevantNodeIds": ["0003", "0004"],
+      "description": "疯传 - 前言与导言"
+    },
+    {
+      "id": "q23",
+      "query": "时间管理四象限",
+      "bookId": "0e0e129c",
+      "relevantNodeIds": ["0016", "0037"],
+      "description": "高效能人士七个习惯 - 要事第一与第四代时间管理"
+    },
+    {
+      "id": "q24",
+      "query": "梦境解析",
+      "bookId": "9f77964d",
+      "relevantNodeIds": ["0019"],
+      "description": "自卑与超越 - 第五章 梦境"
+    },
+    {
+      "id": "q25",
+      "query": "由内而外",
+      "bookId": "0e0e129c",
+      "relevantNodeIds": ["0004"],
+      "description": "高效能人士七个习惯 - 第一章 由内而外全面造就自己"
+    }
+  ]
+}

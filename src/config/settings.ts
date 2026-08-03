@@ -19,6 +19,7 @@ function defaultProviders(): Record<string, AIProviderAccount> {
 		openai:      { apiKey: '' },
 		xiaomi:      { apiKey: '' },
 		sensenova:   { apiKey: '' },
+		volcark:     { apiKey: '' },
 		mineru:      { apiKey: '' },
 	};
 }
@@ -26,13 +27,13 @@ function defaultProviders(): Record<string, AIProviderAccount> {
 	/** 新版默认的角色配置 */
 	function defaultRoles(): AIRoles {
 		return {
-			chat:        { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
-			router:      { provider: 'xiaomi', model: 'mimo-v2.5' },
-			pageindex:   { provider: 'xiaomi', model: 'mimo-v2.5' },
-			proposition: { provider: 'xiaomi', model: 'mimo-v2.5' },
-			embedding:   { provider: 'siliconflow', model: 'Qwen/Qwen3-Embedding-0.6B' },
+			chat:        { provider: 'volcark', model: 'doubao-seed-2.0-pro' },
+			router:      { provider: 'volcark', model: 'doubao-seed-2.0-lite' },
+			pageindex:   { provider: 'volcark', model: 'doubao-seed-2.0-lite' },
+			proposition: { provider: 'volcark', model: 'doubao-seed-2.0-lite' },
+			embedding:   { provider: 'volcark', model: 'doubao-embedding-vision' },
 			reranker:    { provider: 'siliconflow', model: 'Qwen/Qwen3-Reranker-0.6B' },
-			tts:         { provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' },
+			tts:         { provider: 'volcark', model: 'doubao-seed-tts-2.0' },
 			imagegen:    null,
 		};
 	}

@@ -8,7 +8,7 @@
 
 import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
 
-const EPUB_FILE = '金钱不能买什么：金钱与公正的正面交锋 = What Money Cant Buy The Moral Limits of Markets ([美] 迈克尔 · 桑德尔 (Michael J. Sandel) 著  邓正来 译) (z-library.sk, 1lib.sk, z-lib.sk).epub';
+const EPUB_FILE = 'AI工程大模型应用开发实战.epub';
 
 export default {
 	id: 'summary-description',
@@ -41,7 +41,9 @@ export default {
 			try {
 				const result = await evalObsidian(`(() => {
 					const plugin = app.plugins.plugins["deepreader-dev"];
-					return plugin.api.parseEpub(${JSON.stringify(fullPath)});
+					return plugin.api.parseEpub(${JSON.stringify(fullPath)}).then(r => ({
+						chapters: r.chapters.map(c => ({ id: c.id, title: c.title }))
+					}));
 				})()`, { timeout: 30_000 });
 
 				if (!result?.chapters?.length) {
@@ -64,11 +66,12 @@ export default {
 				const result = await evalObsidian(`(() => {
 					const plugin = app.plugins.plugins["deepreader-dev"];
 
-					// 构建 mock summaries
+					// 构建 mock summaries（按 nodeId 索引，与 epub-to-obsidian 的 lookup 对齐）
 					const titles = ${JSON.stringify(chapterTitles.slice(0, 5))};
 					const summaries = {};
-					for (const t of titles) {
-						summaries[t] = '这是' + t + '章节的模拟摘要，用于验证导出结构。';
+					for (let i = 0; i < titles.length; i++) {
+						const nodeId = String(i + 1).padStart(4, '0');
+						summaries[nodeId] = { title: titles[i], summary: '这是' + titles[i] + '章节的模拟摘要，用于验证导出结构。' };
 					}
 					const docDesc = '这是一本关于金钱与公正的书籍，探讨了市场道德边界的问题。';
 
@@ -76,15 +79,16 @@ export default {
 						outputDir: ${JSON.stringify(basePath)},
 						includeIndex: true,
 						docDescription: docDesc,
-						nodeSummaries: JSON.stringify(summaries),
+						nodeSummaries: summaries,
 					});
 				})()`, { timeout: 120_000 });
 
-				if (!result || !(result.notesCount > 0)) {
-					throw new Error(`exportToObsidian: notesCount=${result?.notesCount}`);
+				const notesCount = result?.notes?.length ?? 0;
+				if (!result || notesCount === 0) {
+					throw new Error(`exportToObsidian: notes=${notesCount}, mocPath=${result?.mocPath}`);
 				}
 
-				pass('exportToObsidian', Date.now() - t0, `notes=${result.notesCount}`);
+				pass('exportToObsidian', Date.now() - t0, `notes=${notesCount}`);
 			} catch (e) {
 				fail('exportToObsidian', Date.now() - t0, e);
 				return { steps };
@@ -97,11 +101,9 @@ export default {
 			try {
 				const result = await evalObsidian(`(() => {
 					const files = app.vault.getMarkdownFiles();
+					const epubDir = files.find(f => f.path.endsWith('- MOC.md') && f.path.includes('AI'))?.path.replace(/\/[^/]+$/, '') || '';
 					const chapterFiles = files.filter(f =>
-						f.path.includes('/') &&
-						!f.path.startsWith('.obsidian') &&
-						!f.path.startsWith('.pageindex') &&
-						!f.path.startsWith('DeepReader') &&
+						epubDir && f.path.startsWith(epubDir + '/') &&
 						!f.path.includes('MOC') &&
 						f.path.endsWith('.md')
 					);

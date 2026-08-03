@@ -271,7 +271,7 @@ async function sendMessage(question, bookId) {
 			view.isAiStreaming = false;
 		}
 		if (view.chatInput?.textarea?.disabled) view.chatInput.setDisabled(false);
-		if (typeof view.messageList?.clearMessages === 'function') view.messageList.clearMessages();
+		// 不要清空消息列表，保留历史消息
 	})()`);
 	await sleep(1000);
 

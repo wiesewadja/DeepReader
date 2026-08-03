@@ -20,6 +20,9 @@
 | [ADR-007](./ADR-007-memory-and-session-architecture.md) | MEMORY.md + JSONL 长期记忆与会话架构 | Accepted | 2026-03（5 月完善） |
 | [ADR-008](./ADR-008-proactive-engine-design.md) | 主动引擎（Proactive Engine）设计 | Accepted | 2026-05 |
 | [ADR-009](./ADR-009-s2-multi-layer-early-stop.md) | S2 多层早停机制设计 | Accepted | 2026-05（6 月归档） |
+| [ADR-010](./ADR-010-shared-context-convergence.md) | SharedContext 收敛：消除双轨制，确立 State/Context 划界 | Accepted | 2026-07 |
+| [ADR-011](./ADR-011-sidebar-view-domain-split.md) | SidebarView 域拆分：Domain + Presenter + EventBus | Accepted | 2026-07 |
+| [ADR-012](./ADR-012-security-boundary-mechanism.md) | 安全边界机制：防止系统提示词泄露 | Accepted | 2026-07 |
 
 ---
 
@@ -29,6 +32,7 @@
 - [ADR-001](./ADR-001-four-layer-reading.md) — 四层阅读法（S0/S1/S2/S4）
 - [ADR-003](./ADR-003-langgraph-state-machine.md) — LangGraph 状态机
 - [ADR-006](./ADR-006-dual-model-routing.md) — 双模型分层（main/fast）
+- [ADR-010](./ADR-010-shared-context-convergence.md) — SharedContext 收敛与 State/Context 划界
 
 ### 数据与存储
 - [ADR-002](./ADR-002-local-first-no-backend.md) — 本地优先
@@ -40,9 +44,13 @@
 
 ### 交互模式
 - [ADR-008](./ADR-008-proactive-engine-design.md) — 主动引擎
+- [ADR-011](./ADR-011-sidebar-view-domain-split.md) — SidebarView 域拆分
 
 ### 成本与质量控制
 - [ADR-009](./ADR-009-s2-multi-layer-early-stop.md) — S2 多层早停
+
+### 安全
+- [ADR-012](./ADR-012-security-boundary-mechanism.md) — 安全边界机制
 
 ---
 

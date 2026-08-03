@@ -85,6 +85,7 @@ export class LibraryView extends ItemView {
 	private _archivedBookIds: Set<string> = new Set();
 	private _archiveBtnEl: HTMLElement | null = null;
 	private _filterBtnEl: HTMLElement | null = null;
+	private _loadingWereadMapping: boolean = false;
 
 	// Sub-modules (initialized in onOpen)
 	private coverManager!: CoverManager;
@@ -348,12 +349,16 @@ export class LibraryView extends ItemView {
 	private renderGrid(): void {
 		if (!this.gridEl) return;
 
-		// 首次渲染时异步加载微信读书映射
-		if (this.wereadBridge.getMappingCache().size === 0) {
+		// 首次渲染时异步加载微信读书映射（防止重复触发）
+		if (this.wereadBridge.getMappingCache().size === 0 && !this._loadingWereadMapping) {
+			this._loadingWereadMapping = true;
 			this.wereadBridge.loadWereadMapping().then(() => {
+				this._loadingWereadMapping = false;
 				if (this.wereadBridge.getMappingCache().size > 0) {
 					this.renderGrid();
 				}
+			}).catch(() => {
+				this._loadingWereadMapping = false;
 			});
 		}
 

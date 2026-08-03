@@ -4,11 +4,13 @@
  * Obsidian 插件运行在 Electron 渲染进程中，原生 `fetch()` 受 CORS 限制。
  * 此模块使用 Obsidian 的 `requestUrl()` 绕过 CORS，同时保持统一的调用接口。
  *
- * 策略：在 Obsidian 环境中，先用原生 fetch 尝试流式请求，
- * 任何网络错误（包括但不限于 CORS）都降级到 requestUrl 非流式请求。
+ * 策略：
+ * 1. 桌面端：通过 Electron webRequest 注入 CORS 响应头，让原生 fetch 对已知不支持 CORS 的服务商也能流式工作
+ * 2. 移动端（无 Electron remote）：降级到 requestUrl 非流式请求
  */
 
 import { requestUrl } from 'obsidian';
+import { nodeHttps } from './node-compat';
 
 // ═══════════════════════════════════════════════════════════════
 // 非流式请求
@@ -119,47 +121,141 @@ function extractHeaders(init: RequestInit): {
 	return { headers, contentType };
 }
 
+/** 已知不支持浏览器 CORS 的服务商域名（CORS 预检会拒绝 authorization 头）。这些域名走 Node https 模块绕过 CORS。 */
+const NO_CORS_FETCH_HOSTS = [
+	'ark.cn-beijing.volces.com', // 火山方舟：预检不允许 authorization 头
+];
+
+function shouldSkipNativeFetch(url: string): boolean {
+	try {
+		const host = new URL(url).host;
+		return NO_CORS_FETCH_HOSTS.some(h => host === h || host.endsWith('.' + h));
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * 用 Node https 模块发起请求，返回标准 Response 对象。
+ *
+ * 桌面端（Electron 有 Node 集成）：天然绕过浏览器 CORS，支持真正的 SSE 流式。
+ * 移动端（Capacitor 无 Node https）：抛异常，由调用方降级到 requestUrl。
+ */
+function nativeHttpsFetch(url: string, init: RequestInit): Promise<Response> {
+	const https = nodeHttps();
+	const urlObj = new URL(url);
+
+	const { headers } = extractHeaders(init);
+
+	const options = {
+		hostname: urlObj.hostname,
+		port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+		path: urlObj.pathname + urlObj.search,
+		method: (init.method as string) || 'POST',
+		headers: { 'Content-Length': init.body ? Buffer.byteLength(init.body as string) : 0, ...headers },
+	};
+
+	return new Promise<Response>((resolve, reject) => {
+		const req = https.request(options, (res: any) => {
+			const stream = new ReadableStream<Uint8Array>({
+				start(controller) {
+					res.on('data', (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)));
+					res.on('end', () => controller.close());
+					res.on('error', (err: Error) => controller.error(err));
+				},
+				cancel() {
+					res.destroy();
+				},
+			});
+
+			const respHeaders = new Headers();
+			const rawHeaders = res.headers || {};
+			for (const [key, value] of Object.entries(rawHeaders)) {
+				if (typeof value === 'string') respHeaders.set(key, value);
+				else if (Array.isArray(value)) value.forEach(v => respHeaders.append(key, v));
+			}
+
+			resolve(new Response(stream, {
+				status: res.statusCode || 200,
+				statusText: res.statusMessage || 'OK',
+				headers: respHeaders,
+			}));
+		});
+
+		req.on('error', reject);
+		if (init.signal?.aborted) { req.destroy(); reject(new DOMException('Aborted', 'AbortError')); return; }
+		if (init.body) req.write(init.body);
+		req.end();
+	});
+}
+
 /**
  * CORS 安全的流式 fetch，带降级策略
  *
- * 1. 先尝试原生 `fetch()`（支持 SSE 流式响应）
- * 2. 如果遇到网络/CORS 错误，降级为 `requestUrl()` 非流式请求
- *    构造一个兼容的 Response 对象，body 为完整响应
+ * 1. NO_CORS 域名：走 Node https 模块（绕过 CORS，支持 SSE 流式）
+ * 2. 普通域名：先尝试原生 fetch，CORS 失败则降级
+ * 3. 降级路径：requestUrl 非流式（整个响应打包成单事件）
  */
 export async function fetchWithCorsFallback(
 	url: string,
 	init: RequestInit,
 ): Promise<Response> {
-	try {
-		return await fetch(url, init);
-	} catch (error) {
-		if (!isNetworkError(error)) {
-			throw error;
+	// NO_CORS 域名：直接走 Node https（绕过 CORS，保留 SSE 流式）
+	if (shouldSkipNativeFetch(url)) {
+		try {
+			return await nativeHttpsFetch(url, init);
+		} catch {
+			// Node https 不可用（移动端）或请求失败 → 降级到 requestUrl
 		}
+	} else {
+		// 普通域名：先尝试原生 fetch（支持 CORS 的服务商）
+		try {
+			return await fetch(url, init);
+		} catch (error) {
+			if (!isNetworkError(error)) {
+				throw error;
+			}
+		}
+	}
 
-		// 网络/CORS 错误，降级为 requestUrl 非流式
-		const { headers, contentType } = extractHeaders(init);
+	// 降级路径：requestUrl 非流式（整个响应打包）
+	const { headers, contentType } = extractHeaders(init);
+	const resp = await requestUrl({
+		url,
+		method: (init.method as string) || 'POST',
+		contentType,
+		headers,
+		body: init.body as string,
+		throw: false,
+	});
 
-		const resp = await requestUrl({
-			url,
-			method: (init.method as string) || 'POST',
-			contentType,
-			headers,
-			body: init.body as string,
-			throw: false,
-		});
+	const isStreamRequest = typeof init.body === 'string' && /"stream"\s*:\s*true/.test(init.body);
+	const text = resp.text;
 
-		// 构造 SSE 格式的 Response，让下游流式解析器正常工作
-		const sseBody = `data: ${resp.text}\n\ndata: [DONE]\n\n`;
-		return new Response(sseBody, {
+	if (!isStreamRequest) {
+		return new Response(text, {
 			status: resp.status,
 			statusText: resp.status >= 400 ? 'Error' : 'OK',
 			headers: new Headers({
-				'Content-Type': 'text/event-stream',
+				'Content-Type': resp.headers['content-type'] || 'application/json',
 				...resp.headers,
 			}),
 		});
 	}
+
+	// 流式：构造 SSE 格式
+	const isAlreadySse = /^data:/.test(text) || /\ndata:/.test(text);
+	const sseBody = isAlreadySse
+		? `${text}${text.endsWith('\n') ? '' : '\n'}data: [DONE]\n\n`
+		: `data: ${text}\n\ndata: [DONE]\n\n`;
+	return new Response(sseBody, {
+		status: resp.status,
+		statusText: resp.status >= 400 ? 'Error' : 'OK',
+		headers: new Headers({
+			'Content-Type': 'text/event-stream',
+			...resp.headers,
+		}),
+	});
 }
 
 /**

@@ -88,6 +88,16 @@ export class SessionDomain {
 		this.bookDomain = options.bookDomain;
 		this.ttsDomain = options.ttsDomain;
 		this.agentDomain = new AgentDomain({ plugin: options.plugin });
+
+		// 文档变化时同步 currentMarkdownFiles，供 Agent 搜索使用
+		// 订阅随 EventBus.dispose 一并清理（onClose 触发）
+		this.eventBus.on("chat:documents-changed", ({ documents }) => {
+			const files: Record<string, string> = {};
+			for (const doc of documents) {
+				files[doc.path] = doc.content;
+			}
+			this._currentMarkdownFiles = files;
+		});
 	}
 
 	// ── State accessors ──

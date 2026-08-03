@@ -9,6 +9,7 @@
 const THINKING_MODEL_PATTERNS = [
 	'minimax-m2',
 	'mimo',
+	'doubao-seed',
 	'deepseek-v4',
 	'deepseek-reasoner',
 	'deepseek-r1',

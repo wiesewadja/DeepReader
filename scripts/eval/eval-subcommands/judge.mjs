@@ -2,7 +2,6 @@
 /**
  * judge.mjs — judge 子命令
  */
-import { spawn } from 'child_process';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import {

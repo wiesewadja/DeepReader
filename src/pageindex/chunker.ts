@@ -1,6 +1,6 @@
 /**
  * Chunker — splits markdown content into semantic chunks for vectorization.
- * Merges paragraphs to target window size (300-500 chars).
+ * Merges paragraphs to target window size (300-500 chars) with overlap.
  */
 
 export interface Paragraph {
@@ -17,6 +17,7 @@ export interface Chunk {
 
 const TARGET_SIZE = 300;
 const MAX_SIZE = 800;
+const OVERLAP_SIZE = 80;
 
 /**
  * Split markdown content by ^blockId markers.
@@ -94,14 +95,18 @@ function splitLongText(text: string, maxSize: number): string[] {
 }
 
 /**
- * Merge paragraphs into chunks targeting 300-500 chars.
+ * Merge paragraphs into chunks targeting 300-500 chars with overlap.
  * Long paragraphs (>800) are split at sentence boundaries.
+ * Overlap: tail of previous chunk is prepended to next chunk for boundary continuity.
  */
 export function mergeToChunks(paragraphs: Paragraph[], nodeId: string): Chunk[] {
   const chunks: Chunk[] = [];
   let currentTexts: string[] = [];
   let currentBlockIds: string[] = [];
   let currentLength = 0;
+  // Overlap: tail texts from previous chunk to prepend to next chunk
+  let overlapTexts: string[] = [];
+  let overlapBlockIds: string[] = [];
 
   function flush(): void {
     if (currentTexts.length === 0) return;
@@ -113,9 +118,31 @@ export function mergeToChunks(paragraphs: Paragraph[], nodeId: string): Chunk[] 
       text,
       type: classifyType(currentTexts[0]),
     });
+
+    // Collect tail texts for overlap (up to OVERLAP_SIZE chars)
+    overlapTexts = [];
+    overlapBlockIds = [];
+    let overlapLen = 0;
+    for (let i = currentTexts.length - 1; i >= 0; i--) {
+      const t = currentTexts[i];
+      if (overlapLen + t.length > OVERLAP_SIZE && overlapTexts.length > 0) break;
+      overlapTexts.unshift(t);
+      overlapBlockIds.unshift(currentBlockIds[i]);
+      overlapLen += t.length;
+    }
+
     currentTexts = [];
     currentBlockIds = [];
     currentLength = 0;
+  }
+
+  function prependOverlap(): void {
+    if (overlapTexts.length === 0) return;
+    currentTexts.push(...overlapTexts);
+    currentBlockIds.push(...overlapBlockIds);
+    currentLength += overlapTexts.join(" ").length;
+    overlapTexts = [];
+    overlapBlockIds = [];
   }
 
   for (const para of paragraphs) {
@@ -141,6 +168,7 @@ export function mergeToChunks(paragraphs: Paragraph[], nodeId: string): Chunk[] 
 
     if (currentLength >= TARGET_SIZE) {
       flush();
+      prependOverlap();
     }
   }
 

@@ -5,7 +5,7 @@ import { readFileSync } from "fs";
 
 async function main() {
   // Simulate the fixed delimiter approach
-  const pdfPath = "/Users/lizhao/workspace/deepreadertest/纳瓦尔宝典：财富与幸福指南 (埃里克．乔根森 (Eric Jorgenson)) (Z-Library).pdf";
+  const pdfPath = "/Users/lizhao/workspace/DeepReader/test-vault/纳瓦尔宝典：财富与幸福指南 (埃里克．乔根森 (Eric Jorgenson)) (Z-Library).pdf";
   const pdfParse = (await import("pdf-parse")).default;
   const data = readFileSync(pdfPath);
 

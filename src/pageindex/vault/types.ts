@@ -124,7 +124,7 @@ export interface CatalogBookEntry {
 
 export interface RerankerOptions {
   /** Reranker provider */
-  provider: "lmstudio" | "ollama" | "openai";
+  provider: "lmstudio" | "ollama" | "openai" | "siliconflow" | "deepseek";
   /** Model name (default: BAAI/bge-reranker-v2-m3) */
   model?: string;
   /** Base URL for API (default: http://localhost:1234/v1 for lmstudio, http://localhost:11434 for ollama) */

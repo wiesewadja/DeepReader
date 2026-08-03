@@ -8,10 +8,11 @@ import {
   edgeIntersection,
   calculateViewport,
   resolveOverlaps,
-} from '@/agent/tools/excalidraw';
-import { excalidrawTool } from '@/agent/tools/excalidraw';
-import { writeExcalidrawJson } from '@/agent/tools/excalidraw';
-import type { ElementDef } from '@/agent/tools/excalidraw';
+} from '@/agent/tools/excalidraw/excalidraw';
+import { excalidrawTool } from '@/agent/tools/excalidraw/excalidraw';
+import { writeExcalidrawJson } from '@/agent/tools/excalidraw/excalidraw';
+import { buildOrthogonalPath } from '@/agent/tools/excalidraw/excalidraw-geometry';
+import type { ElementDef } from '@/agent/tools/excalidraw/excalidraw';
 import type { ToolContext } from '@/agent/tools/types';
 
 function makeMockCtx(): ToolContext {
@@ -55,7 +56,7 @@ describe('buildExcalidrawJSON', () => {
     expect(result.version).toBe(2);
     expect(result.source).toBe('https://excalidraw.com');
     expect(result.elements).toHaveLength(2);
-    expect(result.appState.viewBackgroundColor).toBe('#f8fafc'); // new background
+    expect(result.appState.viewBackgroundColor).toBe('#FDF6E3'); // hand-drawn style background
     expect(result.files).toEqual({});
   });
 
@@ -128,6 +129,39 @@ describe('buildExcalidrawJSON', () => {
     const seedSet = new Set(seeds);
     expect(seedSet.size).toBe(3);
     seeds.forEach(s => expect(s).toBeGreaterThan(0));
+  });
+
+  it('recomputes container element bounding box to neatly enclose child elements', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'c1', type: 'rectangle', x: 0, y: 0, width: 50, height: 50, customData: { isContainer: true, childIds: ['child1', 'child2'] } }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 100, y: 100, width: 100, height: 50 }),
+      makeElement({ id: 'child2', type: 'rectangle', x: 250, y: 200, width: 100, height: 50 }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const container = result.elements.find(e => e.id === 'c1');
+    expect(container).toBeDefined();
+
+    // child1: [100, 100] to [200, 150]
+    // child2: [250, 200] to [350, 250]
+    // bbox: minX=100, minY=100, maxX=350, maxY=250
+    // padding=24
+    expect(container!.x).toBe(100 - 24);
+    expect(container!.y).toBe(100 - 24);
+    expect(container!.width).toBe((350 - 100) + 48);
+    expect(container!.height).toBe((250 - 100) + 48);
+  });
+
+  it('ensures container elements are placed at the bottom of element array (lowest z-order)', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'card1', type: 'rectangle', x: 10, y: 10, width: 50, height: 30 }),
+      makeElement({ id: 'container1', type: 'rectangle', x: 0, y: 0, width: 200, height: 200, customData: { isContainer: true } }),
+      makeElement({ id: 'txt1', type: 'text', x: 20, y: 20, width: 30, height: 10, text: 'hi' }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const firstElement = result.elements[0];
+    expect(firstElement.id).toBe('container1');
   });
 
   it('converts line elements with width/height set to 0', () => {
@@ -336,7 +370,7 @@ describe('excalidrawTool.execute', () => {
   });
 
   it('returns warnings when overlaps detected', async () => {
-    const geom = await import('@/agent/tools/excalidraw-geometry');
+    const geom = await import('@/agent/tools/excalidraw/excalidraw-geometry');
     const spy = vi.spyOn(geom, 'resolveOverlaps').mockImplementation((els) => els as any);
 
     const result = await excalidrawTool.execute(
@@ -788,5 +822,264 @@ describe('detectConnectorNodeOverlaps', () => {
 
     const warnings = detectConnectorNodeOverlaps(elements);
     expect(warnings).toHaveLength(0);
+  });
+});
+
+describe('customData injection', () => {
+  it('injects isBranch on branch arrows', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child2', type: 'rectangle', x: 200, y: 100, width: 100, height: 50 }),
+      makeElement({ id: 'arrow1', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child1', gap: 2, focus: 0 },
+      }),
+      makeElement({ id: 'arrow2', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child2', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const arrow1 = result.elements.find(e => e.id === 'arrow1')!;
+    const arrow2 = result.elements.find(e => e.id === 'arrow2')!;
+
+    expect(arrow1.customData?.isBranch).toBe(true);
+    expect(arrow2.customData?.isBranch).toBe(true);
+  });
+
+  it('injects depth on all nodes via BFS', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'grandchild1', type: 'rectangle', x: 400, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'arrow1', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child1', gap: 2, focus: 0 },
+      }),
+      makeElement({ id: 'arrow2', type: 'arrow',
+        startBinding: { elementId: 'child1', gap: 2, focus: 0 },
+        endBinding: { elementId: 'grandchild1', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const root = result.elements.find(e => e.id === 'root')!;
+    const child1 = result.elements.find(e => e.id === 'child1')!;
+    const grandchild1 = result.elements.find(e => e.id === 'grandchild1')!;
+
+    expect(root.customData?.depth).toBe(0);
+    expect(child1.customData?.depth).toBe(1);
+    expect(grandchild1.customData?.depth).toBe(2);
+  });
+
+  it('marks root nodes with isAdditionalRoot', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root1', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'root2', type: 'rectangle', x: 0, y: 100, width: 100, height: 50 }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'arrow1', type: 'arrow',
+        startBinding: { elementId: 'root1', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child1', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const root1 = result.elements.find(e => e.id === 'root1')!;
+    const root2 = result.elements.find(e => e.id === 'root2')!;
+    const child1 = result.elements.find(e => e.id === 'child1')!;
+
+    // root1 has no parent, so it IS an additional root (MindMapBuilder 标记)
+    expect(root1.customData?.isAdditionalRoot).toBe(true);
+    // root2 has no parent, so it IS an additional root
+    expect(root2.customData?.isAdditionalRoot).toBe(true);
+    // child1 has a parent, so it's NOT an additional root
+    expect(child1.customData?.isAdditionalRoot).toBeUndefined();
+  });
+
+  it('does not inject customData on text elements', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'text1', type: 'text', text: 'label', x: 0, y: 0, width: 100, height: 50 }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const text1 = result.elements.find(e => e.id === 'text1')!;
+    // text elements should not get depth/isAdditionalRoot
+    expect(text1.customData?.depth).toBeUndefined();
+    expect(text1.customData?.isAdditionalRoot).toBeUndefined();
+  });
+
+  it('preserves existing customData when injecting', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50, customData: { foo: 'bar' } }),
+      makeElement({ id: 'child', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'arrow', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const root = result.elements.find(e => e.id === 'root')!;
+
+    expect(root.customData?.foo).toBe('bar');
+    expect(root.customData?.depth).toBe(0);
+  });
+});
+
+describe('boundary generation', () => {
+  it('generates boundary for Level-1 subtrees', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child2', type: 'rectangle', x: 200, y: 100, width: 100, height: 50 }),
+      makeElement({ id: 'arrow1', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child1', gap: 2, focus: 0 },
+      }),
+      makeElement({ id: 'arrow2', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child2', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const boundary = result.elements.find(e => e.id === 'boundary-child1');
+
+    expect(boundary).toBeDefined();
+    expect(boundary?.type).toBe('rectangle');
+    expect(boundary?.customData?.isBoundary).toBe(true);
+    expect(boundary?.customData?.parentId).toBe('child1');
+    expect(boundary?.fillStyle).toBe('hachure');
+    expect(boundary?.strokeWidth).toBe(1);
+  });
+
+  it('boundary includes 20px padding around subtree', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 200, y: 50, width: 100, height: 50 }),
+      makeElement({ id: 'grandchild1', type: 'rectangle', x: 400, y: 50, width: 80, height: 40 }),
+      makeElement({ id: 'arrow1', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child1', gap: 2, focus: 0 },
+      }),
+      makeElement({ id: 'arrow2', type: 'arrow',
+        startBinding: { elementId: 'child1', gap: 2, focus: 0 },
+        endBinding: { elementId: 'grandchild1', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const boundary = result.elements.find(e => e.id === 'boundary-child1');
+
+    expect(boundary).toBeDefined();
+    // child1 at x=200, grandchild1 at x=400, width=80 → maxX=480
+    // boundary x = 200-20 = 180, width = 480-180+20 = 320
+    expect(boundary?.x).toBe(180);
+    expect(boundary?.width).toBe(320);
+  });
+
+  it('does not generate boundary for depth=0 root nodes', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const boundary = result.elements.find(e => e.id?.startsWith('boundary-'));
+
+    expect(boundary).toBeUndefined();
+  });
+
+  it('generates separate boundaries for each Level-1 subtree', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child1', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child2', type: 'rectangle', x: 200, y: 200, width: 100, height: 50 }),
+      makeElement({ id: 'arrow1', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child1', gap: 2, focus: 0 },
+      }),
+      makeElement({ id: 'arrow2', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child2', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const boundaries = result.elements.filter(e => e.id?.startsWith('boundary-'));
+
+    expect(boundaries.length).toBe(2);
+    expect(boundaries.some(b => b.customData?.parentId === 'child1')).toBe(true);
+    expect(boundaries.some(b => b.customData?.parentId === 'child2')).toBe(true);
+  });
+});
+
+describe('crossLinks styling', () => {
+  it('applies dashed style to crossLink arrows', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'node1', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'node2', type: 'rectangle', x: 200, y: 200, width: 100, height: 50 }),
+      makeElement({ id: 'crossLink1', type: 'arrow',
+        startBinding: { elementId: 'node1', gap: 2, focus: 0 },
+        endBinding: { elementId: 'node2', gap: 2, focus: 0 },
+        customData: { isCrossLink: true },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const crossLink = result.elements.find(e => e.id === 'crossLink1');
+
+    expect(crossLink).toBeDefined();
+    expect(crossLink?.strokeStyle).toBe('dashed');
+    expect(crossLink?.strokeWidth).toBe(1);
+    expect(crossLink?.opacity).toBe(60);
+  });
+
+  it('does not apply dashed style to regular branch arrows', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'root', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'child', type: 'rectangle', x: 200, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'branchArrow', type: 'arrow',
+        startBinding: { elementId: 'root', gap: 2, focus: 0 },
+        endBinding: { elementId: 'child', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const branchArrow = result.elements.find(e => e.id === 'branchArrow');
+
+    expect(branchArrow).toBeDefined();
+    expect(branchArrow?.strokeStyle).not.toBe('dashed');
+    expect(branchArrow?.strokeWidth).not.toBe(1);
+  });
+
+  it('preserves crossLink customData after styling', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'node1', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'node2', type: 'rectangle', x: 200, y: 200, width: 100, height: 50 }),
+      makeElement({ id: 'crossLink1', type: 'arrow',
+        startBinding: { elementId: 'node1', gap: 2, focus: 0 },
+        endBinding: { elementId: 'node2', gap: 2, focus: 0 },
+        customData: { isCrossLink: true, source: 'analysis' },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const crossLink = result.elements.find(e => e.id === 'crossLink1');
+
+    expect(crossLink?.customData?.isCrossLink).toBe(true);
+    expect(crossLink?.customData?.source).toBe('analysis');
+  });
+});
+
+describe('buildOrthogonalPath', () => {
+  it('generates 4-point orthogonal elbow path for vertically offset elements', () => {
+    const start = makeElement({ id: 's', x: 100, y: 0, width: 100, height: 50 });
+    const end = makeElement({ id: 'e', x: 200, y: 200, width: 100, height: 50 });
+
+    const path = buildOrthogonalPath(start, end);
+    expect(path.points.length).toBe(4);
+    expect(path.points[0]).toEqual([0, 0]);
   });
 });

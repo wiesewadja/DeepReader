@@ -6,7 +6,7 @@ import { searchBookV2 } from "../src/pageindex/book-search-v2.js";
 import * as fs from "fs/promises";
 import * as path from "path";
 
-const vaultPath = "/Users/lizhao/workspace/deepreadertest";
+const vaultPath = "/Users/lizhao/workspace/DeepReader/test-vault";
 const bookId = "1553db0b";
 const indexDir = path.join(vaultPath, ".pageindex", bookId);
 
@@ -45,7 +45,7 @@ async function main() {
   console.log(`\n--- Testing search with query: "${query}" ---\n`);
   
   const results = await searchBookV2({
-    filePath: "/Users/lizhao/workspace/deepreadertest/test.pdf",
+    filePath: "/Users/lizhao/workspace/DeepReader/test-vault/test.pdf",
     query,
     bookId,
     vaultPath,

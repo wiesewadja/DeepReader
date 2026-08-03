@@ -19,9 +19,6 @@ describe("BookDomain", () => {
 	let app: any;
 	let plugin: any;
 	let changeHandler: any;
-	let startNewSession: any;
-	let restoreFromSessionStore: any;
-	let cancelActiveStream: any;
 
 	beforeEach(() => {
 		eventBus = new EventBus<SidebarEventMap>();
@@ -58,24 +55,13 @@ describe("BookDomain", () => {
 			},
 			saveSettings: vi.fn(async () => {}),
 		};
-
-		startNewSession = vi.fn(async () => {});
-		restoreFromSessionStore = vi.fn(async () => true);
-		cancelActiveStream = vi.fn();
 	});
 
-	function createDomain(sessionStore?: any) {
+	function createDomain() {
 		return new BookDomain({
 			app,
 			plugin,
 			eventBus,
-			startNewSession,
-			restoreFromSessionStore,
-			getSessionId: () => "session-1",
-			setSessionId: () => {},
-			getSessionStore: () => sessionStore ?? null,
-			ensureSessionStore: vi.fn(async () => {}),
-			cancelActiveStream,
 		});
 	}
 
@@ -104,7 +90,7 @@ describe("BookDomain", () => {
 		expect(changeHandler).toHaveBeenCalled();
 	});
 
-	it("selectIndex restores saved session when one exists", async () => {
+	it("selectIndex emits book:changed with clearChat", async () => {
 		const { vaultRead } = await import("@/utils/mobile-fs");
 		vi.mocked(vaultRead).mockResolvedValue(
 			JSON.stringify({
@@ -115,45 +101,13 @@ describe("BookDomain", () => {
 			}),
 		);
 
-		plugin.settings.savedSessions = { "Test Book": "saved-session-123" };
-		const sessionStore = {
-			get: vi.fn(async () => ({ indexId: "book-1", messages: [] })),
-			findBestSessionForIndex: vi.fn(async () => null),
-		};
-
-		const domain = createDomain(sessionStore);
-		await domain.loadIndexes();
-		await domain.selectIndex("book-1");
-
-		expect(sessionStore.get).toHaveBeenCalledWith("saved-session-123");
-		expect(restoreFromSessionStore).toHaveBeenCalledWith("saved-session-123");
-		expect(startNewSession).not.toHaveBeenCalled();
-
-		const lastCall = changeHandler.mock.calls[changeHandler.mock.calls.length - 1][0];
-		expect(lastCall.clearChat).toBe(false);
-	});
-
-	it("selectIndex starts a new session when no saved session exists", async () => {
-		const { vaultRead } = await import("@/utils/mobile-fs");
-		vi.mocked(vaultRead).mockResolvedValue(
-			JSON.stringify({
-				bookId: "book-1",
-				title: "Test Book",
-				author: "Test Author",
-				status: "ready",
-			}),
-		);
-
-		plugin.settings.savedSessions = {};
 		const domain = createDomain();
 		await domain.loadIndexes();
 		await domain.selectIndex("book-1");
 
-		expect(restoreFromSessionStore).not.toHaveBeenCalled();
-		expect(startNewSession).toHaveBeenCalledWith("book-1");
-
 		const lastCall = changeHandler.mock.calls[changeHandler.mock.calls.length - 1][0];
 		expect(lastCall.clearChat).toBe(true);
+		expect(lastCall.indexId).toBe("book-1");
 	});
 
 	it("manages thematic reading booklist select and clear", async () => {

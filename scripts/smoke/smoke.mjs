@@ -8,6 +8,7 @@
  *   node scripts/smoke/smoke.mjs --only S-22,S-23 # 指定场景
  *   node scripts/smoke/smoke.mjs --verbose        # 详细输出
  *   node scripts/smoke/smoke.mjs --no-color       # 禁用彩色
+ *   node scripts/smoke/smoke.mjs --no-env-check   # 跳过环境检查
  *
  * 退出码:
  *   0 = 全部 PASS（或仅 SKIP）
@@ -20,6 +21,7 @@ import { fileURLToPath } from 'url';
 import { Reporter } from './reporter.mjs';
 import { coreChecks } from './checks/core/index.mjs';
 import { fullChecks } from './checks/full/index.mjs';
+import { checkEnvironment } from '../e2e-light/env-check.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -31,6 +33,7 @@ function parseArgs(argv) {
 		only: null,     // 逗号分隔的 ID 列表
 		verbose: false,
 		noColor: !!process.env.NO_COLOR,
+		noEnvCheck: false,  // 跳过环境检查
 	};
 
 	for (let i = 0; i < argv.length; i++) {
@@ -48,6 +51,8 @@ function parseArgs(argv) {
 			args.verbose = true;
 		} else if (a === '--no-color') {
 			args.noColor = true;
+		} else if (a === '--no-env-check') {
+			args.noEnvCheck = true;
 		} else if (a === '--help' || a === '-h') {
 			printHelp();
 			process.exit(0);
@@ -72,6 +77,7 @@ DeepReader 冒烟测试
   -o, --only <id,id,...>    只跑指定场景
   -v, --verbose             详细输出（含错误堆栈）
   --no-color                禁用彩色
+  --no-env-check            跳过环境检查（不推荐）
   -h, --help                显示帮助
 
 示例:
@@ -158,6 +164,24 @@ async function main() {
 	const checks = loadChecks(args);
 
 	console.log(`\n🧪 DeepReader 冒烟测试 — level: ${args.level} (${checks.length} 场景)\n`);
+
+	// 环境健康检查（除非明确跳过）
+	if (!args.noEnvCheck) {
+		console.log('🔍 检查环境...');
+		const envCheck = await checkEnvironment();
+		if (!envCheck.ok) {
+			console.log('\x1b[31m✗ 环境检查失败\x1b[0m\n');
+			for (const err of envCheck.errors) {
+				console.log(`  \x1b[31m• ${err}\x1b[0m`);
+			}
+			console.log('\n\x1b[90m──────────────────────────────────────\x1b[0m');
+			console.log('\x1b[31m测试套件停止: 环境不就绪\x1b[0m');
+			console.log('\x1b[90m──────────────────────────────────────\x1b[0m');
+			console.log('\n提示: 运行 npm run setup:test-env 配置测试环境');
+			process.exit(2);
+		}
+		console.log('\x1b[32m✓ 环境检查通过\x1b[0m\n');
+	}
 
 	const ctx = {
 		projectRoot: PROJECT_ROOT,

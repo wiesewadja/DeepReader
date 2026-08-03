@@ -10,14 +10,6 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import { agentLog as log } from '../../../utils/logger.js';
 import type { CognitiveEngineState, NodeError } from '../state';
 
-/** 节点名称到降级策略的映射 */
-const FALLBACK_ACTIONS: Record<string, NodeError['fallbackAction']> = {
-  inspectional: 'global_search',
-  pre_search: 'global_search',
-  formatter: 'abort',
-};
-const DEFAULT_FALLBACK_ACTION: NodeError['fallbackAction'] = 'skip_to_formatter';
-
 export type NodeFn = (
   state: CognitiveEngineState,
   config: RunnableConfig,
@@ -39,7 +31,6 @@ export function safeNode(
       const nodeError: NodeError = {
         message: msg,
         recoverable: name !== 'formatter',
-        fallbackAction: FALLBACK_ACTIONS[name] ?? DEFAULT_FALLBACK_ACTION,
       };
 
       const base: Partial<CognitiveEngineState> = {

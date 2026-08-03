@@ -55,7 +55,7 @@ export default {
 
 		// 1. 插件已加载且启用
 		await step('插件已加载', async () => {
-			const r = await exec('plugin', ['id=deepreader-dev']);
+			const r = await exec('plugin', ['id=deepreader-dev'], { vault: 'test-vault' });
 			if (r.code !== 0) {
 				throw new Error(`plugin 命令失败: ${r.stderr || r.stdout}`);
 			}

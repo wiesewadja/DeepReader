@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<!--
+  AI 服务设置页 — UI 设计稿（高保真原型）
+  关联 spec: spec/ai-services-settings-redesign.md
+  浏览器打开即可预览。可点击 plan 卡片、输入 SF Key、切换亮/暗主题。
+  设计系统: 复用 DeepReader 的 --dr-* token + Obsidian 主题变量语义。
+-->
+<html lang="zh" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 服务设置 · UI 设计稿</title>
+<style>
+/* ── 设计 token（复用项目 variables.css 语义）── */
+:root {
+	--dr-space-1: 4px; --dr-space-2: 8px; --dr-space-3: 12px;
+	--dr-space-4: 16px; --dr-space-5: 20px; --dr-space-6: 24px;
+	--dr-text-xs: 12px; --dr-text-sm: 14px; --dr-text-base: 16px; --dr-text-lg: 18px;
+	--radius: 6px; --radius-card: 8px;
+}
+[data-theme="light"] {
+	--bg: #ffffff; --surface: #f7f7f8; --surface-elevated: #ffffff;
+	--text: #2d3748; --text-muted: #6b7280; --text-faint: #9ca3af;
+	--border: #e5e7eb; --border-hover: #d1d5db;
+	--accent: #6c5ce7; --accent-soft: rgba(108,92,231,.08); --on-accent: #fff;
+	--success: #3a9d5d; --warning: #d97706; --error: #dc2626;
+	--hover: #f3f4f6;
+	--mono: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+}
+[data-theme="dark"] {
+	--bg: #1e1e1e; --surface: #252526; --surface-elevated: #2d2d2d;
+	--text: #dcddde; --text-muted: #999; --text-faint: #777;
+	--border: #3a3a3a; --border-hover: #4a4a4a;
+	--accent: #8b7ff0; --accent-soft: rgba(139,127,240,.12); --on-accent: #fff;
+	--success: #4ade80; --warning: #fbbf24; --error: #f87171;
+	--hover: #2d2d2d;
+	--mono: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+	margin: 0; background: var(--bg); color: var(--text);
+	font-family: -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+	font-size: var(--dr-text-sm); line-height: 1.5;
+	transition: background .2s, color .2s;
+}
+/* ── 设计稿工具栏（不属于真实 UI）── */
+.design-bar {
+	position: sticky; top: 0; z-index: 10;
+	display: flex; align-items: center; gap: var(--dr-space-3);
+	padding: var(--dr-space-2) var(--dr-space-4);
+	background: var(--surface); border-bottom: 1px solid var(--border);
+	font-size: var(--dr-text-xs); color: var(--text-muted);
+}
+.design-bar strong { color: var(--text); }
+.design-bar button {
+	margin-left: auto; padding: 4px 10px; border-radius: var(--radius);
+	border: 1px solid var(--border); background: var(--surface-elevated);
+	color: var(--text); cursor: pointer; font-size: var(--dr-text-xs);
+}
+.design-bar button:hover { background: var(--hover); }
+/* ── 模拟 Obsidian 设置面板容器 ── */
+.obsidian-panel {
+	max-width: 680px; margin: 0 auto; padding: var(--dr-space-6) var(--dr-space-4);
+}
+.vertical-tab-content { padding: 0; }
+/* ── 卡片容器 ── */
+.deeppdf-settings-card {
+	background: var(--surface-elevated); border: 1px solid var(--border);
+	border-radius: var(--radius-card); padding: var(--dr-space-5);
+	margin-bottom: var(--dr-space-4);
+}
+.deeppdf-quick-setup-title {
+	font-size: var(--dr-text-lg); font-weight: 700; margin: 0 0 var(--dr-space-1);
+	letter-spacing: -0.01em;
+}
+.deeppdf-quick-setup-desc {
+	font-size: 13px; color: var(--text-muted); margin-bottom: var(--dr-space-5); line-height: 1.6;
+}
+/* ── ① Plan 卡片行 ── */
+.deeppdf-preset-row {
+	display: grid; grid-template-columns: 1fr 1fr; gap: var(--dr-space-3);
+	margin-bottom: var(--dr-space-4);
+}
+.deeppdf-preset-card {
+	border: 2px solid var(--border); border-radius: var(--radius-card);
+	padding: var(--dr-space-4); background: var(--surface);
+	cursor: pointer; opacity: .55;
+	transition: opacity .15s ease, border-color .15s ease, background .15s ease;
+	position: relative;
+}
+.deeppdf-preset-card:hover { border-color: var(--border-hover); opacity: .8; }
+.deeppdf-preset-card.is-selected {
+	opacity: 1; border-color: var(--accent); background: var(--accent-soft);
+}
+.deeppdf-preset-card-header {
+	display: flex; align-items: center; gap: var(--dr-space-2); margin-bottom: var(--dr-space-1);
+}
+.deeppdf-preset-card-name { font-size: var(--dr-text-base); font-weight: 600; }
+.deeppdf-preset-card-badge {
+	font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 10px;
+	background: var(--accent); color: var(--on-accent); margin-left: auto;
+}
+.deeppdf-preset-card-desc { font-size: 12px; color: var(--text-muted); margin-bottom: var(--dr-space-3); }
+/* 内嵌 Key 输入 */
+.deeppdf-key-input-wrap { display: flex; align-items: center; gap: var(--dr-space-2); }
+.deeppdf-key-input {
+	flex: 1; padding: 6px 10px; border-radius: var(--radius);
+	border: 1px solid var(--border); background: var(--bg); color: var(--text);
+	font-size: 13px; font-family: var(--mono);
+}
+.deeppdf-key-input:focus { outline: none; border-color: var(--accent); }
+.deeppdf-key-input::placeholder { color: var(--text-faint); }
+.deeppdf-btn-eye {
+	padding: 4px 8px; border: none; background: none; cursor: pointer;
+	color: var(--text-muted); font-size: 14px;
+}
+.deeppdf-key-status { font-size: 11px; white-space: nowrap; }
+.deeppdf-key-status.is-success { color: var(--success); }
+/* ── SF 增强行 ── */
+.deeppdf-key-group { margin-bottom: var(--dr-space-3); }
+.deeppdf-key-group-label { font-size: var(--dr-text-sm); font-weight: 600; margin-bottom: var(--dr-space-2); }
+.deeppdf-key-group-hint { font-size: 11px; color: var(--text-faint); margin-top: var(--dr-space-1); }
+.deeppdf-divider {
+	border: none; border-top: 1px solid var(--border); margin: var(--dr-space-5) 0;
+}
+/* ── ② 角色预览 ── */
+.deeppdf-role-preview-title {
+	display: flex; align-items: center; justify-content: space-between;
+	font-size: var(--dr-text-sm); font-weight: 600; margin-bottom: var(--dr-space-2);
+}
+.deeppdf-preview-tag {
+	font-size: 10px; font-weight: 500; padding: 2px 8px; border-radius: 10px;
+	background: var(--warning); color: #fff;
+}
+.deeppdf-preview-tag.is-committed { background: var(--success); }
+.deeppdf-role-row {
+	display: flex; align-items: center; gap: var(--dr-space-2);
+	padding: var(--dr-space-2) 0; border-bottom: 1px solid var(--border);
+	font-size: 13px;
+}
+.deeppdf-role-row:last-child { border-bottom: none; }
+.deeppdf-role-label { width: 52px; color: var(--text-muted); flex-shrink: 0; }
+.deeppdf-role-key {
+	width: 78px; font-family: var(--mono); font-size: 12px;
+	color: var(--text-faint); flex-shrink: 0;
+}
+.deeppdf-role-arrow { color: var(--text-faint); flex-shrink: 0; }
+.deeppdf-role-model { flex: 1; color: var(--text); }
+.deeppdf-role-model.is-empty { color: var(--text-faint); font-style: italic; }
+.deeppdf-role-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.deeppdf-role-dot.is-volcark { background: var(--accent); }
+.deeppdf-role-dot.is-xiaomi { background: #c084fc; }
+.deeppdf-role-dot.is-sf { background: var(--success); }
+.deeppdf-role-dot.is-empty { background: transparent; border: 1.5px dashed var(--text-faint); }
+.deeppdf-role-preview.is-preview .deeppdf-role-model { opacity: .9; }
+/* ── 操作按钮 ── */
+.deeppdf-actions-row {
+	display: flex; gap: var(--dr-space-2); justify-content: flex-end;
+	margin-top: var(--dr-space-5);
+}
+.deeppdf-btn-secondary {
+	padding: 6px 16px; border-radius: var(--radius); border: 1px solid var(--border);
+	background: var(--surface-elevated); color: var(--text); cursor: pointer; font-size: 13px;
+}
+.deeppdf-btn-secondary:hover { background: var(--hover); }
+.deeppdf-btn-primary {
+	padding: 6px 16px; border-radius: var(--radius); border: none;
+	background: var(--accent); color: var(--on-accent); cursor: pointer;
+	font-size: 13px; font-weight: 500;
+}
+.deeppdf-btn-primary:hover { opacity: .9; }
+.deeppdf-hint-link { margin-top: var(--dr-space-3); font-size: 12px; color: var(--text-muted); }
+.deeppdf-hint-link a { color: var(--accent); text-decoration: none; }
+.deeppdf-hint-link a:hover { text-decoration: underline; }
+/* ── ③ 折叠的其他服务商 ── */
+.deeppdf-collapse-toggle {
+	display: flex; align-items: center; gap: var(--dr-space-2); cursor: pointer;
+	padding: var(--dr-space-3) 0; color: var(--text-muted); font-size: 13px;
+}
+.deeppdf-collapse-toggle:hover { color: var(--text); }
+.deeppdf-collapse-arrow { transition: transform .15s; }
+.deeppdf-collapse-toggle.is-open .deeppdf-collapse-arrow { transform: rotate(90deg); }
+.deeppdf-collapse-body { display: none; padding-top: var(--dr-space-2); }
+.deeppdf-collapse-body.is-open { display: block; }
+.deeppdf-other-provider {
+	display: flex; align-items: center; justify-content: space-between;
+	padding: var(--dr-space-2) 0; border-bottom: 1px solid var(--border);
+}
+.deeppdf-other-provider:last-child { border-bottom: none; }
+.deeppdf-other-provider-name { font-weight: 500; }
+.deeppdf-other-provider-status { font-size: 12px; color: var(--text-faint); }
+.deeppdf-other-provider-status.is-on { color: var(--success); }
+/* ── 摘要头（状态 C）── */
+.deeppdf-summary-head {
+	display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--dr-space-1);
+}
+.deeppdf-summary-title { font-size: var(--dr-text-base); font-weight: 600; }
+.deeppdf-summary-title.is-ok { color: var(--success); }
+.deeppdf-summary-detail { font-size: 12px; color: var(--text-muted); margin-bottom: var(--dr-space-4); }
+/* ── 响应式 ── */
+@media (max-width: 600px) {
+	.deeppdf-preset-row { grid-template-columns: 1fr; }
+	.obsidian-panel { padding: var(--dr-space-4) var(--dr-space-3); }
+}
+/* ── 状态切换器（设计稿用）── */
+.state-switcher {
+	display: flex; gap: var(--dr-space-1); margin-left: var(--dr-space-3);
+}
+.state-switcher button {
+	padding: 3px 10px; border-radius: 4px; border: 1px solid var(--border);
+	background: var(--surface-elevated); color: var(--text-muted); cursor: pointer; font-size: 11px;
+}
+.state-switcher button.is-active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="design-bar">
+	<strong>AI 服务设置 · UI 设计稿</strong>
+	<span>关联 spec/ai-services-settings-redesign.md</span>
+	<div class="state-switcher">
+		<button data-state="setup" class="is-active">A 首次配置</button>
+		<button data-state="committed">C 已就绪</button>
+	</div>
+	<button id="themeToggle">🌙 暗色</button>
+</div>
+
+<div class="obsidian-panel">
+	<div class="vertical-tab-content" id="root"></div>
+</div>
+
+<script>
+// ── 预设数据（与 presets.ts 一致）──
+const PRESETS = {
+	'agent-plan': {
+		label: '火山方舟 Agent Plan', badge: '推荐',
+		desc: '豆包对话 + 向量搜索', provider: 'volcark',
+		roles: {
+			chat: ['volcark','doubao-seed-2.0-pro'],
+			router: ['volcark','doubao-seed-2.0-lite'],
+			pageindex: ['volcark','doubao-seed-2.0-lite'],
+			proposition: ['volcark','doubao-seed-2.0-lite'],
+			embedding: ['volcark','doubao-embedding-vision'],
+		},
+	},
+	'xitong': {
+		label: '小米 MIMO', desc: 'MIMO 对话 + 语音', provider: 'xiaomi',
+		roles: {
+			chat: ['xiaomi','mimo-v2.5-pro'],
+			router: ['xiaomi','mimo-v2.5'],
+			pageindex: ['xiaomi','mimo-v2.5'],
+			proposition: ['xiaomi','mimo-v2.5'],
+			tts: ['xiaomi','mimo-v2.5-tts-voicedesign'],
+		},
+	},
+};
+const ROLE_LABELS = {
+	chat:'对话', router:'路由', pageindex:'索引', proposition:'原子事实',
+	embedding:'向量', reranker:'重排序', tts:'语音', imagegen:'图片生成',
+};
+const PROVIDER_LABELS = { volcark:'火山方舟', xiaomi:'小米', siliconflow:'硅基流动' };
+
+// ── 状态 ──
+const state = {
+	view: 'setup',          // 'setup' | 'committed'
+	selectedPreset: 'agent-plan',
+	volcarkKey: '', xiaomiKey: '', sfKey: '',
+};
+
+// ── 计算预览角色（spec 的 computePreviewRoles 纯函数）──
+function computePreviewRoles(presetId, keys) {
+	const preset = PRESETS[presetId];
+	const roles = {};
+	for (const [r, [p, m]] of Object.entries(preset.roles)) roles[r] = [p, m];
+	// SF 增强：reranker + (xitong 的 embedding)
+	if (keys.sfKey) {
+		roles.reranker = ['siliconflow','Qwen/Qwen3-Reranker-0.6B'];
+		if (presetId === 'xitong') roles.embedding = ['siliconflow','Qwen/Qwen3-Embedding-0.6B'];
+	}
+	// MIMO Key 增强 tts（agent-plan 下）
+	if (presetId === 'agent-plan' && keys.xiaomiKey) {
+		roles.tts = ['xiaomi','mimo-v2.5-tts-voicedesign'];
+	}
+	return roles;
+}
+
+const DOT = { volcark:'is-volcark', xiaomi:'is-xiaomi', siliconflow:'is-sf' };
+
+function renderRoleRow(role, assignment) {
+	const [provider, model] = assignment || [null, null];
+	const empty = !provider;
+	return `
+		<div class="deeppdf-role-row">
+			<span class="deeppdf-role-label">${ROLE_LABELS[role]||role}</span>
+			<span class="deeppdf-role-key">${role}</span>
+			<span class="deeppdf-role-arrow">→</span>
+			<span class="deeppdf-role-model ${empty?'is-empty':''}">${empty?'未配置':model}</span>
+			<span class="deeppdf-role-dot ${empty?'is-empty':DOT[provider]}"></span>
+		</div>`;
+}
+
+function renderSetup() {
+	const p = PRESETS[state.selectedPreset];
+	const isAgent = state.selectedPreset === 'agent-plan';
+	const primaryKeyState = isAgent ? state.volcarkKey : state.xiaomiKey;
+	const roles = computePreviewRoles(state.selectedPreset, state);
+	const roleRows = ['chat','router','pageindex','proposition','embedding','reranker','tts']
+		.map(r => renderRoleRow(r, roles[r])).join('');
+
+	return `
+	<div class="deeppdf-settings-card">
+		<div class="deeppdf-quick-setup-title">快速配置</div>
+		<div class="deeppdf-quick-setup-desc">选择服务商并填写 API Key，系统会自动分配角色模型。</div>
+
+		<div class="deeppdf-preset-row">
+			${renderPresetCard('agent-plan')}
+			${renderPresetCard('xitong')}
+		</div>
+
+		<div class="deeppdf-key-group">
+			<div class="deeppdf-key-group-label">SiliconFlow（可选增强）</div>
+			<div class="deeppdf-key-input-wrap">
+				<input class="deeppdf-key-input" id="sfInput" type="password"
+					placeholder="sk-..." value="${state.sfKey}">
+				<button class="deeppdf-btn-eye">👁</button>
+				${state.sfKey ? '<span class="deeppdf-key-status is-success">✓</span>' : ''}
+			</div>
+			<div class="deeppdf-key-group-hint">向量搜索 + 重排序（不填则降级）</div>
+		</div>
+
+		<hr class="deeppdf-divider">
+
+		<div class="deeppdf-role-preview is-preview">
+			<div class="deeppdf-role-preview-title">
+				当前角色分配
+				<span class="deeppdf-preview-tag">预览</span>
+			</div>
+			${roleRows}
+		</div>
+
+		<div class="deeppdf-actions-row">
+			<button class="deeppdf-btn-secondary">测试连接</button>
+			<button class="deeppdf-btn-primary">确认配置 →</button>
+		</div>
+		<div class="deeppdf-hint-link">
+			还没有 Key？
+			<a href="#">开通火山方舟</a> ·
+			<a href="#">注册 SiliconFlow（免费额度）</a>
+		</div>
+	</div>
+
+	<div class="deeppdf-settings-card">
+		<div class="deeppdf-collapse-toggle" id="otherToggle">
+			<span class="deeppdf-collapse-arrow">▶</span>
+			其他服务商 Key
+			<span style="margin-left:auto;font-size:11px;color:var(--text-faint)">DeepSeek / Kimi / Minimax / OpenAI</span>
+		</div>
+		<div class="deeppdf-collapse-body" id="otherBody">
+			<div class="deeppdf-other-provider"><span class="deeppdf-other-provider-name">DeepSeek</span><span class="deeppdf-other-provider-status">未配置</span></div>
+			<div class="deeppdf-other-provider"><span class="deeppdf-other-provider-name">Kimi (Moonshot)</span><span class="deeppdf-other-provider-status">未配置</span></div>
+			<div class="deeppdf-other-provider"><span class="deeppdf-other-provider-name">Minimax</span><span class="deeppdf-other-provider-status">未配置</span></div>
+		</div>
+	</div>`;
+}
+
+function renderPresetCard(id) {
+	const p = PRESETS[id];
+	const selected = state.selectedPreset === id;
+	const keyVal = id === 'agent-plan' ? state.volcarkKey : state.xiaomiKey;
+	const placeholder = id === 'agent-plan' ? 'ark-...' : 'tp-...（Token Plan）';
+	return `
+		<div class="deeppdf-preset-card ${selected?'is-selected':''}" data-preset="${id}">
+			<div class="deeppdf-preset-card-header">
+				<span class="deeppdf-preset-card-name">${p.label}</span>
+				${p.badge ? `<span class="deeppdf-preset-card-badge">${p.badge}</span>` : ''}
+			</div>
+			<div class="deeppdf-preset-card-desc">${p.desc}</div>
+			<div class="deeppdf-key-input-wrap">
+				<input class="deeppdf-key-input preset-key-input" data-preset="${id}" type="password"
+					placeholder="${placeholder}" value="${keyVal}">
+				<button class="deeppdf-btn-eye">👁</button>
+			</div>
+		</div>`;
+}
+
+function renderCommitted() {
+	const roles = computePreviewRoles(state.selectedPreset, state);
+	const hasMimo = !!state.xiaomiKey, hasSf = !!state.sfKey;
+	const allOn = hasMimo && hasSf;
+	const roleRows = ['chat','router','pageindex','proposition','embedding','reranker','tts']
+		.map(r => renderRoleRow(r, roles[r])).join('');
+	return `
+	<div class="deeppdf-settings-card">
+		<div class="deeppdf-summary-head">
+			<div>
+				<div class="deeppdf-summary-title is-ok">${PRESETS[state.selectedPreset].label} · 已就绪 ✓</div>
+				<div class="deeppdf-summary-detail">${allOn?'所有功能可用':'部分功能可用，可在下方补填 Key'}</div>
+			</div>
+			<button class="deeppdf-btn-secondary" id="reconfigBtn">重新配置</button>
+		</div>
+
+		<hr class="deeppdf-divider">
+
+		<div class="deeppdf-role-preview">
+			<div class="deeppdf-role-preview-title">
+				角色分配
+				<span class="deeppdf-preview-tag is-committed">已生效</span>
+			</div>
+			${roleRows}
+		</div>
+	</div>
+
+	<div class="deeppdf-settings-card">
+		<div class="deeppdf-collapse-toggle" id="otherToggle">
+			<span class="deeppdf-collapse-arrow">▶</span>
+			其他服务商 Key
+		</div>
+		<div class="deeppdf-collapse-body" id="otherBody">
+			<div class="deeppdf-other-provider"><span class="deeppdf-other-provider-name">DeepSeek</span><span class="deeppdf-other-provider-status">未配置</span></div>
+		</div>
+	</div>`;
+}
+
+function render() {
+	const root = document.getElementById('root');
+	root.innerHTML = state.view === 'setup' ? renderSetup() : renderCommitted();
+	bindEvents();
+}
+
+function bindEvents() {
+	// plan 卡片点击
+	root.querySelectorAll('.deeppdf-preset-card').forEach(card => {
+		card.addEventListener('click', e => {
+			if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+			state.selectedPreset = card.dataset.preset;
+			render();
+		});
+	});
+	// preset key 输入
+	root.querySelectorAll('.preset-key-input').forEach(inp => {
+		inp.addEventListener('input', () => {
+			if (inp.dataset.preset === 'agent-plan') state.volcarkKey = inp.value;
+			else state.xiaomiKey = inp.value;
+			// 不全量 render，只更新预览（模拟即时预览）
+			const roles = computePreviewRoles(state.selectedPreset, state);
+			updatePreviewInline(roles);
+		});
+	});
+	// SF key 输入
+	const sf = root.querySelector('#sfInput');
+	if (sf) sf.addEventListener('input', () => {
+		state.sfKey = sf.value;
+		const roles = computePreviewRoles(state.selectedPreset, state);
+		updatePreviewInline(roles);
+		// 更新 SF ✓ 标记
+		render();
+	});
+	// 折叠
+	const tog = root.querySelector('#otherToggle');
+	if (tog) tog.addEventListener('click', () => {
+		tog.classList.toggle('is-open');
+		root.querySelector('#otherBody').classList.toggle('is-open');
+	});
+	// 重新配置
+	const re = root.querySelector('#reconfigBtn');
+	if (re) re.addEventListener('click', () => { state.view = 'setup'; render(); });
+}
+
+function updatePreviewInline(roles) {
+	const wrap = root.querySelector('.deeppdf-role-preview');
+	if (!wrap) return;
+	const rows = ['chat','router','pageindex','proposition','embedding','reranker','tts']
+		.map(r => renderRoleRow(r, roles[r])).join('');
+	// 保留 title
+	const title = wrap.querySelector('.deeppdf-role-preview-title').outerHTML;
+	wrap.innerHTML = title + rows;
+}
+
+// ── 工具栏 ──
+document.getElementById('themeToggle').addEventListener('click', e => {
+	const cur = document.documentElement.dataset.theme;
+	const next = cur === 'light' ? 'dark' : 'light';
+	document.documentElement.dataset.theme = next;
+	e.target.textContent = next === 'light' ? '🌙 暗色' : '☀️ 亮色';
+});
+document.querySelectorAll('.state-switcher button').forEach(b => {
+	b.addEventListener('click', () => {
+		document.querySelectorAll('.state-switcher button').forEach(x => x.classList.remove('is-active'));
+		b.classList.add('is-active');
+		state.view = b.dataset.state;
+		render();
+	});
+});
+
+render();
+</script>
+</body>
+</html>

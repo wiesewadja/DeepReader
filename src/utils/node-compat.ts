@@ -30,6 +30,7 @@ type PathModule = typeof import("path");
 type CryptoModule = typeof import("crypto");
 type OsModule = typeof import("os");
 type ChildProcessModule = typeof import("child_process");
+type HttpsModule = typeof import("https");
 
 /** adm-zip 实例类型（供业务代码标注 `zip: AdmZip` 用） */
 export type AdmZip = InstanceType<AdmZipCtor>;
@@ -41,6 +42,7 @@ let _path: PathModule | null = null;
 let _crypto: CryptoModule | null = null;
 let _os: OsModule | null = null;
 let _childProcess: ChildProcessModule | null = null;
+let _https: HttpsModule | null = null;
 
 /** 惰性加载 adm-zip（避免其顶层 require fs/path 在移动端加载期触发） */
 export function nodeAdmZip(): AdmZipCtor {
@@ -82,4 +84,10 @@ export function nodeOs(): OsModule {
 export function nodeChildProcess(): ChildProcessModule {
 	// eslint-disable-next-line @typescript-eslint/no-require-imports
 	return (_childProcess ??= require("child_process"));
+}
+
+/** 惰性加载 https（桌面端用于绕过 CORS 的流式请求；移动端不保证可用） */
+export function nodeHttps(): HttpsModule {
+	// eslint-disable-next-line @typescript-eslint/no-require-imports
+	return (_https ??= require("https"));
 }

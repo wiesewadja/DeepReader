@@ -9,6 +9,7 @@
  */
 
 import { nodeAdmZip } from '../utils/node-compat.js';
+import type { PDFDocument } from 'pdf-lib';
 
 /** 惰性加载 path，避免移动端加载期触发 Node 模块 */
 function getPath(): typeof import('path') {
@@ -102,6 +103,21 @@ export class MineruClient {
       if (count > maxCount) maxCount = count;
     }
     return maxCount;
+  }
+
+  /**
+   * 惰性加载 pdf-lib 并解析 PDF 文档。
+   * 动态 import 保持惰性，避免在移动端插件加载期把 pdf-lib 拉进首屏。
+   */
+  private async loadPdfDocument(bytes: Buffer | Uint8Array): Promise<PDFDocument> {
+    const { PDFDocument } = await import('pdf-lib');
+    return PDFDocument.load(bytes, { ignoreEncryption: true });
+  }
+
+  /** 惰性加载 pdf-lib 并新建空 PDF 文档（用于分批拆分）。 */
+  private async createPdfDocument(): Promise<PDFDocument> {
+    const { PDFDocument } = await import('pdf-lib');
+    return PDFDocument.create();
   }
 
   /**
@@ -256,18 +272,35 @@ export class MineruClient {
       throw new MineruError('MinerU Token not configured');
     }
 
-    const totalPages = this.getPdfPageCount(input);
-    piLog(`[parseViaPrecision] ${fileName}: ${totalPages} pages, ${input.length} bytes`);
+    let totalPages = this.getPdfPageCount(input);
+    piLog(`[parseViaPrecision] ${fileName}: ${totalPages} pages (regex), ${input.length} bytes`);
+
+    // 正则无法获取页数（如压缩 PDF 1.5+ 的 ObjStm），用 pdf-lib 精确读取
+    let srcDoc: PDFDocument | undefined;
+    if (totalPages === 0) {
+      try {
+        const doc = await this.loadPdfDocument(input);
+        totalPages = doc.getPageCount();
+        piLog(`[parseViaPrecision] ${fileName}: pdf-lib reports ${totalPages} pages`);
+        // 仅当确实需要拆分时才保留引用复用；≤200 页走单批时让 doc 在此释放，降低内存峰值
+        if (totalPages > MAX_PRECISION_PAGES) srcDoc = doc;
+      } catch (e) {
+        piLog(`[parseViaPrecision] pdf-lib count failed: ${(e as Error).message}, sending as single batch`);
+        return this.precisionSingleBatch(input, fileName);
+      }
+    }
 
     // 单次可处理，直接调用
-    if (totalPages <= MAX_PRECISION_PAGES || totalPages === 0) {
+    if (totalPages <= MAX_PRECISION_PAGES) {
       return this.precisionSingleBatch(input, fileName);
     }
 
     // 超过 200 页，拆分为多个 batch
     piLog(`[parseViaPrecision] Splitting ${totalPages} pages into batches of ${MAX_PRECISION_PAGES}`);
-    const { PDFDocument } = await import('pdf-lib');
-    const srcDoc = await PDFDocument.load(input, { ignoreEncryption: true });
+    // 复用上方已加载的 srcDoc，避免对大 PDF 重复解析
+    if (!srcDoc) {
+      srcDoc = await this.loadPdfDocument(input);
+    }
 
     const batchCount = Math.ceil(totalPages / MAX_PRECISION_PAGES);
     const results: MineruPdfResult[] = [];
@@ -282,7 +315,7 @@ export class MineruClient {
       this.onProgress?.(batchLabel);
 
       // 创建只包含当前页范围的新 PDF
-      const newDoc = await PDFDocument.create();
+      const newDoc = await this.createPdfDocument();
       const copiedPages = await newDoc.copyPages(srcDoc, pageIndices);
       for (const page of copiedPages) {
         newDoc.addPage(page);

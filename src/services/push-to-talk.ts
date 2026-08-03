@@ -14,8 +14,11 @@ export interface PushToTalkConfig {
 }
 
 export interface PushToTalkCallbacks {
-	onStateChange: (state: PushToTalkState) => void;
-	onTextReady: (text: string) => void;
+	/** 状态变化通知（可选：PushToTalkController 内部已直接驱动 ChatInput 状态） */
+	onStateChange?: (state: PushToTalkState) => void;
+	/** 识别文本就绪通知（可选：内部已通过 chatInput.setValue 填入） */
+	onTextReady?: (text: string) => void;
+	/** 错误通知（必需） */
 	onError: (error: Error) => void;
 }
 
@@ -109,10 +112,9 @@ export class PushToTalkController {
 				return;
 			}
 
-			// 直接使用 ASR 识别结果，跳过 LLM 重写
-			this.callbacks.onTextReady(recognizedText);
+			this.callbacks.onTextReady?.(recognizedText);
 			this.chatInput.setValue(recognizedText);
-			// 调用 completeVoiceInput 让 ChatInput 处理发送逻辑，然后重置 state 回 idle
+			// 直接使用 ASR 识别结果完成输入
 			this.chatInput.completeVoiceInput();
 			this.reset();
 		} catch (error) {
@@ -139,7 +141,7 @@ export class PushToTalkController {
 
 	private setState(state: PushToTalkState): void {
 		this.state = state;
-		this.callbacks.onStateChange(state);
+		this.callbacks.onStateChange?.(state);
 	}
 
 	private reset(): void {
@@ -155,7 +157,7 @@ export class PushToTalkController {
 		}
 		this.abortCtrl = null;
 		this.chatInput.setVoiceState('idle');
-		this.callbacks.onStateChange('idle');
+		this.callbacks.onStateChange?.('idle');
 	}
 
 	private handleError(error: Error): void {
@@ -184,7 +186,7 @@ export class PushToTalkController {
 			} catch {
 				// 递增识别失败不中断录音
 			}
-		}, 3000);
+		}, 1000);
 	}
 
 	private stopIncrementalRecognition(): void {

@@ -8,7 +8,7 @@
 
 import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
 
-const PDF_FILE = 'agentic-design-patterns-chinese.pdf';
+const PDF_FILE = '设计原本.pdf';
 
 export default {
 	id: 'pdf-index-export',

@@ -21,6 +21,7 @@ import type { CognitiveEngineState } from '../state';
 import { generateDiagram } from '../utils/diagram-helper.js';
 // 注：generateDiagramProgressive（渐进式分节）已回退未接入，代码保留在 diagram-helper.ts 待未来重启
 import type { EngineCallbacks } from '../shared-context.js';
+import { getGraphConfigurable } from '../configurable.js';
 
 export async function visualizerNode(
   state: CognitiveEngineState,
@@ -29,11 +30,16 @@ export async function visualizerNode(
   // 画图优先用 fastModel（更快），不可用回退 mainModel。
   // 画图是单次大输出（完整 Excalidraw JSON），fastModel 速度优势明显；
   // fastModel 未配置时 createChatModels 会令其等于 mainModel，故总是存在。
-  const fastModel = config.configurable?.fastModel ?? config.configurable?.mainModel;
-  const ctx = config.configurable?.sharedContext;
-  const toolContext = ctx?.toolContext;
-  const callbacks = config.configurable?.callbacks as Partial<EngineCallbacks> | undefined;
-  const abortSignal = ctx?.abortSignal;
+  const cfg = getGraphConfigurable(config);
+  const fastModel = cfg.fastModel ?? cfg.mainModel;
+  const ctx = cfg.sharedContext;
+  if (!ctx) {
+    log('[Visualizer] 缺少 sharedContext，跳过图表生成');
+    return { analysisResult: state.analysisResult || '' };
+  }
+  const toolContext = ctx.toolContext;
+  const callbacks: Partial<EngineCallbacks> = cfg.callbacks;
+  const abortSignal = ctx.abortSignal;
 
   if (!fastModel || !toolContext) {
     log('[Visualizer] 缺少 fastModel/mainModel 或 toolContext，跳过图表生成');
@@ -62,8 +68,8 @@ export async function visualizerNode(
 
   // 独立的 watchdog AbortController：与用户 abortSignal 分开。
   // 超时后 abort 中断底层 invoke fetch，并触发 onDiagramFailed 清理占位。
-  // 单次生成约 40s，超时放宽到 180s 容纳 LLM 偶发慢响应。
-  const DIAGRAM_TIMEOUT_MS = 180_000; // 3 分钟
+  // 单次生成约 40s，超时放宽到 300s 容纳 LLM 偶发慢响应 + 复杂布局计算。
+  const DIAGRAM_TIMEOUT_MS = 300_000; // 5 分钟
   const watchdog = new AbortController();
   const watchdogTimer = setTimeout(() => {
     if (!watchdog.signal.aborted) {

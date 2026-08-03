@@ -109,7 +109,8 @@ async function main() {
     const f = rest[i];
     if (f.startsWith('--') && f !== '--book' && f !== '--vault') {
       const key = f.slice(2);
-      extraFlags[key] = rest[i + 1] && !rest[i + 1].startsWith('--') ? rest[++i] : true;
+      const raw = rest[i + 1] && !rest[i + 1].startsWith('--') ? rest[++i] : true;
+      extraFlags[key] = key === 'threshold' && raw !== true ? parseFloat(raw) : raw;
     }
   }
 

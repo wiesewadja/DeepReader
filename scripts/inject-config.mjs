@@ -59,6 +59,7 @@ const data = {
 			fallbackApiKey: get('DEEPREADER_XIAOMI_FALLBACK_KEY'),
 		},
 		sensenova: { apiKey: get('DEEPREADER_SENSENOVA_API_KEY') },
+		volcark: { apiKey: get('DEEPREADER_VOLCARK_API_KEY') },
 		mineru: { apiKey: get('DEEPREADER_MINERU_API_KEY') },
 	},
 	roles: {
@@ -68,7 +69,7 @@ const data = {
 		proposition: parseRole(get('DEEPREADER_ROLE_PROPOSITION')) || { provider: 'xiaomi', model: 'mimo-v2.5' },
 		embedding: parseRole(get('DEEPREADER_ROLE_EMBEDDING')) || { provider: 'siliconflow', model: 'Qwen/Qwen3-Embedding-0.6B' },
 		reranker: parseRole(get('DEEPREADER_ROLE_RERANKER')) || { provider: 'siliconflow', model: 'Qwen/Qwen3-Reranker-0.6B' },
-		tts: parseRole(get('DEEPREADER_ROLE_TTS')) || { provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' },
+		tts: parseRole(get('DEEPREADER_ROLE_TTS')) || { provider: 'xiaomi', model: 'mimo-v2.5-tts' },
 		imagegen: parseRole(get('DEEPREADER_ROLE_IMAGEGEN')) || null,
 	},
 	propositionCardsPer500Words: 1,

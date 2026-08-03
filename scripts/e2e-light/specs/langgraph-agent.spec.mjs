@@ -12,8 +12,8 @@ import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
 import { startTraceCollection } from '../trace-helper.mjs';
 
 const BOOKS = {
-	naval: { bookId: '74dca606', name: '纳瓦尔宝典' },
-	money: { bookId: '89e541bc', name: '金钱心理学' },
+	aiEcon: { bookId: 'ee090e29', name: 'AI极简经济学' },
+	crazy: { bookId: 'd2b30962', name: '疯传' },
 };
 
 const TIMEOUT_RESPONSE = 120_000;
@@ -68,7 +68,7 @@ export default {
 				if (leaves.length === 0) throw new Error('sidebar 未打开');
 				const view = leaves[0].view;
 				${bookId ? `if (typeof view.selectIndex === 'function') view.selectIndex(${JSON.stringify(bookId)});` : ''}
-				if (typeof view.messageList?.clearMessages === 'function') view.messageList.clearMessages();
+				// 不要清空消息列表，保留历史消息
 				// 设置输入并发送
 				const textarea = view.chatInput?.textarea;
 				if (!textarea) throw new Error('chat input 不存在');
@@ -137,18 +137,18 @@ export default {
 		// ===== depth=1: 书籍概览 =====
 		{
 			const t0 = Date.now();
-			const hasNaval = await evalObsidian(`(() => {
+			const hasBook = await evalObsidian(`(() => {
 				const adapter = app.vault.adapter;
-				return adapter.exists('.obsidian/plugins/deepreader-dev/pageindex/${BOOKS.naval.bookId}/book-meta.json');
+				return adapter.exists('.obsidian/plugins/deepreader-dev/pageindex/${BOOKS.aiEcon.bookId}/book-meta.json');
 			})()`);
-			if (!hasNaval) {
+			if (!hasBook) {
 				steps.push({ name: 'depth=1 检视阅读', status: 'skip', duration: 0,
-					error: `${BOOKS.naval.name} 未索引` });
+					error: `${BOOKS.aiEcon.name} 未索引` });
 			} else {
 				const traceCollector = await startTraceCollection();
 				try {
 					const response = await sendAndPoll(
-						'纳瓦尔宝典这本书主要讲了什么？', BOOKS.naval.bookId, 60_000);
+						'《AI极简经济学》这本书主要讲了什么？', BOOKS.aiEcon.bookId, 60_000);
 					if (!response) throw new Error('无响应');
 					if (response.length < 50) throw new Error(`响应过短: ${response.length} chars`);
 					if (response.includes('LangGraph 引擎错误')) throw new Error('引擎错误');
@@ -167,22 +167,22 @@ export default {
 			}
 		}
 
-				// ===== depth=2: 分析阅读 =====
+		// ===== depth=2: 分析阅读 =====
 		{
 			const t0 = Date.now();
-			const hasNaval = await evalObsidian(`(() => {
+			const hasBook = await evalObsidian(`(() => {
 				const adapter = app.vault.adapter;
-				return adapter.exists('.obsidian/plugins/deepreader-dev/pageindex/${BOOKS.naval.bookId}/book-meta.json');
+				return adapter.exists('.obsidian/plugins/deepreader-dev/pageindex/${BOOKS.aiEcon.bookId}/book-meta.json');
 			})()`);
-			if (!hasNaval) {
+			if (!hasBook) {
 				steps.push({ name: 'depth=2 分析阅读', status: 'skip', duration: 0,
-					error: `${BOOKS.naval.name} 未索引` });
+					error: `${BOOKS.aiEcon.name} 未索引` });
 			} else {
 				const traceCollector = await startTraceCollection();
 				try {
 					const response = await sendAndPoll(
-						'纳瓦尔宝典中关于如何获得财富的具体建议在哪个章节？',
-						BOOKS.naval.bookId, TIMEOUT_RESPONSE);
+						'《AI极简经济学》中关于人工智能对劳动力市场影响的讨论在哪个章节？',
+						BOOKS.aiEcon.bookId, TIMEOUT_RESPONSE);
 					if (!response) throw new Error('无响应');
 					if (response.length < 100) throw new Error(`响应过短: ${response.length} chars`);
 					if (response.includes('LangGraph 引擎错误')) throw new Error('引擎错误');
@@ -197,6 +197,70 @@ export default {
 						e.context = `LangSmith trace: tokens=${trace.totalTokens}, 耗时=${(trace.executionTimeMs / 1000).toFixed(1)}s, status=${trace.status}`;
 					}
 					fail('depth=2 分析阅读', Date.now() - t0, e);
+				}
+			}
+		}
+
+		// ===== depth=1 第二本书: 疯传 =====
+		{
+			const t0 = Date.now();
+			const hasBook = await evalObsidian(`(() => {
+				const adapter = app.vault.adapter;
+				return adapter.exists('.obsidian/plugins/deepreader-dev/pageindex/${BOOKS.crazy.bookId}/book-meta.json');
+			})()`);
+			if (!hasBook) {
+				steps.push({ name: 'depth=1 疯传概览', status: 'skip', duration: 0,
+					error: `${BOOKS.crazy.name} 未索引` });
+			} else {
+				const traceCollector = await startTraceCollection();
+				try {
+					const response = await sendAndPoll(
+						'《疯传》这本书主要讲了什么内容？', BOOKS.crazy.bookId, 60_000);
+					if (!response) throw new Error('无响应');
+					if (response.length < 50) throw new Error(`响应过短: ${response.length} chars`);
+					if (response.includes('LangGraph 引擎错误')) throw new Error('引擎错误');
+
+					const traceSummary = await traceCollector.getTraceSummary();
+					pass('depth=1 疯传概览', Date.now() - t0, 
+						traceSummary ? `${response.length} chars | ${traceSummary}` : `${response.length} chars`);
+				} catch (e) {
+					const traceDetails = await traceCollector.getTraceDetails();
+					if (traceDetails?.length > 0) {
+						const trace = traceDetails[0];
+						e.context = `LangSmith trace: tokens=${trace.totalTokens}, 耗时=${(trace.executionTimeMs / 1000).toFixed(1)}s, status=${trace.status}`;
+					}
+					fail('depth=1 疯传概览', Date.now() - t0, e);
+				}
+			}
+		}
+
+		// ===== 多轮对话 =====
+		{
+			const t0 = Date.now();
+			const hasBook = await evalObsidian(`(() => {
+				const adapter = app.vault.adapter;
+				return adapter.exists('.obsidian/plugins/deepreader-dev/pageindex/${BOOKS.aiEcon.bookId}/book-meta.json');
+			})()`);
+			if (!hasBook) {
+				steps.push({ name: '多轮对话', status: 'skip', duration: 0,
+					error: `${BOOKS.aiEcon.name} 未索引` });
+			} else {
+				try {
+					// 第一轮
+					const response1 = await sendAndPoll(
+						'《AI极简经济学》的核心观点是什么？', BOOKS.aiEcon.bookId, 60_000);
+					if (!response1) throw new Error('第一轮无响应');
+					pass('多轮对话-第一轮', Date.now() - t0, response1.slice(0, 50));
+
+					// 第二轮（追问）
+					const t1 = Date.now();
+					const response2 = await sendAndPoll(
+						'能详细解释一下吗？', null, 60_000);
+					if (!response2) throw new Error('第二轮无响应');
+					if (response2.length < 50) throw new Error(`第二轮响应过短: ${response2.length} chars`);
+					pass('多轮对话-第二轮', Date.now() - t1, response2.slice(0, 50));
+				} catch (e) {
+					fail('多轮对话', Date.now() - t0, e);
 				}
 			}
 		}

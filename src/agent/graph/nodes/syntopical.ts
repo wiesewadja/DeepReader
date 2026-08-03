@@ -24,6 +24,7 @@ import { buildSyntopicalUserMessage } from '../../prompts/utils/index.js';
 import type { SharedContext } from '../shared-context.js';
 import type { CognitiveEngineState } from '../state';
 import { verifyAndCleanContent } from '../utils/self-verification.js';
+import { getGraphConfigurable } from '../configurable.js';
 
 export interface SyntopicalToolResult {
   toolName: string;
@@ -81,9 +82,10 @@ export async function syntopicalNode(
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
   const { rewrittenQuery }: SyntopicalInput = state;
-  const ctx = config.configurable?.sharedContext as SharedContext | undefined;
-  const mainModel = config.configurable?.mainModel;
-  const toolContext = ctx?.toolContext;
+  const cfg = getGraphConfigurable(config);
+  const ctx = cfg.sharedContext;
+  const mainModel = cfg.mainModel;
+  const toolContext = ctx.toolContext;
 
   if (!mainModel || !toolContext?.vault?.app) {
     log('[S3 Syntopical] Missing required config, returning empty result.');
@@ -92,7 +94,7 @@ export async function syntopicalNode(
 
   // 桌面端用实际 basePath，移动端为空但会走 app 分支
   const vaultPath = getVaultPath(toolContext.vault.app) || '';
-  const query = rewrittenQuery || ctx?.rawUserQuery || '';
+  const query = rewrittenQuery || ctx.rawUserQuery || '';
   const settings = toolContext.vault.plugin?.settings;
   const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
   const rerankerRole = settings ? resolveRoleConfig('reranker', settings) : null;
@@ -146,7 +148,7 @@ export async function syntopicalNode(
     toolResultsSnapshot: toolResults.slice(0, Math.min(SYNTOPICAL_SNAPSHOT_LIMIT, toolResults.length)),
   };
 
-  const enableHumanReview = config.configurable?.enableHumanReview as boolean | undefined;
+  const enableHumanReview = cfg.enableHumanReview;
   if (enableHumanReview) {
     const resumeValue = interrupt({
       nodeId: 'syntopical',

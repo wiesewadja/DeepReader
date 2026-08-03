@@ -11,7 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const VAULT_PATH = path.resolve(__dirname, '../../../test-vault');
-const REAL_VAULT_PATH = '/Users/lizhao/workspace/deepreadertest';
+const REAL_VAULT_PATH = '/Users/lizhao/workspace/DeepReader/test-vault';
 const PLUGIN_ID = 'deepreader-dev';
 
 // 书籍：优秀的绵羊

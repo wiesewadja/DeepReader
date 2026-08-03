@@ -35,6 +35,8 @@ export class PagePaginator {
 	private _isActive = false;
 	private _currentPage = 1;
 	private _totalPages = 0;
+	/** 首次 calculatePages 完成后置 true，供 E2E 测试可靠检测就绪 */
+	private _isReady = false;
 	/** 待恢复页码：在 _totalPages 稳定后应用（避免 setCurrentPage 被 clamp 到 1） */
 	private _pendingRestorePage: number | null = null;
 
@@ -79,6 +81,8 @@ export class PagePaginator {
 	}
 
 	isActive(): boolean { return this._isActive; }
+	/** 首次 calculatePages 完成后为 true */
+	get isReady(): boolean { return this._isReady; }
 	getTotalPages(): number { return this._totalPages; }
 	getCurrentPage(): number { return this._currentPage; }
 
@@ -428,6 +432,7 @@ export class PagePaginator {
 		this.teardownTouchListeners();
 		this._totalPages = 0;
 		this._currentPage = 1;
+		this._isReady = false;
 		this._pendingRestorePage = null;
 		serviceLog('[PagePaginator] destroyed');
 	}
@@ -443,6 +448,7 @@ export class PagePaginator {
 
 				this.updateColumnSizing();
 				this._totalPages = this.countActualPages();
+				this._isReady = true;
 
 				this.options.onPageChange?.(this._currentPage, this._totalPages);
 				this.updateCurrentPageFromScroll();

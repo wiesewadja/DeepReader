@@ -19,6 +19,7 @@ import { getEarlyStopThreshold } from '../../config/agent-constants.js';
 import type { PreSearchInput } from '../node-io.js';
 import { buildFullAnalyticalContext, buildEarlyStopPrompt } from '../../prompts/utils/index.js';
 import type { CognitiveEngineState , ToolResultSnapshot } from '../state';
+import { getGraphConfigurable } from '../configurable.js';
 import { extractCitedNodeIds } from '../utils/chapter-reference-parser.js';
 import {
   shouldVerifyNegativeClaim,
@@ -178,8 +179,9 @@ export async function preSearchNode(
     betterQuestion: stateBetterQuestion,
     suggestedKeywords: stateKeywords,
   }: PreSearchInput = state;
-  const ctx = config.configurable?.sharedContext;
-  const mainModel = config.configurable?.mainModel;
+  const cfg = getGraphConfigurable(config);
+  const ctx = cfg.sharedContext;
+  const mainModel = cfg.mainModel;
   const toolContext = ctx?.toolContext;
 
   if (!mainModel || !toolContext) {

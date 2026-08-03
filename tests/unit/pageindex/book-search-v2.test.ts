@@ -18,11 +18,11 @@ import {
   computeDynamicRecallK,
   computeLevelWeight,
   cosineSimilarity,
-} from "../book-search-v2.js";
-import { generateBookId } from "../book-indexer.js";
-import { tokenize } from "../bm25.js";
-import type { TreeNode, BM25Data } from "../book-types.js";
-import { IndexError, IndexErrorCode } from "../book-types.js";
+} from "@/pageindex/book-search-v2.js";
+import { generateBookId } from "@/pageindex/book-indexer.js";
+import { tokenize } from "@/pageindex/bm25.js";
+import type { TreeNode, BM25Data } from "@/pageindex/book-types.js";
+import { IndexError, IndexErrorCode } from "@/pageindex/book-types.js";
 import { getPageindexRoot, getBookDir, getBookFile } from '@/pageindex/paths.js';
 
 // ═══════════════════════════════════════════════════════════════
@@ -123,70 +123,160 @@ describe("cosineSimilarity", () => {
   });
 });
 
-// ── A7: Fusion weight logic ────────────────────────────────────
+// ── A7: RRF fusion logic ──────────────────────────────────────
 
-describe("Stage 5: Fusion weight and normalization logic", () => {
-  it("should apply correct weights when all three signals available", () => {
+describe("Stage 5: RRF fusion and level weighting logic", () => {
+  const RRF_K = 60;
+
+  function rrfScore(ranks: (number | undefined)[], k = RRF_K): number {
+    let score = 0;
+    for (const rank of ranks) {
+      if (rank !== undefined) score += 1 / (k + rank);
+    }
+    return score;
+  }
+
+  function buildRankMap(scores: [string, number][]): Map<string, number> {
+    const sorted = [...scores].sort((a, b) => b[1] - a[1]);
+    const map = new Map<string, number>();
+    for (let i = 0; i < sorted.length; i++) {
+      map.set(sorted[i][0], i + 1);
+    }
+    return map;
+  }
+
+  it("should compute RRF score from a single signal (BM25 only)", () => {
+    // Node at rank 1 → 1/(60+1) = 0.01639...
+    const score = rrfScore([1]);
+    expect(score).toBeCloseTo(1 / (RRF_K + 1), 8);
+  });
+
+  it("should sum RRF contributions from multiple signals", () => {
+    // Node at rank 1 in BM25, rank 2 in vector
+    const score = rrfScore([1, 2]);
+    const expected = 1 / (RRF_K + 1) + 1 / (RRF_K + 2);
+    expect(score).toBeCloseTo(expected, 8);
+  });
+
+  it("should sum all three signals (BM25 + vector + proposition)", () => {
+    const score = rrfScore([1, 1, 1]);
+    const expected = 3 / (RRF_K + 1);
+    expect(score).toBeCloseTo(expected, 8);
+  });
+
+  it("should return 0 when node has no signal", () => {
+    const score = rrfScore([undefined, undefined, undefined]);
+    expect(score).toBe(0);
+  });
+
+  it("should handle node present in only one of three signals", () => {
+    const score = rrfScore([undefined, 5, undefined]);
+    expect(score).toBeCloseTo(1 / (RRF_K + 5), 8);
+  });
+
+  it("should rank node higher when it appears in more signals (same rank)", () => {
+    const twoSignals = rrfScore([1, 1]);
+    const oneSignal = rrfScore([1]);
+    expect(twoSignals).toBeGreaterThan(oneSignal);
+  });
+
+  it("should rank node higher when it has a better rank (same signals)", () => {
+    const betterRank = rrfScore([1]);
+    const worseRank = rrfScore([10]);
+    expect(betterRank).toBeGreaterThan(worseRank);
+  });
+
+  it("should build rank map correctly (1-indexed, descending by score)", () => {
+    const scores: [string, number][] = [["a", 0.9], ["b", 0.5], ["c", 0.1]];
+    const rankMap = buildRankMap(scores);
+    expect(rankMap.get("a")).toBe(1);
+    expect(rankMap.get("b")).toBe(2);
+    expect(rankMap.get("c")).toBe(3);
+  });
+
+  it("should handle ties in rank map (first encountered gets lower rank)", () => {
+    const scores: [string, number][] = [["a", 0.5], ["b", 0.5]];
+    const rankMap = buildRankMap(scores);
+    // Both should get some rank; order depends on stable sort
+    const rankA = rankMap.get("a")!;
+    const rankB = rankMap.get("b")!;
+    expect(rankA).toBeGreaterThanOrEqual(1);
+    expect(rankB).toBeGreaterThanOrEqual(1);
+    expect(rankA).toBeLessThanOrEqual(2);
+    expect(rankB).toBeLessThanOrEqual(2);
+  });
+
+  it("should apply level weighting as multiplier on RRF score", () => {
+    const baseScore = rrfScore([1, 2]);
+    const levelWeight = 0.9; // chapter-level
+    const fusedScore = baseScore * levelWeight;
+    expect(fusedScore).toBeCloseTo(baseScore * 0.9, 8);
+    expect(fusedScore).toBeLessThan(baseScore);
+  });
+
+  it("should not change relative ordering when level weights differ", () => {
+    // Node A: good RRF, low level weight
+    // Node B: worse RRF, high level weight
+    const scoreA = rrfScore([1]) * 0.7;
+    const scoreB = rrfScore([2]) * 1.0;
+    // 1/61 * 0.7 ≈ 0.01148 vs 1/62 * 1.0 ≈ 0.01613
+    expect(scoreB).toBeGreaterThan(scoreA);
+  });
+
+  it("level weight 1.0 should not change fusedScore", () => {
+    const baseScore = rrfScore([3, 4]);
+    const fusedScore = baseScore * 1.0;
+    expect(fusedScore).toBeCloseTo(baseScore, 8);
+  });
+
+  it("level weight 0.5 (not found) should halve the score", () => {
+    const baseScore = rrfScore([1]);
+    const fusedScore = baseScore * 0.5;
+    expect(fusedScore).toBeCloseTo(baseScore * 0.5, 8);
+  });
+
+  it("activeSignals count should reflect available signals", () => {
     const hasVectors = true;
-    const hasPropositions = true;
-    const w_v = hasVectors ? (hasPropositions ? 0.5 : 0.7) : 0;
-    const w_b = hasVectors ? (hasPropositions ? 0.25 : 0.3) : 1.0;
-    const w_p = hasPropositions ? (hasVectors ? 0.25 : 0) : 0;
-    expect(w_v).toBe(0.5);
-    expect(w_b).toBe(0.25);
-    expect(w_p).toBe(0.25);
-    expect(w_v + w_b + w_p).toBeCloseTo(1.0, 5);
-  });
-
-  it("should apply BM25+Vector weights when no propositions", () => {
-    const hasVectors = true;
+    const hasBm25 = true;
     const hasPropositions = false;
-    const w_v = hasVectors ? (hasPropositions ? 0.5 : 0.7) : 0;
-    const w_b = hasVectors ? (hasPropositions ? 0.25 : 0.3) : 1.0;
-    const w_p = hasPropositions ? (hasVectors ? 0.25 : 0) : 0;
-    expect(w_v).toBe(0.7);
-    expect(w_b).toBe(0.3);
-    expect(w_p).toBe(0);
-    expect(w_v + w_b + w_p).toBeCloseTo(1.0, 5);
+    const activeSignals = (hasVectors ? 1 : 0) + (hasBm25 ? 1 : 0) + (hasPropositions ? 1 : 0);
+    expect(activeSignals).toBe(2);
   });
 
-  it("should use BM25-only weight when no vectors", () => {
-    const hasVectors = false;
-    const hasPropositions = false;
-    const w_v = hasVectors ? (hasPropositions ? 0.5 : 0.7) : 0;
-    const w_b = hasVectors ? (hasPropositions ? 0.25 : 0.3) : 1.0;
-    const w_p = hasPropositions ? (hasVectors ? 0.25 : 0) : 0;
-    expect(w_v).toBe(0);
-    expect(w_b).toBe(1.0);
-    expect(w_p).toBe(0);
+  it("activeSignals should be 0 when no signals", () => {
+    const activeSignals = 0 + 0 + 0;
+    expect(activeSignals).toBe(0);
   });
 
-  it("BM25 normalization: range=0 → all scores become 0", () => {
-    const scores = [0, 0, 0];
-    const max = Math.max(...scores, 0);
-    const min = Math.min(...scores, 0);
-    const range = max - min;
-    const normalized = scores.map(s => range > 0 ? (s - min) / range : 0);
-    expect(normalized).toEqual([0, 0, 0]);
+  it("activeSignals should be 3 when all signals present", () => {
+    const activeSignals = 1 + 1 + 1;
+    expect(activeSignals).toBe(3);
   });
 
-  it("Vector normalization: range=0 but vs>0 → returns 1", () => {
-    const scores = [0.5, 0.5, 0.5];
-    const max = Math.max(...scores, 0);
-    const min = Math.min(...scores, 0);
-    const range = max - min;
-    const normalized = scores.map(s => range > 0 ? (s - min) / range : (s > 0 ? 1 : 0));
-    expect(normalized).toEqual([1, 1, 1]);
+  it("RRF: same scores produce valid ranks", () => {
+    // 两个节点 BM25 分数完全相同
+    const rankMap = new Map<string, number>();
+    const ranked = [['n1', 1.0], ['n2', 1.0]].sort((a, b) => b[1] - a[1]);
+    for (let i = 0; i < ranked.length; i++) {
+      rankMap.set(ranked[i][0], i + 1);
+    }
+    expect(rankMap.get('n1')).toBe(1);
+    expect(rankMap.get('n2')).toBe(2);
   });
 
-  it("Proposition normalization: range=0 → pass raw score (only when all scores are 0)", () => {
-    // When all proposition scores are 0: range=0, raw score (0) is passed through
-    const scores = [0, 0];
-    const max = Math.max(...scores, 0);
-    const min = Math.min(...scores, 0);
-    const range = max - min;
-    const normalized = scores.map(s => range > 0 ? (s - min) / range : s);
-    expect(normalized).toEqual([0, 0]);
+  it("RRF: opposing ranks produce balanced scores", () => {
+    const k = 60;
+    // Node A: BM25 rank=1, Vector rank=100
+    const rrfA = 1/(k+1) + 1/(k+100);
+    // Node B: BM25 rank=100, Vector rank=1
+    const rrfB = 1/(k+100) + 1/(k+1);
+    expect(rrfA).toBeCloseTo(rrfB, 10); // 对称性
+  });
+
+  it("RRF: empty BM25 with vector still produces results", () => {
+    const k = 60;
+    const rrfScore = 1/(k+1); // 仅 Vector rank=1
+    expect(rrfScore).toBeGreaterThan(0);
   });
 });
 

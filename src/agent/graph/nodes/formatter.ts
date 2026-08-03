@@ -25,9 +25,8 @@ import {
 } from '../../prompts/utils/index.js';
 import { vaultExists, vaultList, vaultRead, joinPath } from '../../../utils/mobile-fs.js';
 import { bookExcerptDir } from '../../../utils/book-paths.js';
-import type { CognitiveEngineState, NodeError, ToolResultSnapshot } from '../state';
-import { ReadingDepth, NODE_ERROR_HINTS } from '../state';
-import { resolveMode } from '../utils/engine-helpers';
+import { ReadingDepth, NODE_ERROR_HINTS, type CognitiveEngineState, type NodeError, type ToolResultSnapshot } from '../state';
+import { getGraphConfigurable } from '../configurable.js';
 import { summarizeRecentHistory, formatHistoryBlock } from '../utils/history-summarizer';
 import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
 
@@ -127,7 +126,6 @@ export async function formatterNode(
     structuralAnalysis,
     rewrittenQuery,
     pdfName,
-    proactiveTrigger,
     depth,
     tocSummary,
     betterQuestion,
@@ -137,13 +135,10 @@ export async function formatterNode(
     crossBookMode,
     nodeFileMap,
   }: FormatterInput = state;
-  const mode = resolveMode(state);
-  const mainModel = config.configurable?.mainModel;
-  const callbacks = config.configurable?.callbacks as {
-    onContent?: (content: string) => void;
-    onProgress?: (msg: string) => void;
-  } | undefined;
-  const ctx = config.configurable?.sharedContext;
+  const cfg = getGraphConfigurable(config);
+  const mainModel = cfg.mainModel;
+  const callbacks = cfg.callbacks;
+  const ctx = cfg.sharedContext;
 
   // Detect and clean XML tool call residue in analysisResult
   const _rawAR = analysisResult || '';
@@ -351,15 +346,15 @@ export async function formatterNode(
     const verificationResult = await verifyAndCleanContent(content, toolResults);
     content = verificationResult.content;
 
-    if (config.configurable?.langsmithTracer) {
+    if (cfg._langsmithTracer) {
       try {
-        const client = config.configurable.langsmithTracer.client;
+        const client = cfg._langsmithTracer.client;
         await client.createRun({
           name: 'wiki_link_verification',
           run_type: 'tool',
           inputs: { content_length: content.length },
           outputs: verificationResult,
-          parent_run_id: config.configurable?.parentRunId,
+          parent_run_id: config.runId,
           extra: { metadata: {
             tool_results_count: toolResults.length,
             wiki_links_before: verificationResult.totalRefs,
@@ -374,7 +369,7 @@ export async function formatterNode(
   }
 
   // HITL interrupt (if enabled)
-  const enableHumanReview = config.configurable?.enableHumanReview as boolean | undefined;
+  const enableHumanReview = cfg.enableHumanReview;
   if (enableHumanReview) {
     const resumeValue = interrupt({
       nodeId: 'formatter',

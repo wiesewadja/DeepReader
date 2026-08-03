@@ -7,7 +7,7 @@ import type { DeepPDFSettings } from './settings';
 import type { RoleType , ProviderType } from './types.js';
 export type { ProviderType } from './types.js';
 import { ROLE_CAPABILITY } from './ai-roles';
-import { getPresetById, buildRolesFromPreset } from './presets';
+import { getPresetById, buildRolesFromPreset, getAllAdditionalProviders } from './presets';
 
 /** 服务商能力矩阵 */
 export interface ProviderCapabilities {
@@ -74,6 +74,12 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 		chatTestModel: 'sensenova-6.7-flash-lite',
 		supportsModelList: true,
 		capabilities: { chat: true, embedding: false, reranker: false, imagegen: true },
+	},
+	volcark: {
+		baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+		defaultModel: 'doubao-seed-2.0-pro',
+		supportsModelList: true,
+		capabilities: { chat: true, embedding: true, reranker: false, tts: true, imagegen: false },
 	},
 	custom: {
 		baseUrl: '', // 使用用户输入的 baseUrl
@@ -208,32 +214,36 @@ export function getProviderName(id: string, settings: DeepPDFSettings): string {
 /**
  * 应用预设配置：填写 API Key + 自动分配角色
  *
- * 支持双 Provider 预设（如奚童：小米 MIMO + SiliconFlow）。
- * 修改 settings 对象（原地修改）。
+ * 支持多 Provider 预设。修改 settings 对象（原地修改）。
  *
  * @param presetId 预设 ID
  * @param primaryApiKey 主 Provider 的 API Key
  * @param settings 设置对象
- * @param secondaryApiKey 第二 Provider 的 API Key（可选，缺失时对应角色降级）
+ * @param secondaryApiKey 兼容旧接口：第二 Provider 的 API Key（可选）
+ * @param additionalApiKeys 额外 Provider 的 API Key 映射（provider → apiKey）
  */
 export function applyPreset(
 	presetId: string,
 	primaryApiKey: string,
 	settings: DeepPDFSettings,
 	secondaryApiKey?: string,
+	additionalApiKeys?: Record<string, string>,
 ): void {
 	const preset = getPresetById(presetId);
 	if (!preset) throw new Error(`Unknown preset: ${presetId}`);
 
-	// 填写主 Provider Key
 	const providers = settings.providers as Record<string, { apiKey?: string; baseUrl?: string; name?: string; fallbackApiKey?: string }>;
+
+	// 填写主 Provider Key
 	if (!providers[preset.provider]) {
 		providers[preset.provider] = { apiKey: primaryApiKey };
 	} else {
 		providers[preset.provider].apiKey = primaryApiKey;
 	}
 
-	// 填写第二 Provider Key
+	const allAdditional = getAllAdditionalProviders(preset);
+
+	// 填写旧版 secondaryProvider Key（向后兼容）
 	if (preset.secondaryProvider && secondaryApiKey) {
 		if (!providers[preset.secondaryProvider]) {
 			providers[preset.secondaryProvider] = { apiKey: secondaryApiKey };
@@ -242,19 +252,37 @@ export function applyPreset(
 		}
 	}
 
-	// 分配角色（含降级处理）
-	const withSecondary = !!secondaryApiKey;
-	const roles = buildRolesFromPreset(preset, withSecondary);
+	// 填写新版 additionalProviders Key
+	if (additionalApiKeys) {
+		for (const [providerId, apiKey] of Object.entries(additionalApiKeys)) {
+			if (!apiKey) continue;
+			if (!providers[providerId]) {
+				providers[providerId] = { apiKey };
+			} else {
+				providers[providerId].apiKey = apiKey;
+			}
+		}
+	}
 
-	// 无第二 Key 时的降级处理
-	if (!withSecondary && preset.secondaryProvider && preset.secondaryRoleAssignments) {
-		for (const role of Object.keys(preset.secondaryRoleAssignments)) {
+	// 计算有 Key 的额外 Provider 集合（按 provider 分别降级）
+	const providersWithKeys = new Set<string>();
+	for (const additional of allAdditional) {
+		const hasKey = additionalApiKeys?.[additional.provider] ||
+			(preset.secondaryProvider === additional.provider && !!secondaryApiKey);
+		if (hasKey) providersWithKeys.add(additional.provider);
+	}
+
+	// 构建角色：只包含有 Key 的额外 Provider
+	const roles = buildRolesFromPreset(preset, providersWithKeys);
+
+	// 未提供 Key 的额外 Provider → 按 provider 分别降级
+	for (const additional of allAdditional) {
+		if (providersWithKeys.has(additional.provider)) continue;
+		for (const role of Object.keys(additional.roleAssignments)) {
 			if (role === 'router') {
-				// router 降级到主 Provider 的默认模型
 				const fallbackModel = preset.roleAssignments.chat || Object.values(preset.roleAssignments)[0];
 				roles[role] = { provider: preset.provider, model: fallbackModel };
 			} else {
-				// embedding/reranker 禁用
 				roles[role] = null;
 			}
 		}
@@ -281,5 +309,6 @@ export const PROVIDER_LABELS: Record<ProviderType, string> = {
 	openai: 'OpenAI',
 	xiaomi: '小米 MIMO',
 	sensenova: '商汤 (SenseNova)',
+	volcark: '火山方舟 (Agent Plan)',
 	custom: '自定义',
 };

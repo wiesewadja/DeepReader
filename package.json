@@ -1,6 +1,6 @@
 {
   "name": "obsidian-deepreader",
-  "version": "2026.07.07",
+  "version": "2026.08.03",
   "description": "奚童 - 深度AI伴读",
   "main": "bin/main.js",
   "scripts": {
@@ -16,6 +16,7 @@
     "test:ui": "vitest --ui",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
+    "build-eval": "node scripts/build-eval-entry.mjs",
     "arch-guard": "node scripts/arch-guard.mjs",
     "arch-guard:strict": "node scripts/arch-guard.mjs --strict",
     "e2e-cdp": "node tests/e2e-cdp/run.mjs",
@@ -39,6 +40,8 @@
     "smoke:verbose": "node scripts/smoke/smoke.mjs --verbose",
     "e2e-light": "node scripts/e2e-light/run.mjs",
     "e2e-light:verbose": "node scripts/e2e-light/run.mjs --verbose",
+    "setup:test-env": "node scripts/setup-test-env.mjs",
+    "setup:test-env:check": "node scripts/setup-test-env.mjs --check",
     "worktree:create": "bash scripts/setup-worktree.sh"
   },
   "keywords": [
@@ -68,6 +71,7 @@
     "@types/xml2js": "^0.4.14",
     "@typescript-eslint/eslint-plugin": "^8.60.1",
     "@typescript-eslint/parser": "^8.60.1",
+    "@vitest/coverage-v8": "^1.6.1",
     "@vitest/ui": "^1.0.0",
     "@wdio/appium-service": "^9.29.0",
     "@wdio/cli": "^9.27.0",

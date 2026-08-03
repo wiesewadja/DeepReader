@@ -4,6 +4,8 @@
 
 Sidebar 聊天/阅读界面的领域语言，用于奚童（AI 伴读）交互、书籍管理、会话和 TTS 播放。
 
+> 架构决策：[ADR-011](./docs/decisions/ADR-011-sidebar-view-domain-split.md) — SidebarView 域拆分：Domain + Presenter + EventBus
+
 **SidebarView**:
 The Obsidian ItemView subclass that owns the sidebar DOM lifecycle and wires together the domain layer and the presenter layer.
 _Avoid_: God object, coordinator, view controller
@@ -71,7 +73,7 @@ _Avoid_: 全局状态、god context、runtime config（后者指 mainModel/fastM
 _Avoid_: 把它和 SharedContext 混称"状态"——前者是运行态、后者是输入
 
 **双轨制** (Dual-track):
-同一数据同时挂在 `config.configurable` 顶层和 `configurable.sharedContext` 内部、节点取法不一的反模式。已在 ADR-0001 中收敛为单一来源（sharedContext）。
+同一数据同时挂在 `config.configurable` 顶层和 `configurable.sharedContext` 内部、节点取法不一的反模式。已在 ADR-010 中收敛为单一来源（sharedContext）。
 
 **输入 = Context / 产出 = State**:
 SharedContext 与 LangGraph State 的划界规则。请求的不可变输入归 Context；节点产出且向下流转的可变数据归 State。
@@ -95,5 +97,5 @@ _Aypass_: 跳过 LLM 调用、直接返回固定消息
 
 ## Decisions
 
-- [ADR-0001: SharedContext 收敛](./docs/adr/0001-shared-context-convergence.md) — 消除双轨制，确立 State/Context 划界，删除 4 个死字段。
-- [ADR-0002: 安全边界机制](./docs/adr/0002-security-boundary-mechanism.md) — 三层防御防止系统提示词泄露。
+- [ADR-010: SharedContext 收敛](./docs/decisions/ADR-010-shared-context-convergence.md) — 消除双轨制，确立 State/Context 划界，删除 4 个死字段。
+- [ADR-012: 安全边界机制](./docs/decisions/ADR-012-security-boundary-mechanism.md) — 三层防御防止系统提示词泄露。

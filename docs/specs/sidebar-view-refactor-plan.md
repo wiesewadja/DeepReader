@@ -4,7 +4,7 @@
 
 Refactor `SidebarView` (currently 1,537 lines and coordinating 8+ responsibilities) into a thin view shell that owns only Obsidian `ItemView` lifecycle, DOM creation, and wiring. Business logic moves into focused Domains (`BookDomain`, `SessionDomain`, `AgentDomain`, `TTSDomain`), UI-event mapping moves into `ChatPresenter`, and chat document context moves into `ChatDocumentService`. Communication between Domains and the presenter uses a per-view typed `EventBus`; synchronous orchestration uses direct method calls.
 
-This plan follows the decisions in ADR-0001 and the vocabulary in `CONTEXT.md`.
+This plan follows the decisions in ADR-011 and the vocabulary in `CONTEXT.md`.
 
 ## Architecture Decisions
 

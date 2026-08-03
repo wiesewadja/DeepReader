@@ -292,6 +292,9 @@ L8 → L6 → L5 → L4 → L7 → L3 → L2 → L1 → L0
 | [ADR-007](../../../decisions/ADR-007-memory-and-session-architecture.md) | L8 | MEMORY.md + JSONL 长期记忆 |
 | [ADR-008](../../../decisions/ADR-008-proactive-engine-design.md) | L0 | 主动引擎（Proactive Engine） |
 | [ADR-009](../../../decisions/ADR-009-s2-multi-layer-early-stop.md) | L4, L5 | S2 多层早停机制 |
+| [ADR-010](../../../decisions/ADR-010-shared-context-convergence.md) | L1, L2, L4 | SharedContext 收敛，State/Context 划界 |
+| [ADR-011](../../../decisions/ADR-011-sidebar-view-domain-split.md) | L0, L1 | SidebarView 域拆分：Domain + Presenter + EventBus |
+| [ADR-012](../../../decisions/ADR-012-security-boundary-mechanism.md) | L1, L3, L4 | 安全边界：三层防御防系统提示词泄露 |
 
 ---
 

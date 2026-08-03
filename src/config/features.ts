@@ -16,3 +16,6 @@ export const ZLIBRARY_ENABLED = true;
 
 /** 索引追踪日志（默认开启。每次索引生成 traces/{exportName}.log + .json） */
 export const INDEX_TRACE_ENABLED = true;
+
+/** 搜索追踪日志（默认开启。每次搜索生成 search-traces/{bookId}-{timestamp}.json） */
+export const SEARCH_TRACE_ENABLED = true;

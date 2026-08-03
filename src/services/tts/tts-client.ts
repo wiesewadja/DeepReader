@@ -1,5 +1,6 @@
 import { serviceLog } from '../../utils/logger.js';
 import { fetchWithCorsFallback } from '../../utils/safe-request.js';
+import { VolcTTSClient } from './volc-tts-client.js';
 
 export interface TTSClientOptions {
     apiKey: string;
@@ -19,7 +20,7 @@ export interface TTSOptions {
 }
 
 export interface ITTSSynthesizer {
-    synthesize(text: string, options: TTSOptions): Promise<ArrayBuffer>;
+    synthesize(text: string, options: TTSOptions, signal?: AbortSignal): Promise<ArrayBuffer>;
     synthesizeStream(text: string, options: TTSOptions, signal?: AbortSignal): AsyncGenerator<ArrayBuffer>;
 }
 
@@ -34,7 +35,8 @@ export class TTSClient implements ITTSSynthesizer {
         this.model = options.model || 'mimo-v2.5-tts';
     }
 
-    async synthesize(text: string, options: TTSOptions): Promise<ArrayBuffer> {
+    async synthesize(text: string, options: TTSOptions, signal?: AbortSignal): Promise<ArrayBuffer> {
+        if (signal?.aborted) throw new Error('TTS: aborted before request');
         const url = `${this.baseUrl}/chat/completions`;
 
         const isVoiceDesign = this.model.includes('voicedesign');
@@ -59,6 +61,7 @@ export class TTSClient implements ITTSSynthesizer {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(body),
+            signal,
         });
 
         if (!response.ok) {
@@ -176,4 +179,20 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
         bytes[i] = binary.charCodeAt(i);
     }
     return bytes.buffer;
+}
+
+/** 按 TTS provider 创建合适的 client（火山走 VolcTTSClient，其余走 OpenAI 兼容 TTSClient） */
+export function createTTSClient(ttsConfig: { provider: string; apiKey: string; baseUrl: string; model?: string }): ITTSSynthesizer {
+    if (ttsConfig.provider === 'volcark') {
+        return new VolcTTSClient({
+            apiKey: ttsConfig.apiKey,
+            baseUrl: ttsConfig.baseUrl,
+            model: ttsConfig.model,
+        });
+    }
+    return new TTSClient({
+        apiKey: ttsConfig.apiKey,
+        baseUrl: ttsConfig.baseUrl,
+        model: ttsConfig.model || 'mimo-v2.5-tts',
+    });
 }

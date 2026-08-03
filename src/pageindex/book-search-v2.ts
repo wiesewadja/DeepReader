@@ -16,7 +16,6 @@ import { nodeFs } from "../utils/node-fs.js";
 import { nodePath } from "../utils/node-compat.js";
 import type { App } from "obsidian";
 import { vaultRead, vaultExists, vaultList, joinPath } from "../utils/mobile-fs.js";
-import { safeRequest } from "../utils/safe-request.js";
 import { searchBM25, tokenize } from "./bm25.js";
 import { generateBookId } from "./book-indexer.js";
 import type {
@@ -30,6 +29,7 @@ import type {
 } from "./book-types.js";
 
 import { IndexErrorCode, IndexError } from "./book-types.js";
+import type { BookMeta } from "./book-types.js";
 import { log as piLog } from "./core/logger";
 import { PAGEINDEX_DIR, getPageindexDir } from "./paths.js";
 import {
@@ -42,6 +42,8 @@ import {
   cosineSearchJsonl,
   clearVectorCache,
 } from "./vault/vectors.js";
+import { callRerankApi } from "./reranker.js";
+import { createSearchTracer, type SearchTracerType } from "./search-tracer.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -127,7 +129,22 @@ export async function searchBookV2(
   const vaultPath = options.vaultPath || nodePath().dirname(options.filePath);
   const topK = options.topK || 5;
 
-  // indexDir: vault-relative when app provided, absolute path otherwise
+  const tracer: SearchTracerType = createSearchTracer(
+    options.query,
+    bookId,
+    {
+      recallK: 0,
+      topK,
+      hasEmbedding: !!(options.embedding && options.embedding.provider !== "local"),
+      hasReranker: !!options.reranker,
+      hasScope: !!(options.scopeNodeIds && options.scopeNodeIds.length > 0),
+    },
+    options.vaultPath,
+    app
+  );
+
+  try {
+    // indexDir: vault-relative when app provided, absolute path otherwise
   const indexDir = app
     ? joinPath(PAGEINDEX_DIR, bookId)
     : nodePath().join(vaultPath, getPageindexDir(), bookId);
@@ -171,24 +188,61 @@ export async function searchBookV2(
   });
 
   // ── Stage 1: Dynamic recall K ──────────────────────────────────────────
+  tracer.startStage("recall_config");
   const recallK = computeDynamicRecallK(options.query);
   const expandedK = options.scopeNodeIds && options.scopeNodeIds.length > 0
     ? recallK * 5
     : recallK;
+  tracer.updateConfig({ recallK });
+  tracer.endStage("success", { recallK, expandedK, hasScope: !!options.scopeNodeIds?.length });
 
   // ── Pre-compute query embedding (避免重复调用) ──────────────────────
+  tracer.startStage("query_embedding");
   let precomputedEmbedding: number[] | null = null;
   if (options.precomputedEmbedding) {
     precomputedEmbedding = options.precomputedEmbedding;
+    tracer.endStage("success", { hasEmbedding: true, source: "precomputed" });
   } else if (options.embedding && options.embedding.provider !== 'local') {
     try {
       precomputedEmbedding = await getOrGenerateEmbedding(options.query, options.embedding);
+
+      // ── Dimension mismatch detection ──
+      // 必须先检测：endStage() 调用即清空 currentStage，success 之后的 failure 调用是 no-op（不会被记录）。
+      let dimMismatch = false;
+      if (precomputedEmbedding) {
+        const meta = await loadBookMetaJson(indexDir, app);
+        if (meta?.embedding?.dimensions && precomputedEmbedding.length !== meta.embedding.dimensions) {
+          const queryDim = precomputedEmbedding.length;
+          const indexDim = meta.embedding.dimensions;
+          const dimErr = new IndexError(
+            `Query embedding has ${queryDim} dimensions, but index was built with ${indexDim} dimensions (model: ${meta.embedding.model})`,
+            IndexErrorCode.VECTOR_DIMENSION_MISMATCH,
+            `向量维度不匹配：当前 embedding 模型（${queryDim}维）与索引（${indexDim}维）不兼容，向量搜索已禁用`,
+            "请在 Library 中删除此书后重新添加以重建索引"
+          );
+          piLog(`[book-search-v2] ${dimErr.code}: ${dimErr.message}`);
+          precomputedEmbedding = null;
+          dimMismatch = true;
+          tracer.endStage("failure", {
+            queryDim,
+            indexDim,
+            indexModel: meta.embedding.model,
+          });
+        }
+      }
+      if (!dimMismatch) {
+        tracer.endStage("success", { hasEmbedding: true, source: "generated" });
+      }
     } catch (error) {
+      tracer.endStage("failure", { error: String(error) });
       piLog(`[book-search-v2] Query embedding failed: ${error}`);
     }
+  } else {
+    tracer.endStage("skipped", { reason: "no embedding provider" });
   }
 
   // ── Stage 2-3.5: Multi-path parallel recall ───────────────────────────
+  tracer.startStage("parallel_recall");
   const [bm25Results, vectorSearchResult, propSearchResult] = await Promise.all([
     searchBM25(options.query, bm25Index, expandedK),
     precomputedEmbedding
@@ -213,13 +267,21 @@ export async function searchBookV2(
   // Proposition matches already in map
   const propositionMatches = propSearchResult;
 
+  tracer.endStage("success", {
+    bm25: bm25Results.length,
+    vector: vectorScores.size,
+    proposition: propositionMatches.size,
+  });
+
   piLog(`[book-search-v2] Parallel recall: BM25=${bm25Results.length}, Vector=${vectorScores.size}, Proposition=${propositionMatches.size} nodes`);
 
   // ── Stage 4: Scope filter ──────────────────────────────────────────────
+  tracer.startStage("scope_filter");
   const hasVectors = vectorScores.size > 0;
   const allNodeIds = new Set([...vectorScores.keys(), ...bm25Scores.keys()]);
 
   let candidateNodeIds = allNodeIds;
+  let scopeFallback = false;
   if (options.scopeNodeIds && options.scopeNodeIds.length > 0) {
     const scopeSet = new Set(options.scopeNodeIds);
     const scopedCandidates = new Set([...allNodeIds].filter(id => scopeSet.has(id)));
@@ -228,33 +290,39 @@ export async function searchBookV2(
     if (scopedCandidates.size > 0) {
       candidateNodeIds = scopedCandidates;
     } else {
+      scopeFallback = true;
       piLog(`[book-search-v2] Scope filter produced 0 results from ${allNodeIds.size} candidates, using unscoped fallback`);
     }
   }
 
-  // ── Stage 5: Score fusion + level weighting + proposition ─────────────
+  tracer.endStage("success", {
+    scopeTotal: allNodeIds.size,
+    scopeFiltered: candidateNodeIds.size,
+    scopeFallback: scopeFallback ? 1 : 0,
+  });
+
+  // ── Stage 5: Score fusion (RRF) + level weighting + proposition ─────
+  tracer.startStage("fusion");
+  const RRF_K = 60;
   const hasPropositions = propositionMatches.size > 0;
+  const activeSignals = (hasVectors ? 1 : 0) + (bm25Results.length > 0 ? 1 : 0) + (hasPropositions ? 1 : 0);
 
-  // Adjust weights based on available signals
-  const w_v = hasVectors ? (hasPropositions ? 0.5 : 0.7) : 0;
-  const w_b = hasVectors ? (hasPropositions ? 0.25 : 0.3) : 1.0;
-  const w_p = hasPropositions ? (hasVectors ? 0.25 : 0) : 0;
+  piLog(`[book-search-v2] RRF fusion: k=${RRF_K}, activeSignals=${activeSignals}`);
 
-  piLog(`[book-search-v2] Fusion weights: v=${w_v}, b=${w_b}, p=${w_p}`);
+  // Build rank maps (1-indexed, descending by score)
+  function buildRankMap(scores: Map<string, number>): Map<string, number> {
+    const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);
+    const rankMap = new Map<string, number>();
+    for (let i = 0; i < sorted.length; i++) {
+      rankMap.set(sorted[i][0], i + 1); // 1-indexed
+    }
+    return rankMap;
+  }
 
-  // Normalize BM25 scores
-  const bm25Values = Array.from(bm25Scores.values());
-  const bm25Max = Math.max(...bm25Values, 0);
-  const bm25Min = Math.min(...bm25Values, 0);
-  const bm25Range = bm25Max - bm25Min;
+  const vecRankMap = buildRankMap(vectorScores);
+  const bm25RankMap = buildRankMap(bm25Scores);
 
-  // Normalize vector scores (cosine similarity can be negative and has different scale)
-  const vecValues = Array.from(vectorScores.values());
-  const vecMax = Math.max(...vecValues, 0);
-  const vecMin = Math.min(...vecValues, 0);
-  const vecRange = vecMax - vecMin;
-
-  // Compute proposition scores per nodeId
+  // Compute proposition scores per nodeId, then build rank map
   const propositionScores = new Map<string, number>();
   for (const [nodeId, cards] of propositionMatches) {
     if (cards.length > 0) {
@@ -262,12 +330,11 @@ export async function searchBookV2(
       propositionScores.set(nodeId, maxScore);
     }
   }
+  const propRankMap = buildRankMap(propositionScores);
 
-  // Normalize proposition scores
-  const propValues = Array.from(propositionScores.values());
-  const propMax = Math.max(...propValues, 0);
-  const propMin = Math.min(...propValues, 0);
-  const propRange = propMax - propMin;
+  // Preserve original scores for display
+  const bm25Values = Array.from(bm25Scores.values());
+  const vecValues = Array.from(vectorScores.values());
 
   type ScoredResult = {
     nodeId: string;
@@ -288,16 +355,20 @@ export async function searchBookV2(
     const bs = bm25Scores.get(nodeId) || 0;
     const ps = propositionScores.get(nodeId) || 0;
 
-    const normalizedBM25 = bm25Range > 0 ? (bs - bm25Min) / bm25Range : 0;
-    const normalizedVec = vecRange > 0 ? (vs - vecMin) / vecRange : (vs > 0 ? 1 : 0);
-    const normalizedProp = propRange > 0 ? (ps - propMin) / propRange : ps;
+    // RRF: sum 1/(k + rank) for each signal where the node appears
+    let rrfScore = 0;
+    const vecRank = vecRankMap.get(nodeId);
+    if (vecRank !== undefined) rrfScore += 1 / (RRF_K + vecRank);
+    const bm25Rank = bm25RankMap.get(nodeId);
+    if (bm25Rank !== undefined) rrfScore += 1 / (RRF_K + bm25Rank);
+    const propRank = propRankMap.get(nodeId);
+    if (propRank !== undefined) rrfScore += 1 / (RRF_K + propRank);
 
-    const fusedScore = w_v * normalizedVec + w_b * normalizedBM25 + w_p * normalizedProp;
     const levelWeight = computeLevelWeightFast(nodeId, treeIndex);
 
     scoredResults.push({
       nodeId,
-      fusedScore: fusedScore * levelWeight,
+      fusedScore: rrfScore * levelWeight,
       vectorScore: vs,
       bm25Score: bs,
       propositionScore: ps,
@@ -306,12 +377,28 @@ export async function searchBookV2(
   }
 
   scoredResults.sort((a, b) => b.fusedScore - a.fusedScore);
-  
+
+  tracer.recordSignals({
+    bm25Recalled: bm25Results.length,
+    vectorRecalled: vectorScores.size,
+    propositionRecalled: propositionMatches.size,
+    scopeFiltered: candidateNodeIds.size,
+    scopeTotal: allNodeIds.size,
+    scopeFallback: scopeFallback ? 1 : 0,
+    reranked: 0,
+  });
+  tracer.recordScoreStats("bm25", bm25Values);
+  tracer.recordScoreStats("vector", vecValues);
+  tracer.recordScoreStats("fused", scoredResults.map((r) => r.fusedScore));
+  tracer.recordWeights({ vector: 0, bm25: 0, proposition: 0 });
+  tracer.endStage("success", { algorithm: "rrf", k: RRF_K, activeSignals });
+
   // ── Stage 6: LLM tree search (optional) ────────────────────────────────
   // TODO: implement when llmClient is available
 
   // ── Stage 7: Cross-encoder rerank (optional) ───────────────────────────
   if (options.reranker && scoredResults.length > 0) {
+    tracer.startStage("rerank");
     try {
       const rerankCandidates = scoredResults.slice(0, Math.min(scoredResults.length, options.reranker.maxCandidates || 20));
       const rerankScores = await crossEncoderRerank(
@@ -323,7 +410,7 @@ export async function searchBookV2(
         app
       );
 
-      const rerankWeight = options.reranker.weight || 0.7;
+      const rerankWeight = options.reranker.weight || 0.5;
       const rerankedNodeIds = new Set(rerankScores.keys());
       
       for (const r of scoredResults) {
@@ -334,16 +421,35 @@ export async function searchBookV2(
       }
 
       scoredResults.sort((a, b) => b.fusedScore - a.fusedScore);
-      
+
+      tracer.recordScoreStats("reranked", Array.from(rerankScores.values()));
+      tracer.recordSignals({ reranked: rerankScores.size });
+      tracer.recordWeights({ vector: 0, bm25: 0, proposition: 0, rerank: rerankWeight });
+      tracer.endStage("success", { reranked: rerankScores.size, rerankWeight });
+
       piLog(`[book-search-v2] Reranked ${rerankScores.size} results`);
     } catch (error) {
+      tracer.endStage("failure", { error: String(error) });
       piLog(`[book-search-v2] Rerank failed: ${error}`);
     }
   }
 
   const topResults = scoredResults.slice(0, topK);
 
+  tracer.recordTopResults(
+    topResults.map((r) => ({
+      nodeId: r.nodeId,
+      title: findNodeTitle(r.nodeId, treeData.structure) || r.nodeId,
+      fusedScore: r.fusedScore,
+      bm25Score: r.bm25Score,
+      vectorScore: r.vectorScore,
+      propositionScore: r.propositionScore,
+      levelWeight: r.levelWeight,
+    }))
+  );
+
   // ── Stage 8: Matched block location ────────────────────────────────────
+  tracer.startStage("result_assembly");
   const results: BookSearchResultV2[] = [];
 
   // Load chunk texts for matchedBlocks content
@@ -407,8 +513,14 @@ export async function searchBookV2(
       vectorScore: r.vectorScore,
     });
   }
+  tracer.endStage("success", { resultCount: results.length });
 
+  tracer.finalize(true);
   return results;
+} catch (error) {
+  tracer.finalize(false, error instanceof Error ? error.message : String(error));
+  throw error;
+}
 }
 
 // ─── Load tree.json ─────────────────────────────────────────────────────────
@@ -420,6 +532,18 @@ export async function loadTreeJson(indexDir: string, app?: App): Promise<TreeDat
       ? await vaultRead(app, treePath)
       : await nodeFs().readFile(treePath, "utf-8");
     return JSON.parse(content) as TreeData;
+  } catch {
+    return null;
+  }
+}
+
+async function loadBookMetaJson(indexDir: string, app?: App): Promise<BookMeta | null> {
+  try {
+    const metaPath = app ? joinPath(indexDir, "book-meta.json") : nodePath().join(indexDir, "book-meta.json");
+    const content = app
+      ? await vaultRead(app, metaPath)
+      : await nodeFs().readFile(metaPath, "utf-8");
+    return JSON.parse(content) as BookMeta;
   } catch {
     return null;
   }
@@ -736,39 +860,15 @@ async function crossEncoderRerank(
 
   if (texts.length === 0) return rerankScores;
 
-  const provider = reranker.provider || "lmstudio";
-  const baseUrl = reranker.baseUrl || (provider === "lmstudio" ? "http://localhost:1234/v1" : provider === "ollama" ? "http://localhost:11434" : "https://api.openai.com/v1");
-  const model = reranker.model || "BAAI/bge-reranker-v2-m3";
-  const apiKey = reranker.apiKey || (provider === "lmstudio" ? "lm-studio" : "");
-
   try {
-    const response = await safeRequest({
-      url: `${baseUrl}/rerank`,
-      method: "POST",
-      contentType: "application/json",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        query,
-        documents: texts,
-        top_n: texts.length,
-      }),
-    });
+    const scores = await callRerankApi(query, texts, reranker);
 
-    if (response.status >= 400) {
-      throw new Error(`Rerank API error: ${response.status} - ${response.text}`);
-    }
-
-    const data = response.json as { results: Array<{ index: number; relevance_score: number }> };
-    
-    for (const r of data.results) {
-      if (r.index >= 0 && r.index < nodeIds.length) {
-        rerankScores.set(nodeIds[r.index], r.relevance_score);
-      }
+    for (let i = 0; i < nodeIds.length; i++) {
+      rerankScores.set(nodeIds[i], scores[i]);
     }
   } catch (error) {
     piLog(`[book-search-v2] Reranker unavailable: ${error}`);
-    
+
     for (let i = 0; i < nodeIds.length; i++) {
       rerankScores.set(nodeIds[i], results.find(r => r.nodeId === nodeIds[i])?.fusedScore || 0);
     }

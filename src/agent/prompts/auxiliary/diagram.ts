@@ -2,9 +2,9 @@ import type { PromptModule } from '../types.js';
 
 export const diagramPrompt: PromptModule = {
   id: 'diagram.excalidraw',
-  version: '1.1.0',
+  version: '1.2.0',
   name: 'Excalidraw 图形生成',
-  description: '生成丰富多彩、现代视觉审美的 Excalidraw 图形',
+  description: '生成丰富多彩、现代视觉审美的 Excalidraw 图形（支持 Lucide 图标）',
   metadata: {
     category: 'auxiliary',
     tokenEstimate: 2000,
@@ -43,14 +43,15 @@ export const diagramPrompt: PromptModule = {
 | 自由发散词、平级无层级关联词（无父子结构，非思维导图/脑图） | "radial" | 卫星环形均分布局（相邻卫星按关系拓扑邻近） |
 | SWOT分析、四象限、2x2对比、优劣交叉分析 | "matrix" | 带有十字分割虚线坐标轴的四象限网格 |
 
-## 多彩现代色板与填充纹理（必须使用 semanticColor 属性表达颜色语义）
-不要硬编码十六进制色值。系统会根据你指定的 semanticColor 自动渲染适配 Light/Dark 主题的优雅低饱和「雾霭柔彩」配色，全部为实心（solid）填充：
-- primary: 主流程、主节点（柔和靛蓝色，实心填充，用于核心主干节点）
-- emphasis: 重点、起点、关键决策（柔和玫红色，实心填充，用于强调或根节点）
-- success: 成功、终点、结论（柔和薄荷绿，实心填充，用于最终结果节点）
-- warning: 警告、备选、冲突（柔和琥珀橘，实心填充，用于分支对比或需注意的节点）
-- highlight: 高亮、注释、特例（柔和薰衣草紫，实心填充，用于补充标注或重点高亮节点）
-- neutral: 默认、普通分类节点（柔和雾灰色，实心填充，用于辅助细节/说明要点）
+## 手绘风格色板（必须使用 semanticColor 属性表达颜色语义）
+不要硬编码十六进制色值。系统会根据你指定的 semanticColor 自动渲染手绘风格配色：
+温暖米色背景 + 黑色粗边框 + 鲜艳填充 + 手绘粗糙感，全部为实心（solid）填充：
+- primary: 主流程、主节点（青色/蓝绿，实心填充，用于核心主干节点）
+- emphasis: 重点、起点、关键决策（橙色/珊瑚，实心填充，用于强调或根节点）
+- success: 成功、终点、结论（绿色，实心填充，用于最终结果节点）
+- warning: 警告、备选、冲突（黄色/琥珀，实心填充，用于分支对比或需注意的节点）
+- highlight: 高亮、注释、特例（紫色，实心填充，用于补充标注或重点高亮节点）
+- neutral: 默认、普通分类节点（浅灰色，实心填充，用于辅助细节/说明要点）
 
 ## 形状语义
 | 概念类型 | 形状 |
@@ -65,9 +66,10 @@ export const diagramPrompt: PromptModule = {
 | 时间线标记 | 小 ellipse 10-20px |
 
 ## 关系连接与性能优化规则
-- **节点数量与信息密度平衡**：为了加快图表生成速度，节点数应控制在 **8-15 个**。但同时必须确保图表信息的可用性与关键知识密度，**严禁为了减少节点而删减核心逻辑**。应当通过**“合并同类项/富文本节点”**的方式：将次要细节和关联要点以短语或换行列表的形式写入主节点的 \`text\` 中（系统会自动计算多行文字并安全拉高容器），而不是为每个琐碎细节创建单独的子节点。
+- **节点数量与信息密度平衡**：为了加快图表生成速度，节点数应控制在 **8-15 个**。但同时必须确保图表信息的可用性与关键知识密度，**严禁为了减少节点而删减核心逻辑**。应当通过**"合并同类项/富文本节点"**的方式：将次要细节和关联要点以短语或换行列表的形式写入主节点的 \`text\` 中（系统会自动计算多行文字并安全拉高容器），而不是为每个琐碎细节创建单独的子节点。
 - 连线的 x/y 坐标和 points 会被系统自动计算为元素边缘交点，不要手动计算。
 - 你必须提供正确的 startBinding 和 endBinding。所有关系必须通过 arrow 显式连接。
+- 默认连线为直线（自动吸附到元素边缘）。需要正交折线（L 型/直角连线，适合流程图、层级清晰的关系）时，给 arrow 加上 \`"customData": { "routing": "orthogonal" }\` 即可，系统会自动生成 3 段直角折线，不要手写 points。
 - 重点：不要输出冗余字段！在 startBinding/endBinding 中只需输出 elementId 字段（系统会自动处理 gap 和 focus，无需输出它们）。不要输出 strokeColor、backgroundColor、opacity、roughness、fontFamily 等默认属性，由系统渲染器统一处理，以极大地减少输出 token，提升绘图速度！
 
 ## 输出格式
@@ -99,6 +101,7 @@ export const diagramPrompt: PromptModule = {
 - **Keep Node Count to 10-20**: For performance and readability, limit nodes to 10-20. Do NOT remove key logical steps. Instead of many tiny nodes, pack related details as list items/phrases inside a single node's "text" property.
 - The system will auto-wrap and expand the height of shape containers to fit your text automatically.
 - Choose font sizes from [16, 20, 28, 36] only.
+- Connectors default to straight lines (auto-snapped to element edges). For orthogonal (right-angle/elbow) connectors — better for flowcharts and clear hierarchies — add \`"customData": { "routing": "orthogonal" }\` to the arrow; the system generates a 3-segment elbow path, do not hand-write points.
 
 ## Output Format
 Output strict JSON object with "filename", "layout", and "elements" fields. No markdown wrappers or conversational filler:

@@ -6,9 +6,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import { decompressFromBase64 } from 'lz-string';
-import { buildExcalidrawMd } from '@/agent/tools/excalidraw-md';
-import { buildExcalidrawJSON } from '@/agent/tools/excalidraw';
-import type { ElementDef } from '@/agent/tools/excalidraw';
+import { buildExcalidrawMd } from '@/agent/tools/excalidraw/excalidraw-md';
+import { buildExcalidrawJSON } from '@/agent/tools/excalidraw/excalidraw';
+import type { ElementDef } from '@/agent/tools/excalidraw/excalidraw';
 
 /** 从 .excalidraw.md 内容里解压出原始 JSON */
 function decompressMd(md: string): any {
@@ -94,7 +94,7 @@ describe('buildExcalidrawMd — 属性 100% 保留（UI 不变坏的保证）', 
   });
 
   it('appState（视口/缩放/背景色）保留', () => {
-    expect(roundtripped.appState.viewBackgroundColor).toBe('#ffffff');
+    expect(roundtripped.appState.viewBackgroundColor).toBe('#FDF6E3'); // hand-drawn style beige background
     expect(roundtripped.appState.zoom).toEqual(file.appState.zoom);
   });
 

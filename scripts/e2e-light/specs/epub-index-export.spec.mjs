@@ -8,7 +8,7 @@
 
 import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
 
-const EPUB_FILE = '金钱不能买什么：金钱与公正的正面交锋 = What Money Cant Buy The Moral Limits of Markets ([美] 迈克尔 · 桑德尔 (Michael J. Sandel) 著  邓正来 译) (z-library.sk, 1lib.sk, z-lib.sk).epub';
+const EPUB_FILE = 'AI工程大模型应用开发实战.epub';
 
 export default {
 	id: 'epub-index-export',

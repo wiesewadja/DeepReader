@@ -244,7 +244,7 @@ describe('generateDiagram', () => {
       elements,
     }));
 
-    const { excalidrawTool } = await import('@/agent/tools/excalidraw');
+    const { excalidrawTool } = await import('@/agent/tools/excalidraw/excalidraw');
     const executeSpy = vi.spyOn(excalidrawTool, 'execute');
 
     await generateDiagram(

@@ -74,3 +74,67 @@ describe('applyPreset', () => {
 		expect(settings.providers.xiaomi.apiKey).toBe('new-key');
 	});
 });
+
+describe('applyPreset - agent-plan multi-provider', () => {
+	it('should assign all roles when all 3 keys provided', () => {
+		const settings = createTestSettings();
+		applyPreset('agent-plan', 'sk-volcark', settings, undefined, {
+			xiaomi: 'sk-mimo',
+			siliconflow: 'sk-sf',
+		});
+		expect(settings.providers.volcark.apiKey).toBe('sk-volcark');
+		expect(settings.providers.xiaomi.apiKey).toBe('sk-mimo');
+		expect(settings.providers.siliconflow.apiKey).toBe('sk-sf');
+		expect(settings.roles.chat).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-pro' });
+		expect(settings.roles.router).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-lite' });
+		expect(settings.roles.pageindex).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-lite' });
+		expect(settings.roles.proposition).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-lite' });
+		expect(settings.roles.embedding).toEqual({ provider: 'volcark', model: 'doubao-embedding-vision' });
+		expect(settings.roles.tts).toEqual({ provider: 'volcark', model: 'doubao-seed-tts-2.0' });
+		expect(settings.roles.reranker).toEqual({ provider: 'siliconflow', model: 'Qwen/Qwen3-Reranker-0.6B' });
+	});
+
+	it('should assign only volcark roles when no additional keys', () => {
+		const settings = createTestSettings();
+		applyPreset('agent-plan', 'sk-volcark', settings);
+		expect(settings.roles.chat).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-pro' });
+		expect(settings.roles.router).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-lite' });
+		expect(settings.roles.pageindex).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-lite' });
+		expect(settings.roles.proposition).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-lite' });
+		expect(settings.roles.embedding).toEqual({ provider: 'volcark', model: 'doubao-embedding-vision' });
+		expect(settings.roles.tts).toEqual({ provider: 'volcark', model: 'doubao-seed-tts-2.0' });
+		expect(settings.roles.reranker).toBeNull();
+	});
+
+	it('should include MIMO roles when only xiaomi key provided', () => {
+		const settings = createTestSettings();
+		applyPreset('agent-plan', 'sk-volcark', settings, undefined, {
+			xiaomi: 'sk-mimo',
+		});
+		expect(settings.roles.chat).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-pro' });
+		expect(settings.roles.embedding).toEqual({ provider: 'volcark', model: 'doubao-embedding-vision' });
+		expect(settings.roles.tts).toEqual({ provider: 'volcark', model: 'doubao-seed-tts-2.0' });
+		expect(settings.roles.reranker).toBeNull();
+	});
+
+	it('should include SiliconFlow roles when only siliconflow key provided', () => {
+		const settings = createTestSettings();
+		applyPreset('agent-plan', 'sk-volcark', settings, undefined, {
+			siliconflow: 'sk-sf',
+		});
+		expect(settings.roles.chat).toEqual({ provider: 'volcark', model: 'doubao-seed-2.0-pro' });
+		expect(settings.roles.embedding).toEqual({ provider: 'volcark', model: 'doubao-embedding-vision' });
+		expect(settings.roles.tts).toEqual({ provider: 'volcark', model: 'doubao-seed-tts-2.0' });
+		expect(settings.roles.reranker).toEqual({ provider: 'siliconflow', model: 'Qwen/Qwen3-Reranker-0.6B' });
+	});
+
+	it('should not overwrite keys for absent providers', () => {
+		const settings = createTestSettings();
+		applyPreset('agent-plan', 'sk-volcark', settings, undefined, {
+			xiaomi: 'sk-mimo',
+		});
+		expect(settings.providers.volcark.apiKey).toBe('sk-volcark');
+		expect(settings.providers.xiaomi.apiKey).toBe('sk-mimo');
+		expect(settings.providers.siliconflow.apiKey).toBe('');
+	});
+});

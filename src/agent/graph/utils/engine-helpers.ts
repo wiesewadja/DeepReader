@@ -3,7 +3,7 @@
  */
 
 import type { BaseMessage } from '@langchain/core/messages';
-import type { CognitiveEngineState, EngineMode } from '../state';
+import type { CognitiveEngineState } from '../state';
 
 /**
  * Resolve current chapter name from toolContext.markdownFiles.
@@ -20,13 +20,6 @@ export function resolveCurrentChapterName(
     }
   }
   return undefined;
-}
-
-/**
- * Resolve engine mode from state.
- */
-export function resolveMode(state: CognitiveEngineState): EngineMode {
-  return 'normal';
 }
 
 /**

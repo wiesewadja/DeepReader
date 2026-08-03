@@ -6,7 +6,7 @@ import { indexPropositions, buildExtractionPrompt, calculateTargetCards } from "
 import * as fs from "fs/promises";
 import * as path from "path";
 
-const vaultPath = "/Users/lizhao/workspace/deepreadertest";
+const vaultPath = "/Users/lizhao/workspace/DeepReader/test-vault";
 const bookId = "1553db0b";
 const indexDir = path.join(vaultPath, ".pageindex", bookId);
 

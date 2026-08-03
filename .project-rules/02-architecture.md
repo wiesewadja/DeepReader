@@ -31,16 +31,19 @@ src/
 ├── agent/                       # FrontendAgent AI 系统
 │   ├── index.ts                 # 主入口（FrontendAgent 类）
 │   ├── graph/                   # LangGraph 认知引擎
-│   │   ├── index.ts             # StateGraph 编译（S0→S1→S2/S3→S4）
-│   │   ├── nodes/               # router / inspectional / analytical / syntopical / formatter
+│   │   ├── index.ts             # StateGraph 编译（7 节点 + 条件路由，详见认知层次）
+│   │   ├── nodes/               # inspectional / analytical / pre_search / syntopical / advisor / visualizer / formatter
 │   │   ├── prompts/             # 各节点 System Prompt
-│   │   ├── subgraphs/           # ReAct 循环子图
-│   │   ├── checkpointer.ts      # 基于 Vault 文件的 JSONL 持久化
+│   │   ├── subgraphs/           # plan-execute / tool-execution 子图
 │   │   └── state.ts             # LangGraph Annotation 状态定义
 │   ├── tools/                   # 工具集
-│   │   ├── local/               # 本地搜索工具（search_text, read_section）
-│   │   ├── definitions/         # 供 LLM 选择的工具定义
-│   │   └── *.ts                 # write_note, canvas, excalidraw, memory 等
+│   │   ├── index.ts             # createLangChainTools() — 条件注册入口
+│   │   ├── definitions/         # 供 LLM 使用的工具定义（search-book, read-section, search-journal, weread-tools, excalidraw）
+│   │   ├── local/               # 本地搜索/阅读实现（search-text, read-section）
+│   │   ├── context/             # 工具上下文构建（book, vault, cross-book, visual）
+│   │   ├── excalidraw/          # Excalidraw 图表生成（布局、样式、几何、提示词）
+│   │   ├── tool-permissions.ts  # 工具权限检查
+│   │   └── types.ts             # 工具上下文类型
 │   ├── router/                  # 意图路由器（闲聊/检视/分析/主题）
 │   ├── memory/                  # 记忆系统（store + consolidator + milestones）
 │   ├── session/                 # 会话持久化（JSONL）
@@ -114,31 +117,39 @@ src/
 
 ### 认知层次
 
-Agent 使用 LangGraph 实现四层认知模型（基于《如何阅读一本书》）：
+Agent 使用 LangGraph 实现多层认知模型（基于《如何阅读一本书》扩展），共 7 个功能节点：
 
 | 层次 | 节点 | 功能 |
 |------|------|------|
-| S0 | Router | 意图路由 + 查询重写（fast 模型） |
-| S1 | Inspectional | 检视阅读（目录导航、结构概览）（fast 模型） |
-| S2 | Analytical | 分析阅读（ReAct 循环：搜索→阅读→推理）（main 模型） |
+| S1 | Inspectional（含 S0 Router） | 检视阅读 + 意图路由 + 查询重写 + 深度分类（fast 模型） |
+| S2-Pre | PreSearch | 预搜索 + 早停判断（fast 模型） |
+| S2 | Analytical | 分析阅读（PlanExecute 循环：Plan→Execute→Replan→Synthesize，2-3 次 LLM 调用）（main 模型） |
 | S3 | Syntopical | 主题阅读（多书对比）（main 模型） |
-| S4 | Formatter | 格式化输出 + 自校验（main 模型） |
+| S4 | Formatter | 格式化输出 + Wiki 链接管道 + 自校验（main 模型） |
+| — | Advisor | 无书模式：微信读书推荐/搜索 |
+| — | Visualizer | Excalidraw 图表生成 |
+
+**图的执行流**：START → Inspectional（含路由）→ 根据深度/意图分流到 PreSearch / Analytical / Syntopical / Visualizer → Formatter → END。无书且无 weread 配置时直达 Formatter。
 
 ### 工具集
 
-```
-read_section     // 读取章节内容
-write_note       // 写笔记到 Obsidian
-search_read_books // 跨书籍搜索
-memory           // 记忆系统
-canvas           // 生成 Canvas 可视化
-```
+| 工具名 | 功能 | 注册条件 |
+|--------|------|----------|
+| `search_book` | 跨书籍搜索 | 始终注册 |
+| `read_book_section` | 读取章节内容 | 始终注册 |
+| `excalidraw` | 生成 Excalidraw 图表 | 始终注册 |
+| `search_journal` | 日志搜索 | 需配置 journalDir |
+| `weread_search` | 微信读书搜索 | 需配置 wereadApiKey |
+| `weread_recommend` | 微信读书推荐 | 需配置 wereadApiKey |
+| `weread_read_data` | 读取微信读书数据 | 需配置 wereadApiKey |
+| `weread_book_info` | 微信读书书籍信息 | 需配置 wereadApiKey |
+| `weread_notebooks` | 微信读书笔记本 | 需配置 wereadApiKey |
 
 ### 关键架构约定
 
 1. **唯一执行路径**: `FrontendAgent.chat()` → `runGraphEngine()` → LangGraph `stream()`。
 2. **HITL**: 支持 Human-in-the-Loop 中断与恢复（`resumeGraphExecution`）。
-3. **Checkpointer**: `FileCheckpointer`（JSONL 持久化到 Vault）或 `MemorySaver`（内存，测试用）。
+3. **Checkpointer**: `MemorySaver`（内存模式）。HITL 恢复依赖会话内状态，尚无持久化方案。
 
 ## PageIndex 引擎
 

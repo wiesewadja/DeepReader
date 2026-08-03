@@ -210,7 +210,7 @@ Full documentation lives in [`docs/`](docs/):
 |-----------|---------|
 | `docs/architecture/` | System architecture, agent state machine (L0-L8), UI architecture |
 | `docs/features/` | Feature specs (F-01 through F-36) with acceptance criteria |
-| `docs/decisions/` | Architecture Decision Records (ADR-001 through ADR-009) |
+| `docs/decisions/` | Architecture Decision Records (ADR-001 through ADR-012) |
 | `docs/test-strategies/` | Per-feature test strategies |
 | `docs/integrations/` | WeRead, Z-Library, TTS/ASR, proactive engine |
 | `docs/CHANGELOG.md` | Version history |

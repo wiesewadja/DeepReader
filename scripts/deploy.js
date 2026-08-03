@@ -117,8 +117,9 @@ function getDevVersion(baseVersion) {
     // 忽略
   }
   // feat/async-visualizer → async-visualizer；main → main
+  // 前缀清单对齐 .project-rules/09-branching.md 的分支命名（feat|fix|refactor|perf|docs|test|chore）
   const feature = branch
-    .replace(/^(feat|fix|refactor|chore|docs|test|release)\//, '')
+    .replace(/^(feat|fix|refactor|perf|docs|test|chore)\//, '')
     .replace(/[^a-zA-Z0-9-]/g, '')
     .slice(0, 30) || 'main';
   const now = new Date();
@@ -206,5 +207,17 @@ if (targets.includes('dev')) {
   } catch (e) {
     console.error('\n❌ 部署后置校验失败，请按提示修复');
     process.exit(1);
+  }
+
+  // 自动 reload 插件（确保最新代码生效）
+  console.log('\n🔄 正在 reload 插件...');
+  try {
+    execSync('obsidian vault=test-vault plugin:reload id=deepreader-dev', {
+      stdio: 'inherit',
+      cwd: path.join(__dirname, '..'),
+    });
+    console.log('✅ 插件已 reload');
+  } catch (e) {
+    console.log('⚠️  插件 reload 失败（可能 Obsidian 未运行）');
   }
 }

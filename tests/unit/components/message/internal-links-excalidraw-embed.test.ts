@@ -15,7 +15,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { App } from 'obsidian';
 import { setupInternalLinks } from '@/components/message/internal-links';
-import { buildExcalidrawMd } from '@/agent/tools/excalidraw-md';
+import { buildExcalidrawMd } from '@/agent/tools/excalidraw/excalidraw-md';
 
 /** 一个最小可渲染的 scene */
 function makeScene(elements: any[] = [{ type: 'rectangle', id: 'r1', x: 0, y: 0, width: 100, height: 50 }]) {

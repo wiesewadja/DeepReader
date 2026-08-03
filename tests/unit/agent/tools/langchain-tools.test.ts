@@ -34,16 +34,20 @@ const mockContext: ToolContext = {
 describe('LangChain Tools Migration', () => {
   it('should create all tools without errors', () => {
     const tools = createLangChainTools(mockContext);
-    expect(tools.length).toBeGreaterThanOrEqual(7);
+    // mockContext 无 journalDir / wereadApiKey → 仅基础 3 个工具
+    expect(tools).toHaveLength(3);
 
     const names = tools.map((t) => t.name);
     expect(names).toContain('search_book');
     expect(names).toContain('read_book_section');
-    expect(names).toContain('write_note');
-    expect(names).toContain('save_memory');
-    expect(names).toContain('search_memory');
-    expect(names).toContain('update_profile');
-    expect(names).toContain('search_read_books');
+    expect(names).toContain('excalidraw');
+
+    // P0-1：5 个死工具已摘注册（功能由旁路提供：profileBuilder/memory service/note writer/syntopicalSearch）
+    expect(names).not.toContain('write_note');
+    expect(names).not.toContain('save_memory');
+    expect(names).not.toContain('search_memory');
+    expect(names).not.toContain('update_profile');
+    expect(names).not.toContain('search_read_books');
   });
 
   it('each tool should have name, description, and schema', () => {

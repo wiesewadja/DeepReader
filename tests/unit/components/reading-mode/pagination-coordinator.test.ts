@@ -247,8 +247,10 @@ describe("PaginationCoordinator", () => {
 		const container = document.createElement("div");
 		const sizer = document.createElement("div");
 		sizer.className = "markdown-preview-sizer";
-		sizer.appendChild(document.createElement("p"));
-		sizer.appendChild(document.createElement("p"));
+		const p1 = document.createElement("p"); p1.textContent = "段落1内容";
+		const p2 = document.createElement("p"); p2.textContent = "段落2内容";
+		sizer.appendChild(p1);
+		sizer.appendChild(p2);
 		const preview = document.createElement("div");
 		preview.className = "markdown-preview-view";
 		Object.defineProperty(preview, "clientWidth", { value: 800, configurable: true });
@@ -288,8 +290,10 @@ describe("PaginationCoordinator", () => {
 		const container = document.createElement("div");
 		const sizer = document.createElement("div");
 		sizer.className = "markdown-preview-sizer";
-		sizer.appendChild(document.createElement("p"));
-		sizer.appendChild(document.createElement("p"));
+		const p1 = document.createElement("p"); p1.textContent = "段落1内容";
+		const p2 = document.createElement("p"); p2.textContent = "段落2内容";
+		sizer.appendChild(p1);
+		sizer.appendChild(p2);
 		const preview = document.createElement("div");
 		preview.className = "markdown-preview-view";
 		Object.defineProperty(preview, "clientWidth", { value: 800, configurable: true });

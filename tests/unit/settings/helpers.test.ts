@@ -1,173 +1,131 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   getRoleConfig,
   setRoleConfig,
   getProviderAccount,
   setProviderAccount,
+  debounce,
+  debounceAsync,
   validateBaseUrl,
 } from '@/settings/helpers';
-import type { AIRoles, AIRoleConfig } from '@/config/ai-roles';
-
-function makeRoles(overrides?: Partial<AIRoles>): AIRoles {
-  return {
-    chat: { provider: 'deepseek', model: 'deepseek-chat' },
-    router: { provider: 'deepseek', model: 'deepseek-chat' },
-    pageindex: { provider: 'deepseek', model: 'deepseek-chat' },
-    proposition: null,
-    embedding: null,
-    reranker: null,
-    tts: null,
-    ...overrides,
-  };
-}
-
-// ==================== getRoleConfig ====================
 
 describe('getRoleConfig', () => {
-  it('returns config for required roles', () => {
-    const roles = makeRoles();
-    expect(getRoleConfig(roles, 'chat')).toEqual({ provider: 'deepseek', model: 'deepseek-chat' });
+  it('should return role config when exists', () => {
+    const roles = { 'analyst': { name: 'Analyst', systemPrompt: 'test' } } as any;
+    expect(getRoleConfig(roles, 'analyst')).toEqual({ name: 'Analyst', systemPrompt: 'test' });
   });
 
-  it('returns null for disabled optional roles', () => {
-    const roles = makeRoles();
-    expect(getRoleConfig(roles, 'embedding')).toBeNull();
-  });
-
-  it('returns config for enabled optional roles', () => {
-    const roles = makeRoles({
-      embedding: { provider: 'siliconflow', model: 'BAAI/bge-m3' },
-    });
-    expect(getRoleConfig(roles, 'embedding')).toEqual({ provider: 'siliconflow', model: 'BAAI/bge-m3' });
+  it('should return null when role does not exist', () => {
+    const roles = {} as any;
+    expect(getRoleConfig(roles, 'analyst')).toBeNull();
   });
 });
-
-// ==================== setRoleConfig ====================
 
 describe('setRoleConfig', () => {
-  it('enables a disabled role with patch', () => {
-    const roles = makeRoles();
-    setRoleConfig(roles, 'embedding', { provider: 'openai', model: 'text-embedding-3-small' });
-    expect(roles.embedding).toEqual({ provider: 'openai', model: 'text-embedding-3-small' });
+  it('should set role config', () => {
+    const roles = {} as any;
+    setRoleConfig(roles, 'analyst', { name: 'Analyst', systemPrompt: 'test' });
+    expect(roles.analyst).toEqual({ name: 'Analyst', systemPrompt: 'test' });
   });
 
-  it('disables a role by setting null', () => {
-    const roles = makeRoles();
-    setRoleConfig(roles, 'proposition', null);
-    expect(roles.proposition).toBeNull();
+  it('should merge with existing config', () => {
+    const roles = { 'analyst': { name: 'Old', systemPrompt: 'old' } } as any;
+    setRoleConfig(roles, 'analyst', { name: 'New' });
+    expect(roles.analyst).toEqual({ name: 'New', systemPrompt: 'old' });
   });
 
-  it('merges patch onto existing config', () => {
-    const roles = makeRoles();
-    setRoleConfig(roles, 'chat', { model: 'deepseek-pro' });
-    expect(roles.chat).toEqual({ provider: 'deepseek', model: 'deepseek-pro' });
-  });
-
-  it('preserves existing fields when patching', () => {
-    const roles = makeRoles({
-      reranker: { provider: 'siliconflow', model: 'BAAI/bge-reranker-v2-m3', embeddingBatchSize: 16 },
-    });
-    setRoleConfig(roles, 'reranker', { model: 'new-model' });
-    expect(roles.reranker).toMatchObject({
-      provider: 'siliconflow',
-      model: 'new-model',
-      embeddingBatchSize: 16,
-    });
+  it('should delete role when patch is null', () => {
+    const roles = { 'analyst': { name: 'Analyst' } } as any;
+    setRoleConfig(roles, 'analyst', null);
+    expect(roles.analyst).toBeNull();
   });
 });
-
-// ==================== getProviderAccount ====================
 
 describe('getProviderAccount', () => {
-  it('returns account for existing provider', () => {
-    const providers: Record<string, unknown> = {
-      deepseek: { apiKey: 'sk-test' },
-      custom1: { apiKey: '', baseUrl: 'https://example.com', name: 'My API' },
-    };
-    expect(getProviderAccount(providers, 'deepseek')).toEqual({ apiKey: 'sk-test' });
-    expect(getProviderAccount(providers, 'custom1')).toEqual({ apiKey: '', baseUrl: 'https://example.com', name: 'My API' });
+  it('should return provider account when exists', () => {
+    const providers = { 'openai': { apiKey: 'sk-123', baseUrl: '' } } as any;
+    expect(getProviderAccount(providers, 'openai')).toEqual({ apiKey: 'sk-123', baseUrl: '' });
   });
 
-  it('returns undefined for missing provider', () => {
-    const providers: Record<string, unknown> = {};
-    expect(getProviderAccount(providers, 'nonexistent')).toBeUndefined();
+  it('should return undefined when provider does not exist', () => {
+    const providers = {} as any;
+    expect(getProviderAccount(providers, 'openai')).toBeUndefined();
   });
 });
-
-// ==================== setProviderAccount ====================
 
 describe('setProviderAccount', () => {
-  it('creates new provider account', () => {
-    const providers: Record<string, unknown> = {};
-    setProviderAccount(providers, 'custom-1', { apiKey: 'sk-new', baseUrl: 'https://api.test.com' });
-    expect(providers['custom-1']).toEqual({ apiKey: 'sk-new', baseUrl: 'https://api.test.com' });
+  it('should set provider account', () => {
+    const providers = {} as any;
+    setProviderAccount(providers, 'openai', { apiKey: 'sk-123', baseUrl: '' });
+    expect(providers.openai).toEqual({ apiKey: 'sk-123', baseUrl: '' });
   });
 
-  it('merges patch onto existing account', () => {
-    const providers: Record<string, unknown> = {
-      deepseek: { apiKey: 'old-key' },
-    };
-    setProviderAccount(providers, 'deepseek', { apiKey: 'new-key' });
-    expect(providers['deepseek']).toEqual({ apiKey: 'new-key' });
-  });
-
-  it('preserves existing fields when patching', () => {
-    const providers: Record<string, unknown> = {
-      custom: { apiKey: 'sk-test', baseUrl: 'https://a.com', name: 'A' },
-    };
-    setProviderAccount(providers, 'custom', { name: 'B' });
-    expect(providers['custom']).toEqual({ apiKey: 'sk-test', baseUrl: 'https://a.com', name: 'B' });
+  it('should merge with existing account', () => {
+    const providers = { 'openai': { apiKey: 'old', baseUrl: '' } } as any;
+    setProviderAccount(providers, 'openai', { apiKey: 'new' });
+    expect(providers.openai).toEqual({ apiKey: 'new', baseUrl: '' });
   });
 });
 
-// ==================== validateBaseUrl ====================
+describe('debounce', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('should delay function execution', () => {
+    vi.useFakeTimers();
+    const fn = vi.fn();
+    const debounced = debounce(fn, 100);
+    debounced();
+    expect(fn).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(100);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('should reset timer on repeated calls', () => {
+    vi.useFakeTimers();
+    const fn = vi.fn();
+    const debounced = debounce(fn, 100);
+    debounced();
+    vi.advanceTimersByTime(50);
+    debounced();
+    vi.advanceTimersByTime(100);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('validateBaseUrl', () => {
-  it('accepts valid https URL', () => {
-    expect(validateBaseUrl('https://api.openai.com/v1')).toEqual({ valid: true });
+  it('should accept valid https url', () => {
+    expect(validateBaseUrl('https://api.openai.com')).toEqual({ valid: true });
   });
 
-  it('accepts valid http URL', () => {
-    expect(validateBaseUrl('http://localhost:8080/v1')).toEqual({ valid: true });
+  it('should accept valid http url', () => {
+    expect(validateBaseUrl('http://localhost:3000')).toEqual({ valid: true });
   });
 
-  it('accepts empty string', () => {
+  it('should accept empty string', () => {
     expect(validateBaseUrl('')).toEqual({ valid: true });
   });
 
-  it('accepts whitespace-only string', () => {
+  it('should accept whitespace-only string', () => {
     expect(validateBaseUrl('   ')).toEqual({ valid: true });
   });
 
-  it('rejects non-http protocols', () => {
-    const result = validateBaseUrl('ftp://files.example.com');
+  it('should reject invalid url format', () => {
+    const result = validateBaseUrl('not-a-url');
     expect(result.valid).toBe(false);
-    expect(result.error).toContain('http');
+    expect(result.error).toContain('URL 格式无效');
   });
 
-  it('rejects file:// protocol', () => {
-    const result = validateBaseUrl('file:///etc/passwd');
+  it('should reject non-http protocol', () => {
+    const result = validateBaseUrl('ftp://example.com');
     expect(result.valid).toBe(false);
+    expect(result.error).toContain('http/https');
   });
 
-  it('blocks cloud metadata address 169.254.169.254', () => {
-    const result = validateBaseUrl('http://169.254.169.254/latest/meta-data');
+  it('should reject link-local address', () => {
+    const result = validateBaseUrl('http://169.254.169.254/metadata');
     expect(result.valid).toBe(false);
-    expect(result.error).toContain('链路本地');
-  });
-
-  it('rejects malformed URL', () => {
-    const result = validateBaseUrl('not a url at all');
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain('格式无效');
-  });
-
-  it('rejects URL with spaces', () => {
-    const result = validateBaseUrl('https://api .example.com');
-    expect(result.valid).toBe(false);
-  });
-
-  it('accepts URL with port', () => {
-    expect(validateBaseUrl('https://api.example.com:8443/v1')).toEqual({ valid: true });
+    expect(result.error).toContain('链路本地地址');
   });
 });

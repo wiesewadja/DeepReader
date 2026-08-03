@@ -341,7 +341,14 @@ export class PaginationCoordinator {
 				.getActiveContainerEl()
 				?.querySelector(".markdown-preview-sizer") as HTMLElement;
 
-			if (container && container.children.length > 1) {
+			// 检查 sizer 有实际渲染内容（children.length > 1 不可靠——
+			// Obsidian 内部 sizer 通常只有 1 个 wrapper 子元素）
+			const hasContent =
+				container &&
+				(container.textContent?.trim().length ?? 0) > 0 &&
+				container.querySelector("p, h1, h2, h3, h4, h5, h6, li, blockquote, pre");
+
+			if (hasContent) {
 				const settings = this.deps.getPluginSettings();
 				this.paginator = new PagePaginator({
 					container,

@@ -12,8 +12,8 @@
 **答案**: 完成 SidebarView 到 Domain/Presenter 模式的重构，提取出 BookDomain、SessionDomain、AgentDomain、TTSDomain、ChatPresenter、EventBus 等组件。
 
 **关键决策**:
-- ADR-0001: SharedContext 收敛（消除双轨制）
-- ADR-0002: 安全边界机制（三层防御）
+- ADR-010: SharedContext 收敛（消除双轨制）
+- ADR-012: 安全边界机制（三层防御）
 
 ### security-hardening: 安全加固 ✅
 **Status**: resolved

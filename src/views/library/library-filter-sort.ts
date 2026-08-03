@@ -210,29 +210,47 @@ export class FilterSort {
 
 	applySort(indexes: IndexListItem[], getLastReadTime?: (index: IndexListItem) => number): IndexListItem[] {
 		const sorted = [...indexes];
-		switch (this.sortKey) {
-			case 'recent-read':
-				return sorted.sort((a, b) => {
+		const processingPriority: Record<string, number> = {
+			'processing': 0, 'indexing': 0, 'started': 0, 'running': 0,
+			'pending': 1, 'queued': 1,
+			'ready': 2, 'completed': 2, 'success': 2,
+			'failed': 3, 'error': 3,
+		};
+		const getStatusPriority = (idx: IndexListItem) =>
+			processingPriority[(idx.status || '').toLowerCase()] ?? 4;
+
+		const comparator = (a: IndexListItem, b: IndexListItem): number => {
+			// processing/pending 状态始终置顶
+			const pa = getStatusPriority(a);
+			const pb = getStatusPriority(b);
+			if (pa <= 1 && pb > 1) return -1;
+			if (pb <= 1 && pa > 1) return 1;
+
+			switch (this.sortKey) {
+				case 'recent-read': {
 					const timeA = getLastReadTime?.(a) ?? 0;
 					const timeB = getLastReadTime?.(b) ?? 0;
-					return timeB - timeA; // 最近阅读的在前
-				});
-			case 'time-desc':
-				return sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-			case 'time-asc':
-				return sorted.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-			case 'name-asc':
-				return sorted.sort((a, b) => a.pdf_name.localeCompare(b.pdf_name, 'zh'));
-			case 'name-desc':
-				return sorted.sort((a, b) => b.pdf_name.localeCompare(a.pdf_name, 'zh'));
-			case 'author-asc':
-				return sorted.sort((a, b) => (a.author || 'zzz').localeCompare(b.author || 'zzz', 'zh'));
-			case 'author-desc':
-				return sorted.sort((a, b) => (b.author || 'zzz').localeCompare(a.author || 'zzz', 'zh'));
-			case 'status':
-				return this.sortIndexes(sorted);
-			default:
-				return sorted;
-		}
+					return timeB - timeA;
+				}
+				case 'time-desc':
+					return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+				case 'time-asc':
+					return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+				case 'name-asc':
+					return a.pdf_name.localeCompare(b.pdf_name, 'zh');
+				case 'name-desc':
+					return b.pdf_name.localeCompare(a.pdf_name, 'zh');
+				case 'author-asc':
+					return (a.author || 'zzz').localeCompare(b.author || 'zzz', 'zh');
+				case 'author-desc':
+					return (b.author || 'zzz').localeCompare(a.author || 'zzz', 'zh');
+				case 'status':
+					return pa - pb;
+				default:
+					return 0;
+			}
+		};
+
+		return sorted.sort(comparator);
 	}
 }

@@ -20,7 +20,7 @@ export class IntentRouter {
 
   constructor(config?: IntentRulesConfig) {
     const cfg = config || (DEFAULT_RULES_JSON as IntentRulesConfig);
-    this.fallbackTools = cfg.fallback.tools;
+    this.fallbackTools = cfg.fallback.tools ?? [];
     this.fallbackIntent = cfg.fallback.intent;
     this.fallbackMaxIterations = cfg.fallback.maxIterations || DEFAULT_MAX_ITERATIONS;
     this.compiledRules = cfg.rules.map(rule => {
@@ -57,7 +57,7 @@ export class IntentRouter {
           if (!detectedIntents.includes(rule.intent)) {
             detectedIntents.push(rule.intent);
           }
-          rule.tools.forEach(t => allowedTools.add(t));
+          rule.tools?.forEach(t => allowedTools.add(t));
           // 取所有匹配规则中最大的 maxIterations
           const ruleMax = rule.maxIterations || DEFAULT_MAX_ITERATIONS;
           if (maxIterations === null || ruleMax > maxIterations) {
@@ -71,7 +71,7 @@ export class IntentRouter {
     // 2. 兜底：无匹配时，使用 fallback 配置
     if (detectedIntents.length === 0) {
       detectedIntents.push(this.fallbackIntent);
-      this.fallbackTools.forEach(t => allowedTools.add(t));
+      this.fallbackTools?.forEach(t => allowedTools.add(t));
       maxIterations = this.fallbackMaxIterations;
       agentLog(`[IntentRouter] 无匹配，使用兜底: ${this.fallbackIntent}, maxIterations: ${maxIterations}`);
     }
@@ -108,6 +108,8 @@ export class IntentRouter {
    * 构建动态系统指令
    */
   private buildSystemNote(intents: string[], tools: Set<string>): string {
+    // 工具集为空（诚实化后常态：门禁已移至节点白名单）→ 不输出强约束，避免误导模型
+    if (tools.size === 0) return '';
     return `<system_note>
 【Router 强制路由】
 系统已判定用户意图包含：${intents.join('、')}。

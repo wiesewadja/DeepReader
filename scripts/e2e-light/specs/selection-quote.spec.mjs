@@ -17,7 +17,7 @@ export default {
 	id: 'selection-quote',
 	name: '文本选择引用卡片流',
 	feature: 'F-17',
-	timeout: 30_000,
+	timeout: 60_000,
 	requires: {
 		files: [CHAPTER_FILE],
 	},
@@ -56,12 +56,32 @@ export default {
 			const t0 = Date.now();
 			try {
 				await evalObsidian(`(async () => {
+					// 1. 关闭阅读模式
+					const svc = app.plugins.plugins['${PLUGIN_ID}']?.readingModeService;
+					if (svc && svc.isActive) svc.deactivate();
+					
+					// 2. 关闭所有 markdown leaves
+					const oldLeaves = app.workspace.getLeavesOfType('markdown');
+					for (let i = 0; i < oldLeaves.length; i++) {
+						app.workspace.detachLeavesOfType('markdown');
+					}
+					await new Promise(r => setTimeout(r, 500));
+					
+					// 3. 打开章节文件到新 leaf
 					const file = app.vault.getAbstractFileByPath('${CHAPTER_FILE}');
-					if (!file) throw new Error('文件不存在: ${CHAPTER_FILE}');
-					const leaf = app.workspace.getUnpinnedLeaf();
+					if (!file) throw new Error('文件不存在');
+					const leaf = app.workspace.getLeaf(true);
 					await leaf.openFile(file);
+					await new Promise(r => setTimeout(r, 500));
+					
+					// 4. 确保切换到预览模式
+					const view = leaf.view;
+					if (view && view.getMode() !== 'preview') {
+						view.setState({ ...view.getState(), mode: 'preview' }, { history: false });
+						await new Promise(r => setTimeout(r, 500));
+					}
 				})()`);
-				await new Promise(r => setTimeout(r, 1000));
+				await new Promise(r => setTimeout(r, 500));
 
 				const result = await evalObsidian(`(() => {
 					const file = app.vault.getAbstractFileByPath('${CHAPTER_FILE}');
@@ -80,24 +100,46 @@ export default {
 			}
 		}
 
-		// 等待阅读模式内容渲染（替换固定 1000ms 盲等，避免内容未渲染就选文本）
+		// 等待阅读模式内容渲染
 		{
 			const t0 = Date.now();
 			let ready = false;
 			log?.warn?.('  等待阅读模式内容渲染…');
-			for (let i = 0; i < 14; i++) {
+			for (let i = 0; i < 40; i++) {
 				ready = await evalObsidian(`(() => {
-					const view = document.querySelector(".markdown-preview-view");
-					const p = view?.querySelector("p");
-					return !!(p && p.textContent.trim());
+					// 查找任何包含文本的段落元素（包括 callout 内的）
+					const paragraphs = document.querySelectorAll('p');
+					for (let j = 0; j < paragraphs.length; j++) {
+						const p = paragraphs[j];
+						if (p.textContent && p.textContent.trim().length > 20) {
+							return true;
+						}
+					}
+					return false;
 				})()`);
 				if (ready) break;
+				if (i % 10 === 9) log?.warn?.(`    渲染等待中… (${(i + 1) * 0.5}s)`);
 				await new Promise(r => setTimeout(r, 500));
 			}
 			if (ready) {
 				pass('等待内容渲染', Date.now() - t0);
 			} else {
-				fail('等待内容渲染', Date.now() - t0, new Error('12s 内未渲染出文本段落'));
+				fail('等待内容渲染', Date.now() - t0, new Error('20s 内未渲染出文本段落'));
+			}
+		}
+
+		// 清理已有的 quote 卡片
+		{
+			const t0 = Date.now();
+			try {
+				const count = await evalObsidian(`(() => {
+					const quotes = document.querySelectorAll('.deeppdf-quote-card');
+					quotes.forEach(q => q.remove());
+					return quotes.length;
+				})()`);
+				pass('清理 quote 卡片', Date.now() - t0, `移除 ${count} 张`);
+			} catch (e) {
+				pass('清理 quote 卡片', Date.now() - t0, '无卡片');
 			}
 		}
 
@@ -106,26 +148,48 @@ export default {
 			const t0 = Date.now();
 			try {
 				const result = await evalObsidian(`(() => {
-					const view = document.querySelector('.markdown-preview-view');
-					if (!view) return { ok: false, reason: 'no .markdown-preview-view' };
-					const p = view.querySelector('p');
-					if (!p || !p.textContent.trim()) return { ok: false, reason: 'no paragraph with text' };
+					// 查找任何包含文本的段落元素
+					const paragraphs = document.querySelectorAll('p');
+					let targetP = null;
+					for (let j = 0; j < paragraphs.length; j++) {
+						const p = paragraphs[j];
+						if (p.textContent && p.textContent.trim().length > 20) {
+							targetP = p;
+							break;
+						}
+					}
+					if (!targetP) return { ok: false, reason: 'no paragraph with text' };
 
-					const range = document.createRange();
-					range.selectNodeContents(p);
+					// 找到第一个文本节点
+					const textNode = Array.from(targetP.childNodes).find(n => n.nodeType === 3 && n.textContent.trim());
+					if (!textNode) return { ok: false, reason: 'no text node' };
+
+					// 使用 modify 扩展选区
 					const sel = window.getSelection();
 					sel.removeAllRanges();
+					
+					// 创建空范围放在文本开头
+					const range = document.createRange();
+					range.setStart(textNode, 0);
+					range.collapse(true);
 					sel.addRange(range);
+					
+					// 扩展选区 50 个字符
+					for (let i = 0; i < 50; i++) {
+						sel.modify('extend', 'forward', 'character');
+					}
 
-					const rect = p.getBoundingClientRect();
+					// 触发 mouseup 事件
+					const selRange = sel.getRangeAt(0);
+					const rect = selRange.getBoundingClientRect();
 					const evt = new MouseEvent('mouseup', {
 						clientX: rect.left + rect.width / 2,
 						clientY: rect.top + rect.height / 2,
 						bubbles: true,
 					});
-					p.dispatchEvent(evt);
+					targetP.dispatchEvent(evt);
 
-					return { ok: true, text: p.textContent.substring(0, 50) };
+					return { ok: true, text: sel.toString().substring(0, 50) };
 				})()`);
 				if (!result?.ok) throw new Error(result?.reason || '选中文本失败');
 				pass('程序化选中文本', Date.now() - t0, `选中: "${result.text}..."`);

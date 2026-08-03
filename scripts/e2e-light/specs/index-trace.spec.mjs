@@ -12,6 +12,7 @@ const TEST_BOOK = {
 	id: 'c9ce4d7b',
 	title: '优秀的绵羊',
 	filePattern: '优秀的绵羊',
+ epubFile: 'DeepReader/assets/优秀的绵羊 ([美]威廉•德雷谢维奇 著) (z-library.sk, 1lib.sk, z-lib.sk).epub',
 };
 
 export default {
@@ -20,7 +21,7 @@ export default {
 	feature: 'F-05',
 	timeout: 300_000,
 	requires: {
-		files: [`DeepReader/assets/${TEST_BOOK.title}`],
+		files: [TEST_BOOK.epubFile],
 	},
 
 	async run({ log }) {
