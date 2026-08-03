@@ -90,8 +90,11 @@ export async function evalObsidian(expression, { timeout = 30_000, vault } = {})
 		throw new Error(`evalObsidian 失败: ${r.stderr || r.stdout}`);
 	}
 	let payload;
+	// obsidian CLI 可能输出 installer 警告等非 JSON 前缀，提取首个 { 开始的 JSON
+	const jsonStart = r.stdout.indexOf('{');
+	const jsonStr = jsonStart > 0 ? r.stdout.slice(jsonStart) : r.stdout;
 	try {
-		payload = JSON.parse(r.stdout);
+		payload = JSON.parse(jsonStr);
 	} catch (e) {
 		throw new Error(`evalObsidian 返回非 JSON: ${r.stdout.slice(0, 200)}`);
 	}
