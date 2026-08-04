@@ -36,6 +36,7 @@ export default {
 
 		// ===== parseEpub 获取章节标题 =====
 		let chapterTitles;
+	let mocPath = '';
 		{
 			const t0 = Date.now();
 			try {
@@ -88,7 +89,8 @@ export default {
 					throw new Error(`exportToObsidian: notes=${notesCount}, mocPath=${result?.mocPath}`);
 				}
 
-				pass('exportToObsidian', Date.now() - t0, `notes=${notesCount}`);
+				mocPath = result?.mocPath || '';
+			pass('exportToObsidian', Date.now() - t0, `notes=${notesCount}`);
 			} catch (e) {
 				fail('exportToObsidian', Date.now() - t0, e);
 				return { steps };
@@ -101,7 +103,8 @@ export default {
 			try {
 				const result = await evalObsidian(`(() => {
 					const files = app.vault.getMarkdownFiles();
-					const epubDir = files.find(f => f.path.endsWith('- MOC.md') && f.path.includes('AI'))?.path.replace(/\/[^/]+$/, '') || '';
+					const mocPath = files.find(f => f.path.endsWith('- MOC.md') && f.path.includes('AI'))?.path || '';
+					const epubDir = mocPath.split('/').slice(0, -1).join('/');
 					const chapterFiles = files.filter(f =>
 						epubDir && f.path.startsWith(epubDir + '/') &&
 						!f.path.includes('MOC') &&
@@ -139,15 +142,13 @@ export default {
 		{
 			const t0 = Date.now();
 			try {
-				const result = await evalObsidian(`(() => {
-					const files = app.vault.getMarkdownFiles();
-					const mocFiles = files.filter(f =>
-						f.path.includes('MOC') && !f.path.startsWith('.obsidian')
-					);
-					if (mocFiles.length === 0) return { exists: false };
-
-					return (async () => {
-						const content = await app.vault.read(mocFiles[0]);
+				const result = await evalObsidian(`(async () => {
+					const mp = ${JSON.stringify(mocPath)};
+					if (!mp) return { exists: false, reason: 'no mocPath' };
+					const base = app.vault.adapter.basePath;
+					const vp = mp.startsWith(base) ? mp.slice(base.length + 1) : mp;
+					try {
+						const content = await app.vault.adapter.read(vp);
 						return {
 							exists: true,
 							hasType: content.includes('type: epub-moc'),
@@ -155,7 +156,7 @@ export default {
 							hasAuthor: content.includes('**作者:**'),
 							hasDocDesc: content.includes('金钱与公正'),
 						};
-					})();
+					} catch (e) { return { exists: false, error: e.message, vp }; }
 				})()`, { timeout: 10_000 });
 
 				if (!result?.exists) throw new Error('MOC 文件不存在');
