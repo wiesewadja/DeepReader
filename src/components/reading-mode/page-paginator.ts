@@ -346,6 +346,7 @@ export class PagePaginator {
 		if (this.programmaticScrollTimer) clearTimeout(this.programmaticScrollTimer);
 		this.programmaticScrollTimer = setTimeout(() => {
 			this.isProgrammaticScrolling = false;
+			this.snapToSpread();
 		}, 800);
 
 		return true;
@@ -379,6 +380,7 @@ export class PagePaginator {
 		if (this.programmaticScrollTimer) clearTimeout(this.programmaticScrollTimer);
 		this.programmaticScrollTimer = setTimeout(() => {
 			this.isProgrammaticScrolling = false;
+			this.snapToSpread();
 		}, 800);
 
 		return true;
@@ -510,6 +512,18 @@ export class PagePaginator {
 		if (this.scrollView && this.scrollHandler) {
 			this.scrollView.removeEventListener('scroll', this.scrollHandler);
 			this.scrollHandler = null;
+		}
+	}
+
+	/** 双页模式：smooth scroll 结束后将 scrollLeft 精确对齐到 spreadStep 倍数，
+	 *  避免列错位导致视口同时显示前后页内容（层叠）。 */
+	private snapToSpread(): void {
+		if (!this.isDualPageMode || !this.scrollView) return;
+		const m = this.getDualPageMetrics();
+		if (!m || m.spreadStep <= 0) return;
+		const target = Math.round(this.scrollView.scrollLeft / m.spreadStep) * m.spreadStep;
+		if (Math.abs(this.scrollView.scrollLeft - target) > 1) {
+			this.scrollView.scrollLeft = target;
 		}
 	}
 
